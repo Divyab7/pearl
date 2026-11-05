@@ -1,0 +1,11 @@
+# Foundry config: https://getfoundry.sh/config/reference
+[profile.default]
+src = "src"
+test = "test"
+out = "out"
+libs = []
+solc_version = "0.8.28"
+# conservative target: no PUSH0/MCOPY assumptions about 0G Galileo's EVM
+evm_version = "paris"
+optimizer = true
+optimizer_runs = 200
