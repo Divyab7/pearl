@@ -1,0 +1,54 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+*.tsbuildinfo
+.vite/
+.turbo/
+coverage/
+
+# logs and OS / editor junk
+*.log
+.DS_Store
+Thumbs.db
+*.swp
+*.bak
+*.tmp
+.vscode/
+.idea/
+
+# local Claude Code settings
+.claude/
+
+# docs: all markdown is held back until the final write-up
+*.md
+docs/*.pdf
+
+# secrets and runtime data (never commit)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+data/
+firmware/esp32-arm/src/secrets.h
+
+# firmware (PlatformIO)
+firmware/esp32-arm/.pio/
+.pio/
+
+# foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+
+# python / mujoco sim
+.venv/
+sim/mujoco/.venv/
+sim/mujoco/.cache/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
