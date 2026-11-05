@@ -1,0 +1,6 @@
+# MuJoCo arm bridge. mujoco 3.3.7 is the newest release with wheels for Python 3.9 (macOS system Python);
+# it also has wheels for 3.10–3.13. Install with: pnpm sim:mujoco:setup
+mujoco==3.3.7
+websockets==13.1
+pillow==11.0.0
+numpy==2.0.2
