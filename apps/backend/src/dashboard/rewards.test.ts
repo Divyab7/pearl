@@ -1,0 +1,158 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { ethers } from "ethers";
+import { hashSignal } from "@worldcoin/idkit-core/hashing";
+import { describe, expect, it } from "vitest";
+import type { HumanCheckResult, HumanGate } from "../human/gate.js";
+import type { Account } from "./accounts.js";
+import { RewardDesk, RewardStore, type RewardDeps } from "./rewards.js";
+
+const DEVICE = ethers.Wallet.createRandom().address;
+const WALLET = ethers.Wallet.createRandom().address;
+const ISS = "https://auth.world.org";
+const account = (over: Partial<Account> = {}): Account => ({
+  accountId: "a".repeat(32), issuer: ISS, subject: "sub-owner", createdAt: "t", wallet: WALLET,
+  robots: [{ address: DEVICE, deviceId: "sim", deviceUrl: "u", linkedAt: "t", linkSignature: "0x" }], ...over,
+});
+
+/** A World ID Agent Pass stand-in that answers with a scripted outcome (the real client is tested in worldid.test.ts). */
+function gate(outcome: "ok" | "denied" | "expired" | "other-person"): HumanGate & { cancelled: string[] } {
+  const cancelled: string[] = [];
+  return {
+    provider: "World ID",
+    cancelled,
+    cancel: (id) => (cancelled.push(id), true),
+    async verify(_r, onPrompt) {
+      onPrompt({ attemptId: "att-1", provider: "World ID", verificationUri: "https://world.example/device", userCode: "ABCD", expiresAt: new Date(Date.now() + 60_000).toISOString() });
+      await new Promise((r) => setTimeout(r, 20));
+      const base = { attemptId: "att-1", provider: "World ID" };
+      if (outcome === "denied") return { ...base, ok: false, reason: "denied", detail: "access_denied" } as HumanCheckResult;
+      if (outcome === "expired") return { ...base, ok: false, reason: "expired", detail: "expired_token" } as HumanCheckResult;
+      return { ...base, ok: true, issuer: ISS, subject: outcome === "ok" ? "sub-owner" : "sub-stranger", acr: "https://world.org/oidc/acr/orb", amr: ["pop"], authTime: 1, idTokenSha256: "h" };
+    },
+  };
+}
+
+const ENV = "production" as const;
+function deps(over: Partial<RewardDeps> = {}): RewardDeps & { paid: unknown[] } {
+  const paid: unknown[] = [];
+  return {
+    paid,
+    verify: async () => ({ result: "VALID", failed: [] }),
+    incident: async () => ({ device: DEVICE, incident: true, severity: 2, outcome: "TRIPPED" }),
+    agentPass: () => gate("ok"),
+    idkit: { appId: "app_test", rpId: "rp_test", environment: ENV },
+    signRequest: () => ({ sig: "0xsig", nonce: "0xnonce", createdAt: 1, expiresAt: 2 }),
+    hashSignal,
+    verifyProof: async (_rp, result) => ({ status: 200, body: { success: true, environment: ENV, nullifier: (result as { responses: { nullifier: string }[] }).responses[0]!.nullifier } }),
+    assess: async (b) => ({ status: b.severity >= 2 && b.verified ? "APPROVED" : "DENIED", amount: b.severity * 5000, reason: "rule" }),
+    pay: async (p) => (paid.push(p), { txHash: "0xpaid" }),
+    amountWeiFor: (s) => ethers.parseEther("0.01") * BigInt(s),
+    requireValid: true,
+    ...over,
+  };
+}
+
+const proof = (action: string, nullifier = "0x04e5f6", wallet = WALLET, env: string = ENV) => ({
+  protocol_version: "4.0", nonce: "n", action, environment: env,
+  responses: [{ identifier: "proof_of_human", signal_hash: hashSignal(wallet), proof: ["0x1", "0x2", "0x3", "0x4", "0x5"], nullifier, issuer_schema_id: 1, expires_at_min: 1 }],
+});
+
+const desk = (d: RewardDeps) => new RewardDesk(d, new RewardStore(join(mkdtempSync(join(tmpdir(), "pearl-rc-")), "c.json")));
+const waitFor = async (f: () => boolean) => {
+  for (let i = 0; i < 100 && !f(); i++) await new Promise((r) => setTimeout(r, 10));
+};
+
+describe("reward claims: World ID Agent Pass + IDKit Proof of Human", () => {
+  it("full journey: request → Agent Pass → IDKit → World verify → insurer → RewardPool payout", async () => {
+    const d = deps();
+    const k = desk(d);
+    const c = await k.start(account(), "ep_1");
+    expect(c.status).toBe("AGENT_PASS");
+    expect(c.agentPass?.prompt?.userCode).toBe("ABCD");
+    await waitFor(() => k.get(c.claimId, account().accountId)?.status === "IDKIT");
+    const req = k.idkitRequest(c.claimId, account().accountId);
+    expect(req).toMatchObject({ app_id: "app_test", action: "claim:ep_1", signal: WALLET, rp_context: { rp_id: "rp_test", signature: "0xsig" } });
+    const done = await k.idkitResult(c.claimId, account().accountId, { result: proof("claim:ep_1") });
+    expect(done.status).toBe("PAID");
+    expect(done.payout).toMatchObject({ txHash: "0xpaid", amountWei: ethers.parseEther("0.02").toString() });
+    expect(d.paid[0]).toMatchObject({ device: DEVICE, episodeId: "ep_1", to: WALLET });
+    expect(done.history.map((h) => h.status)).toEqual(["AGENT_PASS", "IDKIT", "PAYING", "PAID"]);
+  });
+
+  const failUntilIdkit = async (d: RewardDeps) => {
+    const k = desk(d);
+    const c = await k.start(account(), "ep_1");
+    await waitFor(() => k.get(c.claimId, account().accountId)?.status !== "AGENT_PASS");
+    return { k, c: k.get(c.claimId, account().accountId)! };
+  };
+
+  it("Agent Pass denied or expired: claim fails, nothing paid", async () => {
+    for (const o of ["denied", "expired"] as const) {
+      const d = deps({ agentPass: () => gate(o) });
+      const { c } = await failUntilIdkit(d);
+      expect(c).toMatchObject({ status: "FAILED", failure: expect.stringContaining(`Agent Pass ${o}`) });
+      expect(d.paid).toEqual([]);
+    }
+  });
+
+  it("Agent Pass by someone other than the account owner is refused", async () => {
+    const d = deps({ agentPass: () => gate("other-person") });
+    const { c } = await failUntilIdkit(d);
+    expect(c.failure).toMatch(/different World ID/);
+  });
+
+  it("IDKit cancelled, wrong environment, wrong wallet, wrong action, verify rejected: nothing paid", async () => {
+    const cases: [Record<string, unknown>, RegExp, Partial<RewardDeps>?][] = [
+      [{ error: "user_rejected" }, /IDKit user_rejected/],
+      [{ result: proof("claim:ep_1", "0x1", WALLET, "staging") }, /environment staging/],
+      [{ result: proof("claim:ep_1", "0x1", ethers.Wallet.createRandom().address) }, /different wallet/],
+      [{ result: proof("claim:ep_OTHER") }, /different action/],
+      [{ result: proof("claim:ep_1") }, /World verify rejected/, { verifyProof: async () => ({ status: 400, body: { success: false, code: "all_verifications_failed" } }) }],
+    ];
+    for (const [body, why, over] of cases) {
+      const d = deps(over);
+      const { k, c } = await failUntilIdkit(d);
+      expect(c.status).toBe("IDKIT");
+      const r = await k.idkitResult(c.claimId, account().accountId, body as never);
+      expect(r).toMatchObject({ status: "FAILED", failure: expect.stringMatching(why) });
+      expect(d.paid).toEqual([]);
+    }
+  });
+
+  it("the same human cannot claim the same incident twice (nullifier replay)", async () => {
+    const d = deps();
+    const k = desk(d);
+    const second = account({ accountId: "b".repeat(32), subject: "sub-owner-2" });
+    const c1 = await k.start(account(), "ep_1");
+    await waitFor(() => k.get(c1.claimId, account().accountId)?.status === "IDKIT");
+    expect((await k.idkitResult(c1.claimId, account().accountId, { result: proof("claim:ep_1", "0xABC") })).status).toBe("PAID");
+    // a second account controlled by the same human produces the same nullifier for the same action
+    d.agentPass = () => ({ ...gate("ok"), verify: async (r, p) => ({ ...(await gate("ok").verify(r, p)), subject: "sub-owner-2" }) as HumanCheckResult });
+    const c2 = await k.start(second, "ep_1");
+    await waitFor(() => k.get(c2.claimId, second.accountId)?.status === "IDKIT");
+    const r = await k.idkitResult(c2.claimId, second.accountId, { result: proof("claim:ep_1", "0xabc") });
+    expect(r.failure).toMatch(/already claimed/);
+    expect(d.paid).toHaveLength(1);
+  });
+
+  it("refuses before any World ID step: unlinked robot, low severity, log that does not verify, no wallet", async () => {
+    await expect(desk(deps()).start(account({ robots: [] }), "ep_1")).rejects.toThrow(/not linked/);
+    await expect(desk(deps({ incident: async () => ({ device: DEVICE, incident: true, severity: 1, outcome: "TRIPPED" }) })).start(account(), "ep_1")).rejects.toThrow(/severity 1/);
+    await expect(desk(deps({ verify: async () => ({ result: "REJECTED", failed: [3] }) })).start(account(), "ep_1")).rejects.toThrow(/does not verify/);
+    await expect(desk(deps()).start(account({ wallet: null }), "ep_1")).rejects.toThrow(/wallet/);
+  });
+
+  it("the user can cancel while World ID is pending; nothing is paid", async () => {
+    const slow: HumanGate = { provider: "World ID", cancel: () => true, verify: async (_r, onPrompt) => {
+      onPrompt({ attemptId: "att-9", provider: "World ID", verificationUri: "u", userCode: "C", expiresAt: "t" });
+      return new Promise(() => {});
+    } };
+    const d = deps({ agentPass: () => slow });
+    const k = desk(d);
+    const c = await k.start(account(), "ep_1");
+    expect(k.cancel(c.claimId, account().accountId)).toMatchObject({ status: "FAILED", failure: "cancelled by the user" });
+    expect(d.paid).toEqual([]);
+  });
+});
