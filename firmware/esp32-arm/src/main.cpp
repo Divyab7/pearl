@@ -40,14 +40,36 @@ static void hello() {
   hostlink::send(d);
 }
 
+// start-up trace on the USB serial (one plain line per step, ignored by the host's JSON reader): shows where a board
+// that never says hello got stuck (a missing I2C chip, a held bus, power)
+#define BOOT_STEP(s) do { Serial.println("[boot] " s); Serial.flush(); } while (0)
+
 void setup() {
   hostlink::begin();
+  delay(1500);  // let the USB serial come up so the first lines aren't lost
+  BOOT_STEP("serial up");
   status::begin();
+  BOOT_STEP("status ok (ring, buzzer)");
   Wire.begin(PIN_SDA, PIN_SCL, 400000);
+  Wire.setTimeOut(50);
+  BOOT_STEP("i2c bus up");
+  for (uint8_t a = 1; a < 127; a++) {
+    Wire.beginTransmission(a);
+    if (Wire.endTransmission() == 0) Serial.printf("[boot] i2c device at 0x%02x\n", a);
+  }
+  BOOT_STEP("i2c scan done");
+  {  // which motion chip answers at 0x68: WHO_AM_I (0x75) is 0x68 on a real MPU6050, other values on clones/siblings
+    Wire.beginTransmission(0x68);
+    Wire.write(0x75);
+    Wire.endTransmission(false);
+    if (Wire.requestFrom(0x68, 1) == 1) Serial.printf("[boot] imu WHO_AM_I = 0x%02x\n", Wire.read());
+  }
   const char* failed = nullptr;
   bool ok = motion::begin();
+  BOOT_STEP("servo driver begin returned");
   if (!ok) failed = "pca";
   if (ok) ok = safety::begin(&failed);
+  BOOT_STEP("sensors begin returned");
   status::beepShort(millis());
 #ifdef PEARL_DEVICE
   device::begin();  // Wi-Fi, keys, run task, API (the safety loop below keeps running regardless)

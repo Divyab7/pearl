@@ -1,5 +1,4 @@
 #include "safety.h"
-#include <Adafruit_MPU6050.h>
 #include <VL53L0X.h>
 #include <Wire.h>
 #include "config.h"
@@ -10,7 +9,47 @@
 namespace safety {
 
 static VL53L0X tof;
-static Adafruit_MPU6050 mpu;
+// Motion sensor: a small direct driver instead of the Adafruit MPU6050 library, which rejects anything whose
+// WHO_AM_I isn't 0x68 — the real board carries an MPU6500 (0x70). The accelerometer registers are the same across the
+// family (MPU6050 0x68, MPU6500 0x70, MPU9250 0x71, MPU9255 0x73, common clones 0x98/0x72), and acceleration is all
+// the safety loop needs (bump detection).
+namespace imu {
+constexpr uint8_t ADDR = 0x68;
+static bool wr(uint8_t reg, uint8_t v) {
+  Wire.beginTransmission(ADDR);
+  Wire.write(reg);
+  Wire.write(v);
+  return Wire.endTransmission() == 0;
+}
+static int rd(uint8_t reg, uint8_t* out, uint8_t n) {
+  Wire.beginTransmission(ADDR);
+  Wire.write(reg);
+  if (Wire.endTransmission(false) != 0) return 0;
+  int got = Wire.requestFrom(ADDR, n);
+  for (int i = 0; i < got; i++) out[i] = Wire.read();
+  return got;
+}
+static uint8_t whoAmI = 0;
+static bool begin() {
+  uint8_t w = 0;
+  if (rd(0x75, &w, 1) != 1) return false;
+  whoAmI = w;
+  if (w != 0x68 && w != 0x70 && w != 0x71 && w != 0x73 && w != 0x98 && w != 0x72) return false;
+  if (!wr(0x6B, 0x00)) return false;  // PWR_MGMT_1: wake up, internal clock
+  delay(10);                           // setup() only
+  wr(0x1C, 0x08);                      // ACCEL_CONFIG: ±4 g (8192 LSB/g)
+  wr(0x1A, 0x04);                      // CONFIG: low-pass ~20 Hz
+  return true;
+}
+/** Acceleration magnitude in g; false when the read failed. */
+static bool readG(float& g) {
+  uint8_t b[6];
+  if (rd(0x3B, b, 6) != 6) return false;
+  float x = int16_t(b[0] << 8 | b[1]) / 8192.0f, y = int16_t(b[2] << 8 | b[3]) / 8192.0f, z = int16_t(b[4] << 8 | b[5]) / 8192.0f;
+  g = sqrtf(x * x + y * y + z * z);
+  return true;
+}
+}  // namespace imu
 static int tofTimeouts = 0;
 static uint32_t lastImuMs = 0;
 // a sensor that failed to start is never read (reading an absent MPU6050 crashed the board): the device stays in a
@@ -30,13 +69,18 @@ bool begin(const char** failed) {
   tof.setBus(&Wire);
   tof.setTimeout(30);
   pinMode(PIN_RESET_BTN, INPUT_PULLUP);
-  tofOk = tof.init();
-  if (tofOk) tof.startContinuous(0);  // back-to-back ranging
-  mpuOk = mpu.begin(0x68, &Wire);
-  if (mpuOk) {
-    mpu.setAccelerometerRange(MPU6050_RANGE_4_G);
-    mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+  // the VL53L0X can come up stuck after a brown-out or reboot loop: pulse XSHUT (if wired) and retry a few times
+  for (int i = 0; i < 4 && !tofOk; i++) {
+    if (i) {
+      digitalWrite(PIN_TOF_XSHUT, LOW);
+      delay(10);  // setup() only
+      digitalWrite(PIN_TOF_XSHUT, HIGH);
+      delay(20);
+    }
+    tofOk = tof.init();
   }
+  if (tofOk) tof.startContinuous(0);  // back-to-back ranging
+  mpuOk = imu::begin();
   if (!tofOk) *failed = mpuOk ? "tof" : "tof+mpu";
   else if (!mpuOk) *failed = "mpu";
   return tofOk && mpuOk;
@@ -54,12 +98,8 @@ static void readSensors(uint32_t now) {
   }
   if (mpuOk && now - lastImuMs >= 10) {  // 100 Hz
     lastImuMs = now;
-    sensors_event_t a, g, t;
-    if (mpu.getEvent(&a, &g, &t)) {
-      float m = sqrtf(a.acceleration.x * a.acceleration.x + a.acceleration.y * a.acceleration.y +
-                      a.acceleration.z * a.acceleration.z);
-      dev.accG = m / 9.80665f;
-    }
+    float g;
+    if (imu::readG(g)) dev.accG = g;
   }
 }
 
