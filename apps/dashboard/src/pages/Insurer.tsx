@@ -7,7 +7,8 @@ import { RunDetail, Severity } from "../components/run";
 import { Amount, Badge, Callout, Card, Chip, CopyButton, Dl, DotLabel, Empty, Field, Icon, Spinner, Tabs } from "../components/ui";
 import { loadKey } from "../lib/keys";
 import { unwrapWith, type FullCheck } from "../lib/fullcheck";
-import { ClaimBadge, RunRef } from "./MyRobot";
+import { RunRef } from "./MyRobot";
+import { ArkivRecord, ClaimBadge } from "../components/claims";
 
 declare global {
   interface Window {
@@ -185,6 +186,7 @@ function Review({ claim, rec, onDecided }: { claim: any; rec: any; onDecided: ()
           ["Payout wallet", <span className="row"><code className="mono" title={claim.wallet}>{claim.wallet.slice(0, 6)}…{claim.wallet.slice(-4)}</code><CopyButton value={claim.wallet} label="Copy payout wallet" /></span>],
           ["Identity", <span className="row small"><DotLabel tone="ok">Robot owner confirmed</DotLabel><DotLabel tone="ok">Unique person (World ID)</DotLabel></span>],
         ]} />
+        <ArkivRecord arkiv={claim.arkiv} />
         <details className="disclosure">
           <summary>Technical details</summary>
           <Dl rows={[

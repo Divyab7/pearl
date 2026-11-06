@@ -88,6 +88,8 @@ export interface RewardDeps {
   pay: (p: { device: string; episodeId: string; claimant: string; to: string; amountWei: bigint }) => Promise<{ txHash: string }>;
   amountWeiFor: (severity: number) => bigint;
   requireValid: boolean;
+  /** Called after every status change (the Arkiv claim record follows it); must not throw or block. */
+  onChange?: (c: RewardClaim) => void;
 }
 
 export class RewardStore {
@@ -123,7 +125,16 @@ export class RewardDesk {
   }
 
   private step(c: RewardClaim, status: ClaimStatus, note: string, patch: Partial<RewardClaim> = {}): RewardClaim {
-    return this.store.put({ ...c, ...patch, status, history: [...c.history, { ts: new Date().toISOString(), status, note }] });
+    const next = this.store.put({ ...c, ...patch, status, history: [...c.history, { ts: new Date().toISOString(), status, note }] });
+    this.changed(next);
+    return next;
+  }
+  private changed(c: RewardClaim) {
+    try {
+      this.deps.onChange?.(c);
+    } catch {
+      // the public record never blocks a claim
+    }
   }
   private fail(c: RewardClaim, why: string): RewardClaim {
     return this.step(c, "FAILED", why, { failure: why });
@@ -168,6 +179,7 @@ export class RewardDesk {
       history: [{ ts: now, status: "AGENT_PASS", note: "claim opened; fresh World ID Agent Pass verification requested" }],
     });
     const claimId = c.claimId;
+    this.changed(c);
     let prompted!: () => void;
     const promptReady = new Promise<void>((r) => (prompted = r));
     void gate

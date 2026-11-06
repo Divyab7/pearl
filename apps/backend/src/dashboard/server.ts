@@ -35,6 +35,8 @@ import type { HumanCheckResult, HumanGate } from "../human/gate.js";
 import { payReward, poolConfigFromEnv, poolConfigured, readPool } from "../og/anchor.js";
 import { zerobotFromEnv } from "../zerobot/zerobot.js";
 import { errMsg } from "../shared/util.js";
+import { CLAIM_SCHEMA, claimArkivConfigFromEnv, claimReaderConfigured, claimWriterConfigured, createClaimRecord, listClaimRecords, patchClaimRecord } from "../index/arkivClaims.js";
+import { ClaimLedger, type LedgerWriter } from "./claimLedger.js";
 
 export interface DashboardOptions {
   deviceUrl?: string;
@@ -52,6 +54,11 @@ export interface DashboardOptions {
   relayUpload?: (bytes: Uint8Array) => Promise<import("../og/storage.js").UploadReceipt>;
   /** Overrides the Arkiv index read (tests). */
   listIndex?: typeof listIndex;
+  /** Overrides the Arkiv claim-record writer (tests); null = off. */
+  claimWriter?: LedgerWriter | null;
+  /** Overrides the Arkiv claim-record read (tests). */
+  listClaimRecords?: typeof listClaimRecords;
+  claimLedgerFile?: string;
 }
 
 export function createDashboard(opts: DashboardOptions = {}) {
@@ -177,6 +184,8 @@ export function createDashboard(opts: DashboardOptions = {}) {
       anchorAddress: process.env.OG_ANCHOR_ADDRESS ?? null,
       poolAddress: process.env.OG_REWARD_POOL_ADDRESS ?? null,
       arkivSchema: SCHEMA_NAME,
+      claimSchema: CLAIM_SCHEMA,
+      claimWriter: claimArkivConfigFromEnv().writer || null,
     });
   });
 
@@ -597,6 +606,15 @@ export function createDashboard(opts: DashboardOptions = {}) {
 
   // ---------------------------------------------------------------- reward claims
   const anchorCfg = anchorConfigFromEnv();
+  const claimCfg = claimArkivConfigFromEnv();
+  const ledger = new ClaimLedger(
+    opts.claimWriter !== undefined
+      ? opts.claimWriter
+      : envFlag("CLAIMS_ARKIV", "on") && claimWriterConfigured(claimCfg)
+        ? { create: (f) => createClaimRecord(claimCfg, f), patch: (k, f) => patchClaimRecord(claimCfg, k, f) }
+        : null,
+    opts.claimLedgerFile,
+  );
   const rewardDeps: RewardDeps = {
     verify: async (episodeId, dev) => {
       const v = await verifyPublic(episodeId, await publicDeps(episodeId, dev));
@@ -630,9 +648,32 @@ export function createDashboard(opts: DashboardOptions = {}) {
     },
     amountWeiFor: (sev) => (perSeverity * BigInt(sev) > maxReward ? maxReward : perSeverity * BigInt(sev)),
     requireValid: envFlag("CLAIMS_REQUIRE_VALID", "on"),
+    onChange: (c) => void ledger.record(c),
     ...opts.rewardDeps,
   };
   const desk = new RewardDesk(rewardDeps);
+  const withArkiv = <T extends { claimId: string }>(c: T) => ({ ...c, arkiv: ledger.get(c.claimId) });
+
+  // every claim's public facts are mirrored to Arkiv; anyone can read a run's claim history from there
+  const listClaimsFn = opts.listClaimRecords ?? listClaimRecords;
+  app.get("/api/arkiv/claims", async (req, res) => {
+    const q = req.query as { episodeId?: unknown; status?: unknown; device?: unknown };
+    const filter = {
+      ...(typeof q.episodeId === "string" && validId(q.episodeId) ? { episodeId: q.episodeId } : {}),
+      ...(typeof q.status === "string" && /^[A-Z_]{2,20}$/.test(q.status) ? { status: q.status } : {}),
+      ...(typeof q.device === "string" && ethers.isAddress(q.device) ? { device: q.device } : {}),
+    };
+    if (!claimReaderConfigured(claimCfg)) {
+      res.json({ configured: false, items: [] });
+      return;
+    }
+    try {
+      const r = await listClaimsFn(claimCfg, filter);
+      res.json({ configured: true, source: "arkiv", writer: claimCfg.writer, schema: CLAIM_SCHEMA, query: r.query, blockNumber: r.blockNumber, items: r.rows });
+    } catch (e) {
+      res.status(502).json({ configured: true, error: `Arkiv read failed: ${errMsg(e)}`, items: [] });
+    }
+  });
 
   // the reward pool, from 0G Chain only (public facts: address, balance, max payout, recent payouts)
   app.get("/api/pool", async (_req, res) => {
@@ -690,7 +731,7 @@ export function createDashboard(opts: DashboardOptions = {}) {
 
   app.get("/api/claims", (req, res) => {
     const a = requireAccount(req, res);
-    if (a) res.json(desk.list(a.accountId));
+    if (a) res.json(desk.list(a.accountId).map(withArkiv));
   });
   app.post("/api/claims", async (req, res) => {
     const a = requireAccount(req, res);
@@ -710,7 +751,7 @@ export function createDashboard(opts: DashboardOptions = {}) {
     const a = requireAccount(req, res);
     if (!a) return;
     const c = desk.get(String(req.params.id), a.accountId);
-    if (c) res.json(c);
+    if (c) res.json(withArkiv(c));
     else res.status(404).json({ error: "not found" });
   });
   app.post("/api/claims/:id/cancel", (req, res) => {
@@ -743,12 +784,12 @@ export function createDashboard(opts: DashboardOptions = {}) {
 
   // ---------------------------------------------------------------- the insurer's review queue
   app.get("/api/insurer/claims", (req, res) => {
-    if (requireInsurer(req, res)) res.json(desk.listForInsurer());
+    if (requireInsurer(req, res)) res.json(desk.listForInsurer().map(withArkiv));
   });
   app.get("/api/insurer/claims/:id", (req, res) => {
     if (!requireInsurer(req, res)) return;
     const c = desk.getForInsurer(String(req.params.id));
-    if (c) res.json(c);
+    if (c) res.json(withArkiv(c));
     else res.status(404).json({ error: "not found" });
   });
   app.post("/api/insurer/claims/:id/decision", async (req, res) => {

@@ -97,6 +97,17 @@ describe("reward claims: World ID Agent Pass + IDKit Proof of Human", () => {
     await expect(k.decide(c.claimId, { approve: true, reason: "again", by: "0xins" })).rejects.toThrow(/not waiting/);
   });
 
+  it("every status change is handed to the Arkiv record, and a failing record never blocks the claim", async () => {
+    const statuses: string[] = [];
+    const d = deps({ onChange: (c) => { statuses.push(c.status); throw new Error("Arkiv down"); } });
+    const k = desk(d);
+    const c = await k.start(account(), "ep_1", await share("ep_1"));
+    await waitFor(() => k.get(c.claimId, account().accountId)?.status === "IDKIT");
+    await k.idkitResult(c.claimId, account().accountId, { result: proof("claim:ep_1") });
+    expect((await k.decide(c.claimId, { approve: true, reason: "ok", by: "0xins" })).status).toBe("PAID");
+    expect(statuses).toEqual(["AGENT_PASS", "IDKIT", "INSURER_REVIEW", "PAYING", "PAID"]);
+  });
+
   const toReview = async (d: RewardDeps) => {
     const k = desk(d);
     const c = await k.start(account(), "ep_1", await share("ep_1"));

@@ -544,3 +544,4 @@ fieldset.plain:disabled .btn { opacity: .45; cursor: not-allowed; }
 .pool-stats > div { display: grid; gap: 4px; }
 .pool-stats .amount { font-size: 20px; }
 @media (max-width: 760px) { .pool-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.warn-text { color: var(--warn); }

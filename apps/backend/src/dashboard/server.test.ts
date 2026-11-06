@@ -7,6 +7,9 @@ import { sha256Hex } from "../shared/hash.js";
 import { keyId, newRecipientKey, newRunKey, openEpisode, runContext, sealEpisode, sealedBytes, unwrapRunKey, wrapRunKey, type PublicJwk, type SealedEpisode, type WrappedKey } from "../shared/seal.js";
 import { createDashboard } from "./server.js";
 
+process.env.CLAIMS_ARKIV = "off";
+process.env.CLAIM_LEDGER_FILE = `${(await import("node:os")).tmpdir()}/pearl-ledger-test-${process.pid}.json`;
+
 /** A fake device program: answers the device routes the dashboard reads, serving only the LOCKED run. */
 async function fakeDevice() {
   const wallet = ethers.Wallet.createRandom();
@@ -230,6 +233,27 @@ describe("dashboard server (rev 5)", () => {
     // a claim reads the incident from 0G Chain: it gets past the incident checks (stops only at the missing insurer key)
     const c = await fetch(`${s.base}/api/claims`, { method: "POST", headers: H, body: JSON.stringify({ episodeId: log.episodeId, insurerKey: ownerWrap }) });
     expect((await c.json()).error).toMatch(/insurer/);
+    s.close();
+  });
+
+  it("anyone can read a run's claim history from Arkiv (the desk wallet's records only)", async () => {
+    const d = await fakeDevice();
+    const seen: unknown[] = [];
+    const { app } = createDashboard({
+      deviceUrl: "http://device.test", fetchImpl: d.f,
+      listClaimRecords: (async (c: { writer: string }, filter: unknown) => {
+        seen.push({ writer: c.writer, filter });
+        return { query: "q", blockNumber: "7", rows: [{ entityKey: "0xe", claimId: "rc_1", episodeId: "ep_dash_1", device: d.wallet.address.toLowerCase(), status: "PAID", severity: 2, ts: 1, amountWei: "1", payoutTx: "0xpaid" }] };
+      }) as never,
+    });
+    const s = await serve(app);
+    const r = await (await fetch(`${s.base}/api/arkiv/claims?episodeId=ep_dash_1&status=nope!`)).json();
+    if (r.configured) {
+      expect(r).toMatchObject({ source: "arkiv", items: [{ claimId: "rc_1", status: "PAID", payoutTx: "0xpaid" }] });
+      expect(seen[0]).toMatchObject({ filter: { episodeId: "ep_dash_1" } }); // a bad status filter is dropped
+    } else {
+      expect(r).toEqual({ configured: false, items: [] }); // no desk wallet in this environment
+    }
     s.close();
   });
 

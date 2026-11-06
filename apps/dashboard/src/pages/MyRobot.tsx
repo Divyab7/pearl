@@ -10,6 +10,7 @@ import { Amount, Badge, Callout, Card, Chip, Dl, DotLabel, Empty, Field, Icon, S
 import { loadKey } from "../lib/keys";
 import { runContext, wrapRunKey } from "../lib/core";
 import { unwrapWith } from "../lib/fullcheck";
+import { ArkivRecord, ClaimBadge } from "../components/claims";
 
 const DEVICE_LABEL: Record<string, string> = { sim: "Simulated arm", mujoco: "MuJoCo physics arm", serial: "Hardware arm (USB)", ws: "Hardware arm (Wi-Fi)" };
 const STATE_TONE: Record<string, any> = { IDLE: "neutral", MOVING: "accent", WAITING: "accent", FROZEN_HAND: "warn", SAFE: "bad", TRIPPED: "bad" };
@@ -387,6 +388,7 @@ function ClaimsTab({ live, account, linked }: { live: any; account: any; linked:
                 <span className="push"><Amount wei={c.payout?.amountWei ?? c.amountWei} paid={!!c.payout} /></span>
               </header>
               <Stepper steps={claimSteps(c)} />
+              <ArkivRecord arkiv={c.arkiv} />
               {c.status === "AGENT_PASS" && <WorldPrompt prompt={c.agentPass?.prompt} onCancel={() => cancel(c.claimId)} label="Confirm it's you in World App" />}
               {c.status === "IDKIT" && <IdkitStep claim={c} onDone={load} />}
               {c.status === "INSURER_REVIEW" && (
@@ -417,14 +419,7 @@ function ClaimsTab({ live, account, linked }: { live: any; account: any; linked:
   );
 }
 
-const CLAIM_WORD: Record<string, [string, any]> = {
-  AGENT_PASS: ["Confirm it's you", "info"], IDKIT: ["Unique-human check", "info"], INSURER_REVIEW: ["With the insurer", "info"],
-  PAYING: ["Paying", "info"], PAID: ["Paid", "ok"], DENIED: ["Denied", "bad"], FAILED: ["Not paid", "bad"],
-};
-export function ClaimBadge({ status }: { status: string }) {
-  const [w, t] = CLAIM_WORD[status] ?? [status, "neutral"];
-  return <Badge tone={t}>{w}</Badge>;
-}
+export { ClaimBadge };
 
 // ---------------------------------------------------------------- Setup
 function SetupTab({ live, account, refresh, linked }: { live: any; account: any; refresh: () => void; linked: boolean }) {

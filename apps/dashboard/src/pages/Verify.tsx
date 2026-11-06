@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { get } from "../api";
 import { go } from "../router";
 import { IndexBadge, PublicResult, RunHeader, RunList, tamperPublic, useRuns } from "../components/run";
+import { RunClaimsOnArkiv } from "../components/claims";
 import { Callout, Card, Empty, Icon, Spinner, Verdict, verdictOf } from "../components/ui";
 
 /** The stored fingerprint and the edited copy's, with every differing character marked. */
@@ -98,6 +99,7 @@ export function Verify({ tick, runId }: { tick: number; runId?: string }) {
               )}
             </Card>
           )}
+          {runId && v && <RunClaimsOnArkiv episodeId={runId} tick={tick} />}
           {edited && v && (
             <div ref={editedRef}>
               <Card title="What if someone edits it?" sub={`We changed ${edited.tampered} in a copy of the locked file and checked it again.`}>
