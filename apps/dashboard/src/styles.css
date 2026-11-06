@@ -733,3 +733,19 @@ a.spill:hover { text-decoration: none; filter: brightness(1.08); }
   .btn.icon-only { min-height: 36px; min-width: 36px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
+
+/* ---------------------------------------------------------------- plain errors (blocks.tsx PlainError) */
+.perr { display: flex; gap: var(--s2); align-items: flex-start; padding: var(--s3) var(--s4); border-radius: var(--r3); border: 1px solid var(--bad-line); background: var(--bad-soft); font-size: var(--fs-ui); line-height: 1.45; }
+.perr > .icon { color: var(--bad); flex: none; margin-top: 2px; }
+.perr.tone-warn { border-color: var(--warn-line); background: var(--warn-soft); }
+.perr.tone-warn > .icon { color: var(--warn); }
+.perr.inline { padding: 0; border: 0; background: none; }
+.perr-main { display: grid; gap: 4px; min-width: 0; }
+.perr-title { font-weight: 650; }
+.perr-foot { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
+.perr-foot .tech { padding-top: 0; border-top: 0; }
+.perr-raw { word-break: break-word; color: var(--text-2); }
+
+/* ---------------------------------------------------------------- readability (body ≥ 15px; failsafe step) */
+.rolecard-body { font-size: var(--fs-ui); }
+.st-safe { color: var(--warn); font-weight: 600; } .st-safe .step-dot { background: var(--warn-soft); border-color: var(--warn); color: var(--warn); }

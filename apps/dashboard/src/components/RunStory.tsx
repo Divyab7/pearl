@@ -19,7 +19,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { get, short, useConfig } from "../api";
 import { fullCheck, type FullCheck } from "../lib/fullcheck";
 import { to } from "../router";
-import { outcomeWord, OUTCOME_TONE, TIP, VERDICT_WORDS } from "../lib/words";
+import { isTechy, outcomeWord, OUTCOME_TONE, plainError, TIP, VERDICT_BADGE, VERDICT_WORDS } from "../lib/words";
 import { ArmView3D } from "./ArmView3D";
 import { ErrorState, InfoTip, Skeleton, StatusPill, TechDetails } from "./blocks";
 import { ARKIV_EXPLORER } from "./claims";
@@ -43,6 +43,10 @@ export interface RunStoryProps {
   actions?: ReactNode;
   onPublic?: (v: any) => void;
   onFull?: (fc: FullCheck | null) => void;
+  /** the locked part speaks to a visitor (not signed in as the owner): who can see inside + the example link */
+  lockedPublic?: boolean;
+  /** render bundled SAMPLE data (src/example) as an unlocked run, labelled "Example" everywhere, no verify claims */
+  example?: { pub: any; meta: any; fc: FullCheck };
 }
 
 export const SEVERITY_WORD = ["none", "low", "minor", "serious"] as const;
@@ -101,7 +105,7 @@ function decisionStep(r: any, photo: string | null | undefined): StoryStep {
   const a = String(p.action ?? "").toUpperCase();
   const base = { key: `r${r.idx}`, recIdx: r.idx, time: r.ts, photo, quote: p.reason, confidence: typeof p.confidence === "number" ? p.confidence : undefined };
   if (r.source !== "0g") {
-    return { ...base, icon: "alert", tone: "bad", title: "AI unreachable", body: "The robot couldn't reach the AI, so it stopped safely on its own.", quote: undefined };
+    return { ...base, icon: "shield", tone: "warn", title: "Stopped safely · AI offline", body: "The AI couldn't be reached, so the robot's safety rule stopped the arm instead of guessing.", quote: undefined };
   }
   const override = r.override ? " A safety rule kept the arm stopped." : "";
   switch (r.checkpoint) {
@@ -203,8 +207,54 @@ function useReplay(kf: ReturnType<typeof keyframes>) {
 // ---------------------------------------------------------------- component
 export function RunStory({
   episodeId, mode, device, unlock, lockedReason, lockedAction, unlockLabel = "Unlock details", titleAs = "h2",
-  startAtIncident = false, autoUnlock = false, tick, actions, onPublic, onFull,
+  startAtIncident = false, autoUnlock = false, tick, actions, onPublic, onFull, lockedPublic = false, example,
 }: RunStoryProps) {
+  if (example) return <ExampleStory example={example} titleAs={titleAs} actions={actions} />;
+  return <LiveRunStory {...{ episodeId, mode, device, unlock, lockedReason, lockedAction, unlockLabel, titleAs, startAtIncident, autoUnlock, tick, actions, onPublic, onFull, lockedPublic }} />;
+}
+
+/** The built-in example: sample data shown as an unlocked run. Labelled everywhere; it claims nothing about proof. */
+function ExampleStory({ example, titleAs = "h2", actions }: { example: NonNullable<RunStoryProps["example"]>; titleAs?: "h1" | "h2" | "h3"; actions?: ReactNode }) {
+  const H = titleAs;
+  const s = example.pub.sealed;
+  const story = useMemo(() => storyOf(example.fc.log, example.fc.frames), [example]);
+  const sev: number = s.severity ?? 0;
+  return (
+    <article className="rs has-incident rs-example" aria-labelledby="rs-t-example">
+      <div className="rs-example-banner" role="note">
+        <Icon name="info" size={18} />
+        <span><b>Example — sample data, not a live run.</b> This shows what the owner sees after unlocking one of their runs. Nothing here was recorded on 0G or checked.</span>
+      </div>
+      <header className="rs-head">
+        <div className="rs-head-text">
+          <div className="eyebrow">Example run · sample data</div>
+          <H className="rs-title" id="rs-t-example"><span>What an unlocked run looks like</span></H>
+          <div className="rs-pills">
+            <StatusPill tone="info" title="Bundled sample data, not a live run">Example · sample data</StatusPill>
+            <StatusPill tone={OUTCOME_TONE[s.outcome] ?? "neutral"}>{outcomeWord(s.outcome, true)}</StatusPill>
+            <StatusPill tone={severityTone(sev)} title="How serious the AI judged the incident: 1 low, 2 minor, 3 serious">Severity {sev} · {SEVERITY_WORD[sev]}</StatusPill>
+          </div>
+          <p className="rs-verdict">The task, every AI decision with what the camera saw, and a 3D replay. On a real run these are locked; only the owner (or the insurer, for a claimed incident) can open them.</p>
+        </div>
+        {actions && <div className="rs-head-actions">{actions}</div>}
+      </header>
+      <UnlockedBody log={example.fc.log} story={story} startAtIncident={false} tail={(n) => (
+        <li className="rs-step tone-neutral">
+          <span className="rs-n" aria-hidden>{n}</span>
+          <div className="rs-step-main">
+            <div className="rs-step-title"><Icon name="db" size={15} /> On a live run: locked, signed and recorded</div>
+            <p className="rs-step-body">A real run is encrypted and signed on the robot, fingerprinted on 0G Chain, stored on 0G Storage and labelled on Arkiv. This example is sample data, so it has none of those.</p>
+          </div>
+        </li>
+      )} />
+    </article>
+  );
+}
+
+function LiveRunStory({
+  episodeId, mode, device, unlock, lockedReason, lockedAction, unlockLabel = "Unlock details", titleAs = "h2",
+  startAtIncident = false, autoUnlock = false, tick, actions, onPublic, onFull, lockedPublic = false,
+}: Omit<RunStoryProps, "example">) {
   const cfg = useConfig();
   const [pub, setPub] = useState<any>(null);
   const [pubErr, setPubErr] = useState("");
@@ -281,7 +331,7 @@ export function RunStory({
         <ErrorState title="Couldn't check this run" onRetry={() => setRetry((n) => n + 1)}>
           {/not found|no run|404/i.test(pubErr) ? "We couldn't find this run. The link may be old or mistyped." : "The proof services didn't answer. This doesn't mean anything was changed."}
         </ErrorState>
-        {pubErr && <TechDetails><p className="small muted">{pubErr}</p><RunIdRow id={episodeId} /></TechDetails>}
+        {pubErr && <TechDetails><p className="small muted">{pubErr}</p><RunIdRow id={episodeId!} /></TechDetails>}
       </article>
     );
   }
@@ -326,7 +376,7 @@ export function RunStory({
           <div className="rs-pills">
             {outcome && <StatusPill tone={OUTCOME_TONE[outcome] ?? "neutral"}>{outcomeWord(outcome, incident)}</StatusPill>}
             <StatusPill tone={verdictTone} title={VERDICT_WORDS[kind].explain}>
-              {VERDICT_WORDS[kind].word}
+              {VERDICT_BADGE[kind]}
             </StatusPill>
             {incident && <StatusPill tone={severityTone(sev)} title="How serious the AI judged the incident: 1 low, 2 minor, 3 serious">Severity {sev} · {SEVERITY_WORD[sev]}</StatusPill>}
           </div>
@@ -343,7 +393,15 @@ export function RunStory({
         </div>
       </header>
 
-      {err && <div className="rs-alert tone-bad" role="alert"><Icon name="alert" size={16} /> <span><b>Couldn't unlock.</b> {err}</span></div>}
+      {err && (
+        <div className="rs-alert tone-bad" role="alert">
+          <Icon name="alert" size={16} />
+          <span>
+            <b>Couldn't unlock.</b> {plainError(err, "The key in this browser couldn't open this run. Check you're using the right key on the Account page, then try again.")}
+            {isTechy(err) && <TechDetails boxless><code className="mono small">{err}</code></TechDetails>}
+          </span>
+        </div>
+      )}
       {incident && (
         <div className={`rs-alert tone-${severityTone(sev)}`}>
           <Icon name="alert" size={16} />
@@ -365,16 +423,29 @@ export function RunStory({
           <ol className="rs-steps" aria-label="What happened, step by step">
             <li className="rs-step rs-step-locked">
               <span className="rs-n" aria-hidden><Icon name="lock" size={14} /></span>
-              <div className="rs-step-main">
-                <div className="rs-step-title">The task, the AI's decisions{photos ? <> and {photos} camera {photos === 1 ? "photo" : "photos"}</> : " and the camera photos"} are locked</div>
-                <p className="rs-step-body">
-                  {mode === "public" ? "Only the owner, or the insurer for a claimed incident, can open them."
-                    : unlock ? `Only a key holder can open them, in this browser. Choose “${unlockLabel}” to see what the AI saw and decided.`
+              {(mode === "public" || (lockedPublic && !unlock)) ? (
+                <div className="rs-step-main">
+                  <div className="rs-step-title">Only the owner can see inside<InfoTip text={TIP.locked} /></div>
+                  <p className="rs-step-body">
+                    The task, the AI's decisions and {photos ? <>{photos} camera {photos === 1 ? "photo" : "photos"}</> : "the camera photos"}.{" "}
+                    {kind === "ok" ? <>Anyone can verify it wasn't altered ({pubPassed} of {pubRan} checks passed).</> : <>Anyone can check whether it was altered.</>}
+                  </p>
+                  <div className="rs-step-action row">
+                    <a className="btn" href={to.exampleRun()}><Icon name="eye" size={15} /> See an example unlocked run</a>
+                    {mode !== "public" && lockedAction}
+                  </div>
+                </div>
+              ) : (
+                <div className="rs-step-main">
+                  <div className="rs-step-title">The task, the AI's decisions{photos ? <> and {photos} camera {photos === 1 ? "photo" : "photos"}</> : " and the camera photos"} are locked</div>
+                  <p className="rs-step-body">
+                    {unlock ? `Only a key holder can open them, in this browser. Choose “${unlockLabel}” to see what the AI saw and decided.`
                       : lockedReason ?? "Only the owner, or the insurer for a claimed incident, can open them."}
-                  <InfoTip text={TIP.locked} />
-                </p>
-                {mode !== "public" && !unlock && lockedAction && <div className="rs-step-action">{lockedAction}</div>}
-              </div>
+                    <InfoTip text={TIP.locked} />
+                  </p>
+                  {!unlock && lockedAction && <div className="rs-step-action">{lockedAction}</div>}
+                </div>
+              )}
             </li>
             {s && (
               <li className="rs-step tone-neutral">

@@ -10,12 +10,12 @@ import { RunStory, runTime, SEVERITY_WORD } from "../components/RunStory";
 import { Dl, Icon, Spinner, Stepper, verdictOf, type Step, type VerdictKind } from "../components/ui";
 import { useAccount } from "../lib/account";
 import { ownerUnlock } from "../lib/ownerUnlock";
-import { outcomeWord, OUTCOME_TONE, ROBOT_LINK, ROBOT_STATE, TIP } from "../lib/words";
+import { EXAMPLE, EXAMPLE_ID } from "../example";
+import { isTechy, outcomeWord, OUTCOME_TONE, plainError, ROBOT_LINK, robotName, ROBOT_STATE, TIP } from "../lib/words";
 import "./robot.css";
 
 type Live = ReturnType<typeof useLive>;
 
-const DEVICE_LABEL: Record<string, string> = { sim: "Simulated arm", mujoco: "Physics-simulated arm", serial: "Robot arm (USB)", ws: "Robot arm (Wi-Fi)" };
 const STATE_TONE: Record<string, "neutral" | "info" | "warn" | "bad"> = { IDLE: "neutral", MOVING: "info", WAITING: "info", FROZEN_HAND: "warn", SAFE: "bad", TRIPPED: "bad" };
 const TERMINAL = ["DONE", "ABORTED", "FAILSAFE_STOPPED", "TRIPPED"];
 
@@ -28,6 +28,15 @@ export function Robot({ live, runId }: { live: Live; runId?: string }) {
 // ---------------------------------------------------------------- one run's story (owner)
 function RunPage({ live, account, runId }: { live: Live; account: any; runId: string }) {
   const u = ownerUnlock(live, account);
+  if (runId === EXAMPLE_ID) {
+    return (
+      <div className="page rb-page">
+        <a className="rb-back" href={to.robot()}><Icon name="arrow" size={14} /> <span>Robot and all runs</span></a>
+        <RunStory episodeId={EXAMPLE_ID} mode="public" titleAs="h1" example={EXAMPLE}
+          actions={<a className="btn ghost" href={to.proof()}>Check a real run</a>} />
+      </div>
+    );
+  }
   const action = account === undefined ? null
     : !account ? <a className="btn" href={to.account()}>Owner sign-in</a>
       : u.next === "setup" ? <a className="btn" href={to.account()}>Go to Account</a> : null;
@@ -42,6 +51,7 @@ function RunPage({ live, account, runId }: { live: Live; account: any; runId: st
         unlock={u.unlock ? () => u.unlock!(runId) : null}
         lockedReason={account === undefined ? "Checking your sign-in…" : u.reason}
         lockedAction={action}
+        lockedPublic={account === null}
         actions={<a className="btn ghost" href={to.proof(runId)}>Share proof</a>}
       />
     </div>
@@ -52,21 +62,22 @@ function RunPage({ live, account, runId }: { live: Live; account: any; runId: st
 function RobotHome({ live }: { live: Live }) {
   const { tel, status, state } = live;
   const [access, setAccess] = useState<any>(undefined);
-  const [msg, setMsg] = useState<{ tone: "ok" | "bad"; text: string } | null>(null);
+  const [msg, setMsg] = useState<{ tone: "ok" | "bad"; text: string; raw?: string } | null>(null);
   const [busy, setBusy] = useState("");
   useEffect(() => {
     get("/api/access").then(setAccess).catch(() => setAccess(null));
   }, [live.tick]);
   const allowed = !!access?.allowed;
   const online = live.connected !== false && !!state?.device;
-  const name: string = state?.deviceId ?? "Robot";
+  const name = robotName(state?.deviceKind);
+  const running = !!status?.episodeId && !!status?.phase && status.phase !== "IDLE" && !TERMINAL.includes(status.phase);
 
   const act = (label: string, path: string, body?: unknown, done?: string) => {
     setBusy(label);
     setMsg(null);
     return post(path, body)
-      .then((r) => setMsg({ tone: "ok", text: done ?? r.note ?? `${label}: done.` }))
-      .catch((e) => setMsg({ tone: "bad", text: `${label}: ${e.message}` }))
+      .then((r) => setMsg({ tone: "ok", text: done ?? (r.note && !isTechy(r.note) ? r.note : `${label}: done.`) }))
+      .catch((e) => setMsg({ tone: "bad", text: `${label}: ${plainError(e, "the robot didn't accept that right now. Try again in a moment.")}`, raw: isTechy(e) ? e.message : undefined }))
       .finally(() => setBusy(""));
   };
 
@@ -74,19 +85,19 @@ function RobotHome({ live }: { live: Live }) {
   return (
     <div className="page rb-page">
       <PageHeader
-        title={<>Robot <span className="rb-name">{name}</span></>}
+        title={<>Robot <span className="rb-name" title={state?.deviceId ? `Technical id: ${state.deviceId}` : undefined}>{name}</span></>}
         description={
           <span className="rb-sub">
             <StatusPill tone={online ? "ok" : live.connected === null && !state ? "neutral" : "bad"} pulse={online}>
               {online ? ROBOT_LINK.online : live.connected === null && !state ? ROBOT_LINK.connecting : ROBOT_LINK.offline}
             </StatusPill>
-            {state?.deviceKind && <span>{DEVICE_LABEL[state.deviceKind] ?? "Robot arm"}</span>}
             {online && stateWord && <StatusPill tone={STATE_TONE[tel.state] ?? "neutral"}>{stateWord}</StatusPill>}
           </span>
         }
         actions={online && allowed ? (
-          <button type="button" className="btn rb-stop" onClick={() => act("Stop", "/api/control/stop", undefined, "Stop sent. The robot stops where it is.")}>
-            <Icon name="x" size={16} /> Stop the robot
+          <button type="button" className={`btn rb-stop ${running ? "armed" : ""}`} onClick={() => act("Emergency stop", "/api/control/stop", undefined, "Stop sent. The robot stops where it is.")}
+            title={running ? "Stops the arm where it is, right now" : "Nothing is running. Use this to stop the arm at once if it ever moves unexpectedly."}>
+            <Icon name="x" size={16} /> {running ? "Stop the robot" : "Emergency stop"}
           </button>
         ) : null}
       />
@@ -108,12 +119,15 @@ function RobotHome({ live }: { live: Live }) {
 
 // ---------------------------------------------------------------- live panel
 function LivePanel({ live, access, busy, act, msg }: {
-  live: Live; access: any; busy: string; act: (label: string, path: string, body?: unknown, done?: string) => Promise<void>; msg: { tone: "ok" | "bad"; text: string } | null;
+  live: Live; access: any; busy: string; act: (label: string, path: string, body?: unknown, done?: string) => Promise<void>; msg: { tone: "ok" | "bad"; text: string; raw?: string } | null;
 }) {
   const { tel, status, records, state, cut0g } = live;
   const hasCam = !!state?.cameraKind && state.cameraKind !== "none";
-  const arm: ArmProps = { joints: tel?.joints, scene: tel?.scene, ring: ringClass(tel?.status?.ring), label: DEVICE_LABEL[state?.deviceKind] ?? "arm", showAngles: false };
+  const arm: ArmProps = { joints: tel?.joints, scene: tel?.scene, ring: ringClass(tel?.status?.ring), label: robotName(state?.deviceKind), showAngles: false };
   const allowed = !!access?.allowed;
+  const [color, setColor] = useState("red");
+  const [from, setFrom] = useState("A2");
+  const task = { color, from, setColor, setFrom };
   return (
     <div className="rb-live">
       <section className="rb-cam-col" aria-label="Live view">
@@ -134,10 +148,10 @@ function LivePanel({ live, access, busy, act, msg }: {
           <h2 className="sect-title" id="rb-doing-t">What it's doing</h2>
           <LiveStepper live={live} />
           <LatestAnswer records={records} hasCam={hasCam} episodeId={status?.episodeId} />
-          <TaskForm live={live} access={access} busy={busy} act={act} />
-          <div aria-live="polite" className="rb-msg-wrap">{msg && <p className={`rb-msg tone-${msg.tone}`} role={msg.tone === "bad" ? "alert" : undefined}><Icon name={msg.tone === "ok" ? "check" : "alert"} size={14} /> {msg.text}</p>}</div>
+          <TaskForm live={live} access={access} busy={busy} act={act} task={task} />
+          <div aria-live="polite" className="rb-msg-wrap">{msg && <p className={`rb-msg tone-${msg.tone}`} role={msg.tone === "bad" ? "alert" : undefined}><Icon name={msg.tone === "ok" ? "check" : "alert"} size={14} /> {msg.text}</p>}{msg?.raw && <TechDetails boxless><code className="mono small">{msg.raw}</code></TechDetails>}</div>
         </section>
-        {allowed && <Drills live={live} cut0g={cut0g} act={act} busy={busy} />}
+        {allowed && <Drills live={live} cut0g={cut0g} act={act} busy={busy} task={task} />}
       </div>
     </div>
   );
@@ -269,12 +283,22 @@ function LiveStepper({ live }: { live: Live }) {
   const incidentNow = phase === "INCIDENT_DECIDING";
   const at = phase === "PLANNING" ? 0 : ["MOVING_TO_PICK", "VERIFYING_GRASP"].includes(phase) ? 1 : ["MOVING_TO_PLACE", "VERIFYING_PLACE"].includes(phase) ? 2
     : incidentNow ? (has("VERIFY_GRASP") ? 2 : has("PLAN") ? 1 : 0) : -1;
-  const failedAt = phase === "DONE" || !ended ? -1 : !has("PLAN") ? 0 : !has("VERIFY_GRASP") ? 1 : 2;
+  // a failsafe stop is the safety feature working: amber "stopped safely" at the step where the AI was unreachable
+  const failsafe = phase === "FAILSAFE_STOPPED";
+  const fsRec = records.find((r: any) => r.kind === "decision" && r.source !== "0g");
+  const fsAt = fsRec ? ({ PLAN: 0, VERIFY_GRASP: 1, VERIFY_PLACE: 2 } as Record<string, number>)[fsRec.checkpoint] : undefined;
+  const failedAt = phase === "DONE" || !ended ? -1
+    : failsafe && fsAt !== undefined ? fsAt
+      : !has("PLAN") ? 0 : !has("VERIFY_GRASP") ? 1 : 2;
   const recorded = meta?.anchor?.status === "ok" || meta?.relay?.state === "done";
   const relayWaiting = meta?.relay && ["queued", "sent", "submitting"].includes(meta.relay.state);
   const recFailed = meta?.anchor?.status === "failed" && !meta?.relay;
   const base = ["Plan", "Grip", "Drop"].map((label, i): Step => {
-    if (ended) return { label, state: phase === "DONE" ? "done" : i < failedAt ? "done" : i === failedAt ? "failed" : "todo" };
+    if (ended) {
+      if (phase === "DONE" || i < failedAt) return { label, state: "done" };
+      if (i !== failedAt) return { label, state: "todo" };
+      return failsafe ? { label, state: "safe", note: "AI offline", title: TIP.failsafe } : { label, state: "failed" };
+    }
     // running: if we missed the start (page opened mid-run), infer from the phase
     const done = i < at || (i === 0 && has("PLAN") && at !== 0) || (i === 1 && has("VERIFY_GRASP") && at > 1);
     return { label, state: done ? "done" : i === at ? "active" : "todo", ...(i === at && incidentNow ? { note: "safety pause" } : {}) };
@@ -287,7 +311,8 @@ function LiveStepper({ live }: { live: Live }) {
   const sentence = !ended
     ? (incidentNow ? "Safety pause: the AI is judging what happened." : phase === "PLANNING" ? "Looking at the table and planning the pick." : at === 1 ? "Picking up the cube." : at === 2 ? "Carrying it to the bin." : "Working.")
     : phase === "DONE" ? (recorded ? "Done, locked and recorded." : "Done and locked. Recording it now.")
-      : `${outcomeWord(phase === "FAILSAFE_STOPPED" ? "FAILSAFE" : phase)}. The run is still locked and recorded as proof.`;
+      : failsafe ? "Stopped safely · AI offline. The AI couldn't be reached, so the robot's safety rule stopped the arm instead of guessing. The run is still locked and recorded as proof."
+        : `${outcomeWord(phase)}. The run is still locked and recorded as proof.`;
   return (
     <div className="rb-stepper">
       <Stepper steps={steps} />
@@ -327,15 +352,15 @@ function LatestAnswer({ records, hasCam, episodeId }: { records: any[]; hasCam: 
   const p = last.parsed ?? {};
   const failsafe = last.source !== "0g";
   return (
-    <div className={`rb-answer ${failsafe ? "tone-bad" : ""}`}>
+    <div className={`rb-answer ${failsafe ? "tone-warn" : ""}`}>
       {snap && snap.idx === last.idx && <img className="rb-snap" src={snap.url} alt="The camera view as the AI answered" />}
       <div className="rb-answer-text">
         <div className="rb-answer-head">
-          <span className="eyebrow">{failsafe ? "AI unreachable" : `Latest AI answer · ${CP_WORD[last.checkpoint] ?? last.checkpoint}`}</span>
-          <InfoTip text={TIP.ogCompute} />
+          <span className="eyebrow">{failsafe ? "Stopped safely · AI offline" : `Latest AI answer · ${CP_WORD[last.checkpoint] ?? last.checkpoint}`}</span>
+          <InfoTip text={failsafe ? TIP.failsafe : TIP.ogCompute} />
         </div>
         {failsafe
-          ? <p>The robot couldn't reach the AI, so it stopped safely on its own.</p>
+          ? <p>The AI couldn't be reached, so the robot's safety rule stopped the arm instead of guessing.</p>
           : <blockquote className="rb-quote">“{p.reason ?? String(p.action ?? "").toLowerCase()}”</blockquote>}
         {!failsafe && typeof p.confidence === "number" && <span className="rb-conf">{Math.round(p.confidence * 100)}% sure</span>}
         {last.override && <p className="small rb-override">A safety rule kept the arm stopped.</p>}
@@ -344,10 +369,10 @@ function LatestAnswer({ records, hasCam, episodeId }: { records: any[]; hasCam: 
   );
 }
 
-function TaskForm({ live, access, busy, act }: { live: Live; access: any; busy: string; act: (label: string, path: string, body?: unknown, done?: string) => Promise<void> }) {
-  const { status, state } = live;
-  const [color, setColor] = useState("red");
-  const [from, setFrom] = useState("A2");
+type TaskPick = { color: string; from: string; setColor: (c: string) => void; setFrom: (f: string) => void };
+function TaskForm({ live, access, busy, act, task }: { live: Live; access: any; busy: string; act: (label: string, path: string, body?: unknown, done?: string) => Promise<void>; task: TaskPick }) {
+  const { status } = live;
+  const { color, from, setColor, setFrom } = task;
   const running = !!status?.episodeId && !TERMINAL.includes(status.phase) && status.phase !== "IDLE";
   if (access === undefined) return <Skeleton height={44} label="Checking access" />;
   if (!access?.allowed) {
@@ -368,18 +393,13 @@ function TaskForm({ live, access, busy, act }: { live: Live; access: any; busy: 
         <select value={from} onChange={(e) => setFrom(e.target.value)} aria-describedby="rb-task-l"><option value="A1">from A1</option><option value="A2">from A2</option><option value="A3">from A3</option></select>
       </label>
       <button type="submit" className="btn primary" disabled={!!busy || running}>{busy === "Start" ? <Spinner label="Starting" /> : null} {running ? "Running…" : "Start run"}</button>
-      {state?.modules?.robotZerobot === "on" && (
-        <span className="rb-remote">
-          <button type="button" className="btn ghost" disabled={!!busy || running} onClick={() => act("Start remotely", "/api/zerobot/dispatch", { color, from }, "Task sent on 0G Chain. The robot picks it up in a few seconds.")}>Start remotely</button>
-          <InfoTip text="Sends the task as a signed command on 0G Chain; the robot picks it up from there, so it can be told what to do from anywhere." />
-        </span>
-      )}
     </form>
   );
 }
 
-function Drills({ live, cut0g, act, busy }: { live: Live; cut0g: boolean; act: (label: string, path: string, body?: unknown, done?: string) => Promise<void>; busy: string }) {
-  const { state } = live;
+function Drills({ live, cut0g, act, busy, task }: { live: Live; cut0g: boolean; act: (label: string, path: string, body?: unknown, done?: string) => Promise<void>; busy: string; task: { color: string; from: string } }) {
+  const { state, status } = live;
+  const running = !!status?.episodeId && !TERMINAL.includes(status.phase) && status.phase !== "IDLE";
   const sim = state?.deviceKind === "sim" || state?.deviceKind === "mujoco";
   const [netPick, setNetPick] = useState<boolean | null>(null);
   const netOff = netPick ?? state?.net === "offline";
@@ -387,7 +407,7 @@ function Drills({ live, cut0g, act, busy }: { live: Live; cut0g: boolean; act: (
   return (
     <div className="rb-drills-row">
       <details className="rb-drills">
-        <summary><Icon name="chevron" size={14} /> Drills <span className="muted small">practise what happens when things go wrong</span></summary>
+        <summary><Icon name="chevron" size={14} /> Drills and advanced <span className="muted small">practise what happens when things go wrong</span></summary>
         <div className="rb-drill-grid">
           <button type="button" className={`btn ${cut0g ? "rb-on" : ""}`} aria-pressed={cut0g} disabled={!!busy}
             onClick={() => act(cut0g ? "Restore the AI" : "Cut the AI", "/api/control/cut0g", { on: !cut0g }, cut0g ? "AI connection restored." : "AI cut. The robot must stop safely on its own at the next step.")}>
@@ -404,6 +424,15 @@ function Drills({ live, cut0g, act, busy }: { live: Live; cut0g: boolean; act: (
             {state?.deviceKind === "mujoco" && <button type="button" className="btn" disabled={!!busy} onClick={() => act("Reset table", "/api/sim/reset-table", undefined, "Table reset: cubes back in their slots.")}>Reset table<span>cubes back in place</span></button>}
           </>}
         </div>
+        {state?.modules?.robotZerobot === "on" && (
+          <div className="rb-remote">
+            <button type="button" className="btn ghost" disabled={!!busy || running}
+              onClick={() => act("Remote start", "/api/zerobot/dispatch", { color: task.color, from: task.from }, "Task sent as a signed command on 0G Chain. The robot picks it up in a few seconds.")}>
+              Start via signed remote command (zerobot)
+            </button>
+            <InfoTip text={`Advanced: sends the task above (${task.color} cube from ${task.from}) as a signed command on 0G Chain through zerobot. The robot picks it up from there, so it can be told what to do from anywhere.`} />
+          </div>
+        )}
       </details>
       <div className="rb-secondary">
         <button type="button" className="btn ghost" disabled={!!busy} onClick={() => act("Safe pose", "/api/control/safe", undefined, "Moving to the safe pose.")}>Safe pose</button>

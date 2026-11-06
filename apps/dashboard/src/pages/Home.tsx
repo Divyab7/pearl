@@ -1,6 +1,6 @@
 // Home (#/): what Pearl is in one line, who you are (owner / insurer / anyone checking), the real robot live, its
 // latest runs with a real check of each, how it works, the counters and the offline story. One screen on desktop.
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ago, get, og, post, type useLive } from "../api";
 import { go, to } from "../router";
 import { ArmView3D } from "../components/ArmView3D";
@@ -9,7 +9,7 @@ import { shortWhen, useRuns } from "../components/run";
 import { EmptyState, ErrorState, InfoTip, RoleCard, RunRow, Skeleton, Stat, StatusPill, StepStrip } from "../components/blocks";
 import { Icon, Spinner, verdictOf, type VerdictKind } from "../components/ui";
 import { useAccount, useInsurerSession } from "../lib/account";
-import { HOW_IT_WORKS, OFFLINE_LINE, OUTCOME_TONE, PRODUCT_SHORT, ROBOT_STATE, TIP, outcomeWord } from "../lib/words";
+import { BUILT_ON, HOW_IT_WORKS, OFFLINE_LINE, OUTCOME_TONE, PRODUCT_HOW, PRODUCT_SHORT, PRODUCT_WHY, ROBOT_STATE, TIP, outcomeWord, plainError, robotName } from "../lib/words";
 import "./home.css";
 
 type Live = ReturnType<typeof useLive>;
@@ -45,19 +45,27 @@ export function Home({ live }: { live: Live }) {
   const stats = useStats(live.tick + retry);
   const latest: any[] = (runs.items ?? []).slice(0, 4);
   const runsLoading = !runs.source && !runs.err && latest.length === 0;
+  const [lastCheck, setLastCheck] = useState<{ kind: VerdictKind; at: number } | null>(null);
 
   return (
     <div className="page home">
       <header className="home-hero">
         <h1 className="home-title">{PRODUCT_SHORT}</h1>
         <p className="home-tagline">
-          <span>An AI decides every move</span><span aria-hidden className="home-dot">·</span>
-          <span>every moment is sealed as proof</span><span aria-hidden className="home-dot">·</span>
-          <span>it gets out even without internet</span>
+          <b className="home-why">{PRODUCT_WHY}</b> {PRODUCT_HOW} The proof gets out <a href={to.offline()}>even without internet</a>.
+        </p>
+        <p className="home-built" aria-label="Built on">
+          <span className="home-built-label">Built on</span>
+          {BUILT_ON.map((b, i) => (
+            <span key={b.name} className="home-built-item">
+              {i > 0 && <span aria-hidden className="home-dot">·</span>}
+              <b>{b.name}</b><InfoTip text={b.role} label={`What does ${b.name} do in Pearl?`} below />
+            </span>
+          ))}
         </p>
       </header>
 
-      <Roles tick={live.tick} />
+      <Roles tick={live.tick} latestId={latest[0]?.episodeId} />
 
       <div className="home-grid">
         <LivePanel live={live} latestId={latest[0]?.episodeId} />
@@ -75,14 +83,14 @@ export function Home({ live }: { live: Live }) {
                 ? <EmptyState title="No runs yet" icon="robot" plain>Start a run and it shows up here, sealed.</EmptyState>
                 : (
                   <ul className="rrows home-rrows">
-                    {latest.map((r) => <li key={r.episodeId}><HomeRunRow run={r} /></li>)}
+                    {latest.map((r, i) => <li key={r.episodeId}><HomeRunRow run={r} onVerdict={i === 0 ? setLastCheck : undefined} /></li>)}
                   </ul>
                 )}
           <p className="home-source small">
             {runs.source === "arkiv" ? "Found through public labels on Arkiv" : runs.source ? "Read from the robot" : " "}
             {runs.source && <InfoTip text={TIP.arkiv} label="Where this list comes from" />}
           </p>
-          <Counters stats={stats} />
+          <Counters stats={stats} tick={live.tick} lastCheck={lastCheck} />
         </section>
       </div>
 
@@ -102,7 +110,7 @@ export function Home({ live }: { live: Live }) {
 
 /* ------------------------------------------------------------------------------------------------ who are you? */
 
-function Roles({ tick }: { tick: number }) {
+function Roles({ tick, latestId }: { tick: number; latestId?: string }) {
   const { account } = useAccount(tick);
   const insurer = useInsurerSession(tick);
   const [waiting, setWaiting] = useState<number | null>(null);
@@ -113,43 +121,52 @@ function Roles({ tick }: { tick: number }) {
 
   return (
     <nav className="home-roles" aria-label="Choose what you came to do">
-      <RoleCard icon="robot" href={to.robot()} primary title="I own a robot"
+      <RoleCard icon="robot" href={to.robot()} title="I own a robot"
         body={account ? "You're signed in. Watch it live, see runs, claim incidents." : "Watch it live, see runs, claim incidents."} />
       <RoleCard icon="wallet" href={to.insurance("insurer")}
         title={<>I'm an insurer{waiting ? <span className="home-new">{waiting} new</span> : null}</>}
         body="Review claims, check the proof, approve and pay." />
-      <CheckRecord />
+      <CheckRecord latestId={latestId} />
     </nav>
   );
 }
 
-/** The third role: check any run by its code, right here. */
-function CheckRecord() {
+/** The third role: verify the newest run in one click, or paste any run ID. */
+function CheckRecord({ latestId }: { latestId?: string }) {
+  const [paste, setPaste] = useState(false);
   const [id, setId] = useState("");
   const [err, setErr] = useState("");
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (paste) input.current?.focus(); }, [paste]);
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const v = id.trim();
-    if (!v) return go("proof");
-    if (!RUN_ID.test(v)) return setErr("A run code starts with ep_, like ep_20261106061500_ab12.");
+    const raw = id.trim();
+    const v = raw.match(/ep_[A-Za-z0-9_-]+/)?.[0] ?? raw;
+    if (!v) return setErr("Paste a run ID, like ep_20261106061500_ab12.");
+    if (!RUN_ID.test(v)) return setErr("A run ID starts with ep_, like ep_20261106061500_ab12.");
     go("proof", v);
   };
   return (
-    <form className="rolecard home-check" onSubmit={submit} role="search" aria-labelledby="home-check-title">
+    <div className="rolecard home-check" role="group" aria-labelledby="home-check-title">
       <span className="rolecard-icon" aria-hidden><Icon name="shield" size={22} /></span>
       <span className="home-check-main">
         <span className="rolecard-title" id="home-check-title">Check a record</span>
+        <span className="rolecard-body">Anyone, no sign-in. See if a run was altered; its contents stay locked.</span>
         <span className="home-check-row">
-          <label htmlFor="home-run-id" className="sr-only">Run code</label>
-          <input id="home-run-id" className="mono" value={id} placeholder="ep_…" spellCheck={false} autoComplete="off"
-            onChange={(e) => { setId(e.target.value); setErr(""); }} aria-invalid={!!err} aria-describedby={err ? "home-check-err" : "home-check-hint"} />
-          <button type="submit" className="btn">Check</button>
+          <a className="btn primary" href={latestId ? to.proof(latestId) : to.proof()}><Icon name="shield" size={15} /> Verify the latest run</a>
+          {!paste && <button type="button" className="linkish small" onClick={() => setPaste(true)} aria-expanded={false}>or paste a run ID</button>}
         </span>
-        {err
-          ? <span className="home-check-err small" id="home-check-err" role="alert">{err}</span>
-          : <span className="rolecard-body" id="home-check-hint">Anyone, no sign-in. Contents stay locked.</span>}
+        {paste && (
+          <form className="home-check-row" onSubmit={submit} role="search" aria-label="Check a run by its ID">
+            <label htmlFor="home-run-id" className="sr-only">Run ID</label>
+            <input ref={input} id="home-run-id" className="mono" value={id} placeholder="Run ID, e.g. ep_20261106…" spellCheck={false} autoComplete="off"
+              onChange={(e) => { setId(e.target.value); setErr(""); }} aria-invalid={!!err} aria-describedby={err ? "home-check-err" : undefined} />
+            <button type="submit" className="btn">Check</button>
+          </form>
+        )}
+        {err && <span className="home-check-err small" id="home-check-err" role="alert">{err}</span>}
       </span>
-    </form>
+    </div>
   );
 }
 
@@ -184,7 +201,7 @@ function LivePanel({ live, latestId }: { live: Live; latestId?: string }) {
     setMsg(null);
     post("/api/episode/start", task)
       .then(() => setMsg({ bad: false, text: `Started: picking the ${task.color} cube. Watch it here.` }))
-      .catch((e) => setMsg({ bad: true, text: `Couldn't start: ${e.message}` }))
+      .catch((e) => setMsg({ bad: true, text: plainError(e, "Couldn't start a run right now. Open the Robot page to see why, or try again.") }))
       .finally(() => setBusy(false));
   };
 
@@ -193,9 +210,7 @@ function LivePanel({ live, latestId }: { live: Live; latestId?: string }) {
     <section className="home-live sect boxed" aria-labelledby="home-live-title">
       <div className="home-live-head">
         <h2 className="sect-title" id="home-live-title">The robot, live</h2>
-        <StatusPill tone={connected ? "ok" : connected === false ? "bad" : "neutral"} pulse={!!connected} sub={state?.deviceId}>
-          {connected ? "Live" : connected === false ? "Offline" : "Connecting"}
-        </StatusPill>
+        {state && <span className="home-live-name" title={state.deviceId ? `Robot ${state.deviceId}` : undefined}>{robotName(state.deviceKind)}</span>}
       </div>
 
       <div className="home-stage">
@@ -214,7 +229,7 @@ function LivePanel({ live, latestId }: { live: Live; latestId?: string }) {
             AI {Math.round(conf * 100)}% sure<InfoTip text={TIP.ogCompute} label="Which AI?" />
           </span>
         )}
-        {running && lastDecision && lastDecision.source !== "0g" && <span className="home-conf warn">AI unreachable: stopping safely</span>}
+        {running && lastDecision && lastDecision.source !== "0g" && <span className="home-conf warn" title={TIP.failsafe}>AI offline: stopping safely</span>}
         {running && status?.records ? <span className="home-sealed"><Icon name="lock" size={13} /> {status.records} moments sealed</span> : null}
       </div>
 
@@ -227,7 +242,7 @@ function LivePanel({ live, latestId }: { live: Live; latestId?: string }) {
         ) : (
           <StatusPill tone="neutral" title={access?.why ?? undefined}>View only</StatusPill>
         )}
-        {latestId && <a className="btn" href={to.proof(latestId)}><Icon name="alert" size={15} /> Try tampering</a>}
+        {latestId && <a className="btn" href={to.proof(latestId, { tamper: true })} title="Opens the latest run's proof and changes one byte of a copy, so you can watch it get caught"><Icon name="alert" size={15} /> Try tampering</a>}
         <a className="home-more push" href={to.robot()}>Open the robot <Icon name="arrow" size={14} /></a>
       </div>
       {!task && canStart && !running && <p className="small muted">No cube on the table. Put one back from the Robot page.</p>}
@@ -238,12 +253,17 @@ function LivePanel({ live, latestId }: { live: Live; latestId?: string }) {
 
 /* ------------------------------------------------------------------------------------------------ runs + counters */
 
-/** One run: time, outcome in words and a real public check of it (Untouched / Not verified / Tampered). */
-function HomeRunRow({ run }: { run: any }) {
+/** One run: time, outcome in words and a real public check of it (Verified / Not verified / Altered). */
+function HomeRunRow({ run, onVerdict }: { run: any; onVerdict?: (c: { kind: VerdictKind; at: number }) => void }) {
   const [verdict, setVerdict] = useState<VerdictKind | null | undefined>(undefined);
   useEffect(() => {
     let stop = false;
-    get(`/api/verify/${encodeURIComponent(run.episodeId)}`).then((v) => !stop && setVerdict(verdictOf(v))).catch(() => !stop && setVerdict(null));
+    get(`/api/verify/${encodeURIComponent(run.episodeId)}`).then((v) => {
+      if (stop) return;
+      const k = verdictOf(v);
+      setVerdict(k);
+      onVerdict?.({ kind: k, at: Date.now() });
+    }).catch(() => !stop && setVerdict(null));
     return () => {
       stop = true;
     };
@@ -273,15 +293,31 @@ function useStats(tick: number) {
   return s;
 }
 
-function Counters({ stats }: { stats: Stats | null | undefined }) {
+/** The insurance pool (GET /api/pool): balance when it's set up, null when unknown. */
+function usePoolBalance(tick: number) {
+  const [p, setP] = useState<{ configured: boolean; balanceWei?: string } | null>(null);
+  useEffect(() => {
+    get("/api/pool").then(setP).catch(() => setP(null));
+  }, [tick]);
+  return p;
+}
+
+const hhmm = (t: number) => new Date(t).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+
+function Counters({ stats, tick, lastCheck }: { stats: Stats | null | undefined; tick: number; lastCheck: { kind: VerdictKind; at: number } | null }) {
+  const pool = usePoolBalance(tick);
   if (stats === null) return null; // unknown: hide rather than show wrong numbers
   if (stats === undefined) return <div className="home-stats"><Skeleton height={56} label="Loading counters" /></div>;
   const paid = stats.paidWei && stats.paidWei !== "0" ? og(stats.paidWei) : undefined;
+  const balance = pool?.configured && pool.balanceWei ? og(pool.balanceWei) : null;
+  const verified = lastCheck?.kind === "ok" ? `last verified ${hhmm(lastCheck.at)} ✓` : undefined;
   return (
     <div className="home-stats stats" aria-label="Totals">
-      {stats.runs != null && <Stat size="sm" value={`${stats.runs}${stats.runsCapped ? "+" : ""}`} label="runs recorded" hint={stats.lastRunAt ? `last ${ago(stats.lastRunAt)}` : undefined} />}
+      {stats.runs != null && <Stat size="sm" value={`${stats.runs}${stats.runsCapped ? "+" : ""}`} label="runs recorded" hint={verified ?? (stats.lastRunAt ? `last ${ago(stats.lastRunAt)}` : undefined)} />}
       {stats.incidents != null && <Stat size="sm" value={stats.incidents} label="incidents" tone={stats.incidents > 0 ? "warn" : undefined} />}
-      {stats.claimsPaid != null && <Stat size="sm" value={stats.claimsPaid} label="claims paid" hint={paid} info={TIP.pool} />}
+      {stats.claimsPaid != null && stats.claimsPaid > 0
+        ? <Stat size="sm" value={stats.claimsPaid} label="claims paid" hint={balance ? `${balance} left in the pool` : paid} info={TIP.pool} />
+        : balance ? <Stat size="sm" value={balance} label="insurance pool" hint="ready to pay claims" info={TIP.pool} /> : null}
     </div>
   );
 }

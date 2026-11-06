@@ -2,6 +2,7 @@
 import { useRef, useState } from "react";
 import { createKey, downloadBackup, loadKey, publicOf, restoreFromFile, type KeyRecord, type Role } from "../lib/keys";
 import { Badge, Callout, Icon, Spinner } from "./ui";
+import { PlainError } from "./blocks";
 
 export function KeySetup({ role, who, registeredKid, register, afterReplace, embedded = false, quiet = false, onKeyChange }: {
   /** Hide the key fingerprint and the "kept in this browser" note (the host page shows them elsewhere). */
@@ -106,7 +107,7 @@ export function KeySetup({ role, who, registeredKid, register, afterReplace, emb
         </Callout>
       )}
       <input ref={file} type="file" accept="application/json,.json" hidden onChange={(e) => e.target.files?.[0] && restore(e.target.files[0])} />
-      {msg && <Callout tone={msg.tone}>{msg.text}</Callout>}
+      {msg && (msg.tone === "bad" ? <PlainError raw={msg.text} fallback="Couldn't set up the key in this browser. Try again." /> : <Callout tone={msg.tone}>{msg.text}</Callout>)}
     </div>
   );
 }

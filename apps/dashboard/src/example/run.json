@@ -1,0 +1,218 @@
+{
+ "v": 2,
+ "episodeId": "ep_example",
+ "deviceId": "example-arm",
+ "armId": "arm-1",
+ "task": {
+  "task": "pick",
+  "color": "red",
+  "from": "A2",
+  "to": "BIN"
+ },
+ "outcome": "TRIPPED",
+ "startedAt": "2026-11-06T05:22:00.000Z",
+ "endedAt": "2026-11-06T05:22:12.600Z",
+ "records": [
+  {
+   "data": {
+    "armConfigHash": "c5c3fd0fe663f54f0185d383bbd0debb1d687291ef84a7b03d2b4d2f675cf097",
+    "deviceState": "IDLE",
+    "task": {
+     "color": "red",
+     "from": "A2",
+     "task": "pick",
+     "to": "BIN"
+    }
+   },
+   "episodeId": "ep_example",
+   "ev": "episode_start",
+   "idx": 0,
+   "kind": "event",
+   "prevHash": "0000000000000000000000000000000000000000000000000000000000000000",
+   "ts": "2026-11-06T05:22:02.200Z",
+   "v": 2,
+   "recordHash": "fe5481dbdde02cb55f90f566b75abedbec5dc69cbd077008cc4d10386e9d10af"
+  },
+  {
+   "checkpoint": "PLAN",
+   "clientRequestId": "c-4101",
+   "clientRequestIdEchoed": true,
+   "commandsSent": [
+    "move:[90,100,80,10]",
+    "move:[90,125,60,10]",
+    "grip:close",
+    "move:[90,100,80,80]"
+   ],
+   "cost": null,
+   "episodeId": "ep_example",
+   "error": null,
+   "frameHash": "example-plan",
+   "frameRoot": "example-plan",
+   "httpRequestId": null,
+   "idx": 1,
+   "kind": "decision",
+   "latencyMs": 1240,
+   "model": "glm-5.3-flash",
+   "override": null,
+   "parsed": {
+    "action": "PICK",
+    "confidence": 0.94,
+    "reason": "Red cube clearly visible at slot A2; the path to the bin is clear.",
+    "slot": "A2"
+   },
+   "policy": "PICK A2",
+   "prevHash": "fe5481dbdde02cb55f90f566b75abedbec5dc69cbd077008cc4d10386e9d10af",
+   "promptHash": "0000000000000000000000000000000000000000000000000000000000000000",
+   "provider": "example",
+   "providerIdentity": null,
+   "raw": "{\"action\":\"PICK\",\"slot\":\"A2\",\"reason\":\"Red cube clearly visible at slot A2; the path to the bin is clear.\",\"confidence\":0.94}",
+   "reasoning": null,
+   "requestId": "example-req-1004",
+   "source": "0g",
+   "teeVerified": true,
+   "telemetry": {
+    "accG": 1,
+    "joints": [
+     90,
+     90,
+     90,
+     10
+    ],
+    "state": "WAITING",
+    "tofMm": 600
+   },
+   "ts": "2026-11-06T05:22:04.500Z",
+   "v": 2,
+   "zgResKey": null,
+   "recordHash": "1a2ab0704448784bd29c1a6a9cb371ac2862e32c5765325c6334011d385e3020"
+  },
+  {
+   "checkpoint": "VERIFY_GRASP",
+   "clientRequestId": "c-4102",
+   "clientRequestIdEchoed": true,
+   "commandsSent": [
+    "move:[160,95,85,80]",
+    "grip:open",
+    "move:[90,90,90,10]"
+   ],
+   "cost": null,
+   "episodeId": "ep_example",
+   "error": null,
+   "frameHash": "example-grasp",
+   "frameRoot": "example-grasp",
+   "httpRequestId": null,
+   "idx": 2,
+   "kind": "decision",
+   "latencyMs": 1330,
+   "model": "glm-5.3-flash",
+   "override": null,
+   "parsed": {
+    "action": "CONTINUE",
+    "confidence": 0.91,
+    "grasped": true,
+    "reason": "Gripper closed on the red cube; the cube is lifted off A2."
+   },
+   "policy": "CONTINUE → carry to BIN",
+   "prevHash": "1a2ab0704448784bd29c1a6a9cb371ac2862e32c5765325c6334011d385e3020",
+   "promptHash": "0000000000000000000000000000000000000000000000000000000000000000",
+   "provider": "example",
+   "providerIdentity": null,
+   "raw": "{\"action\":\"CONTINUE\",\"grasped\":true,\"reason\":\"Gripper closed on the red cube; the cube is lifted off A2.\",\"confidence\":0.91}",
+   "reasoning": null,
+   "requestId": "example-req-1005",
+   "source": "0g",
+   "teeVerified": true,
+   "telemetry": {
+    "accG": 1,
+    "joints": [
+     90,
+     90,
+     90,
+     10
+    ],
+    "state": "WAITING",
+    "tofMm": 600
+   },
+   "ts": "2026-11-06T05:22:06.300Z",
+   "v": 2,
+   "zgResKey": null,
+   "recordHash": "9ebba01eaf45e738b3bd9e2695edf9b5582bed6b3fc66c06e4ebdf07884f93fe"
+  },
+  {
+   "data": {
+    "accG": 2.4
+   },
+   "episodeId": "ep_example",
+   "ev": "trip_bump",
+   "idx": 3,
+   "kind": "event",
+   "prevHash": "9ebba01eaf45e738b3bd9e2695edf9b5582bed6b3fc66c06e4ebdf07884f93fe",
+   "ts": "2026-11-06T05:22:08.500Z",
+   "v": 2,
+   "recordHash": "6f6bd67c90521cf51e5d88a2fb24ad1d9344b0b966c8b97ee689ccfa0e094f8f"
+  },
+  {
+   "checkpoint": "INCIDENT",
+   "clientRequestId": "c-4103",
+   "clientRequestIdEchoed": true,
+   "commandsSent": [],
+   "cost": null,
+   "episodeId": "ep_example",
+   "error": null,
+   "frameHash": "example-incident",
+   "frameRoot": "example-incident",
+   "httpRequestId": null,
+   "idx": 4,
+   "kind": "decision",
+   "latencyMs": 1420,
+   "model": "glm-5.3-flash",
+   "override": null,
+   "parsed": {
+    "action": "SAFE_STOP",
+    "confidence": 0.87,
+    "file_claim": true,
+    "reason": "The table was knocked while carrying; the arm stopped within its limits. Minor: no damage seen.",
+    "severity": 2
+   },
+   "policy": "model SAFE_STOP; hard trip → stay tripped; claim filed",
+   "prevHash": "6f6bd67c90521cf51e5d88a2fb24ad1d9344b0b966c8b97ee689ccfa0e094f8f",
+   "promptHash": "0000000000000000000000000000000000000000000000000000000000000000",
+   "provider": "example",
+   "providerIdentity": null,
+   "raw": "{\"action\":\"SAFE_STOP\",\"severity\":2,\"reason\":\"The table was knocked while carrying; the arm stopped within its limits. Minor: no damage seen.\",\"confidence\":0.87,\"file_claim\":true}",
+   "reasoning": null,
+   "requestId": "example-req-1006",
+   "source": "0g",
+   "teeVerified": true,
+   "telemetry": {
+    "accG": 1,
+    "joints": [
+     90,
+     90,
+     90,
+     10
+    ],
+    "state": "WAITING",
+    "tofMm": 600
+   },
+   "ts": "2026-11-06T05:22:10.800Z",
+   "v": 2,
+   "zgResKey": null,
+   "recordHash": "d7ef32ef51a004791f0d7b2deaa453da8e4312830a54a21b705dbd364eee5c85"
+  },
+  {
+   "data": {
+    "outcome": "TRIPPED"
+   },
+   "episodeId": "ep_example",
+   "ev": "episode_end",
+   "idx": 5,
+   "kind": "event",
+   "prevHash": "d7ef32ef51a004791f0d7b2deaa453da8e4312830a54a21b705dbd364eee5c85",
+   "ts": "2026-11-06T05:22:12.600Z",
+   "v": 2,
+   "recordHash": "870a4a9705c08862175cd827fd0447d5cb1b04066db77ff3fa8eb2bb794f3350"
+  }
+ ],
+ "headHash": "870a4a9705c08862175cd827fd0447d5cb1b04066db77ff3fa8eb2bb794f3350"
+}

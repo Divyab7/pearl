@@ -1,14 +1,14 @@
-// Proof (public): anyone checks a run is untouched, and can watch a one-byte edit get caught. No sign-in; the run's
+// Proof (public): anyone checks a run was not altered, and can watch a one-byte edit get caught. No sign-in; the run's
 // contents stay locked. Plain words up front; fingerprints, contracts and the five technical checks live in
 // <TechDetails>.
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { get, useConfig } from "../api";
 import { go, to } from "../router";
 import { tamperPublic, useRuns, fullWhen, shortWhen, dayOf } from "../components/run";
-import { EmptyState, ErrorState, RunRow, Section, Skeleton, StatusPill, TechDetails, InfoTip } from "../components/blocks";
+import { EmptyState, ErrorState, PlainError, RunRow, Section, Skeleton, StatusPill, TechDetails, InfoTip } from "../components/blocks";
 import { Amount, Chip, Icon, Spinner, Verdict, verdictOf, type Tone, type VerdictKind } from "../components/ui";
 import { ARKIV_EXPLORER } from "../components/claims";
-import { CLAIM_STATE, OUTCOME_TONE, TIP, outcomeWord } from "../lib/words";
+import { CLAIM_STATE, OUTCOME_TONE, TIP, isTechy, outcomeWord } from "../lib/words";
 import "./proof.css";
 
 const ID_RE = /^ep_[A-Za-z0-9_-]+$/;
@@ -18,7 +18,7 @@ type Check = { id: number; name: string; status: "PASS" | "FAIL" | "SKIPPED"; de
 
 /**
  * The checks as the page reads them. A run with no record on 0G Chain at all is "missing" (we can't prove it), not
- * evidence of an edit: only a real mismatch says Tampered.
+ * evidence of an edit: only a real mismatch says Altered.
  */
 function normalise(v: any): { checks: Check[]; kind: VerdictKind; notFound: boolean } {
   const checks: Check[] = v.checks.map((c: Check) => (c.id === 1 && c.status === "FAIL" && !v.anchor ? { ...c, missing: true } : c));
@@ -100,7 +100,7 @@ function TechChecks({ checks }: { checks: Check[] }) {
 function verdictLine(kind: VerdictKind, notFound: boolean, checks: Check[], v: any) {
   if (notFound) return "We found no record of this run. Check the id is right; a run that just finished can take a minute to appear.";
   const robot = v.source === "robot" ? " (The stored copy was read from the robot itself.)" : "";
-  if (kind === "ok") return `Matches exactly what the robot signed and recorded on 0G. Nobody has changed it.${robot}`;
+  if (kind === "ok") return `Matches exactly what the robot signed and recorded on 0G. Nobody has altered it.${robot}`;
   if (kind === "incomplete") {
     const gone = checks.filter((c) => c.status === "FAIL").map((c) => PLAIN[c.id]?.title.toLowerCase() ?? c.name);
     return `Part of the proof is missing (${gone.join(", ")}), so we can't confirm it yet. Nothing shows it was changed.`;
@@ -134,7 +134,7 @@ function FingerprintDiff({ a, b }: { a: string; b: string }) {
 }
 
 /** The hero demo: copy the locked file, change one byte, check the copy the same way. */
-function TryIt({ runId, v, kind }: { runId: string; v: any; kind: VerdictKind }) {
+function TryIt({ runId, v, kind, autoStart = false }: { runId: string; v: any; kind: VerdictKind; autoStart?: boolean }) {
   const [edited, setEdited] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -156,6 +156,14 @@ function TryIt({ runId, v, kind }: { runId: string; v: any; kind: VerdictKind })
     tamperPublic(runId).then(setEdited).catch((e) => setErr(e.message)).finally(() => setBusy(false));
   };
   const can = !!v.sealed;
+  // #/proof/<id>/tamper (Home's "Try tampering"): run the one-byte demo once, then drop the flag so Back/refresh is calm
+  const autoRan = useRef("");
+  useEffect(() => {
+    if (!autoStart || !can || autoRan.current === runId) return;
+    autoRan.current = runId;
+    history.replaceState(null, "", to.proof(runId));
+    run();
+  }, [autoStart, can, runId]);
   const editedKind = edited ? normalise(edited).kind : null;
   return (
     <section className={`pf-try ${edited ? "done" : ""}`} aria-labelledby={hid}>
@@ -175,11 +183,11 @@ function TryIt({ runId, v, kind }: { runId: string; v: any; kind: VerdictKind })
       </div>
       {edited && (
         <div className="stack">
-          <h3 className="sr-only" tabIndex={-1} ref={result}>Result: the edited copy is {editedKind === "bad" ? "tampered" : "not verified"}. We changed {edited.tampered}.</h3>
+          <h3 className="sr-only" tabIndex={-1} ref={result}>Result: the edited copy is {editedKind === "bad" ? "altered" : "not verified"}. We changed {edited.tampered}.</h3>
           {v.rootHash && edited.editedRoot && <FingerprintDiff a={v.rootHash} b={edited.editedRoot} />}
         </div>
       )}
-      {err && <p className="pf-err" role="alert"><Icon name="alert" size={14} /> Couldn't make the edited copy: {err}</p>}
+      {err && <PlainError raw={err} fallback="Couldn't make the edited copy right now. Try again." onRetry={run} />}
       <div className="row">
         {!edited
           ? <button type="button" className="btn primary lg" onClick={run} disabled={!can || busy}>{busy ? <><Spinner label="Editing and checking" /> Checking the copy…</> : <><Icon name="spark" /> Edit 1 byte</>}</button>
@@ -337,7 +345,7 @@ function SearchBar({ runId, runs }: { runId?: string; runs: any }) {
   );
 }
 
-export function Proof({ tick, runId }: { tick: number; runId?: string }) {
+export function Proof({ tick, runId, tamper = false }: { tick: number; runId?: string; tamper?: boolean }) {
   const runs = useRuns(tick);
   const cfg = useConfig();
   const [v, setV] = useState<any>(null);
@@ -376,7 +384,7 @@ export function Proof({ tick, runId }: { tick: number; runId?: string }) {
     <div className="page proof">
       <header className="pagehead pf-head">
         <div className="pagehead-text">
-          <h1 className="pagehead-title">Is this record untouched?</h1>
+          <h1 className="pagehead-title">Has this record been altered?</h1>
           <p className="pagehead-desc">Check any robot run against what the robot signed and recorded on 0G. No sign-in needed, and the run's contents stay locked.</p>
         </div>
       </header>
@@ -390,7 +398,7 @@ export function Proof({ tick, runId }: { tick: number; runId?: string }) {
           <div className="pf-side">
             <EmptyState title="The answer shows here" icon="shield"
               action={runs.items[0] ? <a className="btn primary" href={to.proof(runs.items[0].episodeId)}>Check the latest run</a> : undefined}>
-              One clear word: <b>Untouched</b>, <b>Not verified</b> or <b>Tampered</b>. Then try changing a single byte and watch the check catch it.
+              One clear word: <b>Verified</b>, <b>Not verified</b> or <b>Altered</b>. Then try changing a single byte and watch the check catch it.
             </EmptyState>
           </div>
         </div>
@@ -398,7 +406,8 @@ export function Proof({ tick, runId }: { tick: number; runId?: string }) {
 
       {runId && err && !v && (
         <ErrorState title="Couldn't check this run" onRetry={() => setAgain((a) => a + 1)}>
-          The check service didn't answer ({err}). The record itself is unaffected.
+          {/not found|404/i.test(err) ? "We couldn't find this run. Check the run ID; a run that just finished can take a minute to appear." : "The check service didn't answer. The record itself is unaffected."}
+          {isTechy(err) && <TechDetails boxless><code className="mono small">{err}</code></TechDetails>}
         </ErrorState>
       )}
 
@@ -446,7 +455,7 @@ export function Proof({ tick, runId }: { tick: number; runId?: string }) {
             </TechDetails>
           </section>
           <div className="pf-side">
-            {v.sealed ? <TryIt runId={runId} v={v} kind={n.kind} /> : (
+            {v.sealed ? <TryIt runId={runId} v={v} kind={n.kind} autoStart={tamper} /> : (
               <section className="pf-try">
                 <span className="eyebrow">Try it</span>
                 <p className="muted">The one-byte demo needs a run whose locked file can be read. Pick a recent run to try it.</p>

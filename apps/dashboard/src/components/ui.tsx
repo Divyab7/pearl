@@ -264,16 +264,18 @@ export function Tabs({ tabs, active, onChange, label }: { tabs: { id: string; la
 
 export interface Step {
   label: string;
-  state: "done" | "active" | "todo" | "failed";
+  /** "safe": stopped on purpose by a safety rule (amber, not a failure) */
+  state: "done" | "active" | "todo" | "failed" | "safe";
   note?: string;
+  title?: string;
 }
 
 export function Stepper({ steps }: { steps: Step[] }) {
   return (
     <ol className="stepper">
       {steps.map((s, i) => (
-        <li key={s.label} className={`step st-${s.state}`} aria-current={s.state === "active" ? "step" : undefined}>
-          <span className="step-dot">{s.state === "done" ? <Icon name="check" size={12} /> : s.state === "failed" ? <Icon name="x" size={12} /> : i + 1}</span>
+        <li key={s.label} className={`step st-${s.state}`} aria-current={s.state === "active" ? "step" : undefined} title={s.title}>
+          <span className="step-dot">{s.state === "done" ? <Icon name="check" size={12} /> : s.state === "failed" ? <Icon name="x" size={12} /> : s.state === "safe" ? <Icon name="shield" size={12} /> : i + 1}</span>
           <span className="step-label">{s.label}</span>
           {s.note && <span className="step-note">{s.note}</span>}
         </li>
