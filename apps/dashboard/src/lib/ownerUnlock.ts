@@ -30,9 +30,9 @@ export function ownerUnlock(live: any, account: any, linkedOverride?: boolean): 
   const owns = linked || (offline && !!account?.robots?.length);
   const ready = !!(account && account.key && rec && rec.kid === account.key.kid && owns);
   const reason = !account ? "Sign in as the robot's owner to unlock its runs."
-    : !account.key ? "Set up your unlock key in Account first."
-      : !rec || rec.kid !== account.key.kid ? "Your unlock key is not in this browser. Restore it from your backup in Account."
-        : !owns ? "Link this robot to your account in Account first." : "";
+    : !account.key ? "Set up your unlock key in Settings first."
+      : !rec || rec.kid !== account.key.kid ? "Your unlock key is not in this browser. Restore it from your backup in Settings."
+        : !owns ? "Link this robot to your account in Settings first." : "";
   const unlock = ready
     ? async (episodeId: string, device?: string | null) => {
       const wrap = await get(`/api/episodes/${encodeURIComponent(episodeId)}/key`);

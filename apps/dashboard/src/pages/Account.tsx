@@ -92,7 +92,7 @@ export function Account({ live }: { live: any }) {
   if (account === undefined) {
     return (
       <div className="page account narrowish">
-        <PageHeader title="Account" description="Loading your account…" />
+        <PageHeader title="Settings" description="Loading your account…" />
         <Skeleton lines={6} label="Loading your account" />
       </div>
     );
@@ -122,9 +122,9 @@ export function Account({ live }: { live: any }) {
   return (
     <div className="page account">
       <PageHeader
-        title="Account"
+        title="Settings"
         description="Four steps so only you can open your robot's records, and insurance payouts reach you."
-        actions={<a className="ac-insurer" href={to.insurance("insurer")}><Icon name="wallet" size={14} /> Insurer? Sign in with your wallet</a>}
+        actions={<a className="ac-insurer" href={to.insurerSettings()}><Icon name="wallet" size={14} /> Insurer? Open the insurer workspace</a>}
       />
       <div className="ac-grid">
         <div className="stack">
@@ -223,7 +223,7 @@ export function Account({ live }: { live: any }) {
           {doneN === 4 && (
             <div className="ac-done">
               <Icon name="check" size={16} />
-              <span>You're all set. <a href={to.robot()}>Go to your robot</a> or <a href={to.insurance("owner")}>see insurance</a>.</span>
+              <span>You're all set. <a href={to.robot()}>Go to your robot</a> or <a href={to.claims()}>see insurance</a>.</span>
             </div>
           )}
         </div>

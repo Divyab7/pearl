@@ -10,6 +10,7 @@ import { RunStory, runTime, SEVERITY_WORD } from "../components/RunStory";
 import { Dl, Icon, Spinner, Stepper, verdictOf, type Step, type VerdictKind } from "../components/ui";
 import { useAccount } from "../lib/account";
 import { ownerUnlock } from "../lib/ownerUnlock";
+import { DEMO_ACTIONS_NOTE, demoActive } from "../lib/demo";
 import { EXAMPLE, EXAMPLE_ID } from "../example";
 import { isTechy, outcomeWord, OUTCOME_TONE, plainError, ROBOT_LINK, robotName, ROBOT_STATE, TIP } from "../lib/words";
 import "./robot.css";
@@ -33,13 +34,13 @@ function RunPage({ live, account, runId }: { live: Live; account: any; runId: st
       <div className="page rb-page">
         <a className="rb-back" href={to.robot()}><Icon name="arrow" size={14} /> <span>Robot and all runs</span></a>
         <RunStory episodeId={EXAMPLE_ID} mode="public" titleAs="h1" example={EXAMPLE}
-          actions={<a className="btn ghost" href={to.proof()}>Check a real run</a>} />
+          actions={<a className="btn ghost" href={to.verify()}>Check a real run</a>} />
       </div>
     );
   }
   const action = account === undefined ? null
-    : !account ? <a className="btn" href={to.account()}>Owner sign-in</a>
-      : u.next === "setup" ? <a className="btn" href={to.account()}>Go to Account</a> : null;
+    : !account ? <a className="btn" href={to.settings()}>Owner sign-in</a>
+      : u.next === "setup" ? <a className="btn" href={to.settings()}>Go to Settings</a> : null;
   return (
     <div className="page rb-page">
       <a className="rb-back" href={to.robot()}><Icon name="arrow" size={14} /> <span>Robot and all runs</span></a>
@@ -52,7 +53,7 @@ function RunPage({ live, account, runId }: { live: Live; account: any; runId: st
         lockedReason={account === undefined ? "Checking your sign-in…" : u.reason}
         lockedAction={action}
         lockedPublic={account === null}
-        actions={<a className="btn ghost" href={to.proof(runId)}>Share proof</a>}
+        actions={<a className="btn ghost" href={to.verify(runId)}>Share proof</a>}
       />
     </div>
   );
@@ -77,7 +78,9 @@ function RobotHome({ live }: { live: Live }) {
     setMsg(null);
     return post(path, body)
       .then((r) => setMsg({ tone: "ok", text: done ?? (r.note && !isTechy(r.note) ? r.note : `${label}: done.`) }))
-      .catch((e) => setMsg({ tone: "bad", text: `${label}: ${plainError(e, "the robot didn't accept that right now. Try again in a moment.")}`, raw: isTechy(e) ? e.message : undefined }))
+      .catch((e) => demoActive() && e?.status === 409
+        ? setMsg({ tone: "ok", text: DEMO_ACTIONS_NOTE })
+        : setMsg({ tone: "bad", text: `${label}: ${plainError(e, "the robot didn't accept that right now. Try again in a moment.")}`, raw: isTechy(e) ? e.message : undefined }))
       .finally(() => setBusy(""));
   };
 
@@ -379,7 +382,7 @@ function TaskForm({ live, access, busy, act, task }: { live: Live; access: any; 
     return (
       <div className="rb-viewonly">
         <StatusPill tone="neutral"><Icon name="eye" size={14} /> View only</StatusPill>
-        <span className="muted small">{access?.why ?? "Only the robot's signed-in owner can operate it."} <a href={to.account()}>Owner sign-in</a></span>
+        <span className="muted small">{access?.why ?? "Only the robot's signed-in owner can operate it."} <a href={to.settings()}>Owner sign-in</a></span>
       </div>
     );
   }

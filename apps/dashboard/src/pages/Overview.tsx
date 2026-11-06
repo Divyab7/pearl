@@ -1,15 +1,15 @@
-// Home (#/): what Pearl is in one line, who you are (owner / insurer / anyone checking), the real robot live, its
-// latest runs with a real check of each, how it works, the counters and the offline story. One screen on desktop.
-import { useEffect, useRef, useState, type FormEvent } from "react";
+// Owner overview (#/app/owner): the robot live, its latest runs with a real check of each, and the counters.
+// (What Pearl is and who it's for now lives on the public landing page.)
+import { useEffect, useState } from "react";
 import { ago, get, og, post, type useLive } from "../api";
-import { go, to } from "../router";
+import { to } from "../router";
 import { ArmView3D } from "../components/ArmView3D";
 import { ringClass } from "../components/ArmView";
 import { shortWhen, useRuns } from "../components/run";
-import { EmptyState, ErrorState, InfoTip, RoleCard, RunRow, Skeleton, Stat, StatusPill, StepStrip } from "../components/blocks";
+import { EmptyState, ErrorState, InfoTip, PageHeader, RunRow, Skeleton, Stat, StatusPill } from "../components/blocks";
 import { Icon, Spinner, verdictOf, type VerdictKind } from "../components/ui";
-import { useAccount, useInsurerSession } from "../lib/account";
-import { BUILT_ON, HOW_IT_WORKS, OFFLINE_LINE, OUTCOME_TONE, PRODUCT_HOW, PRODUCT_SHORT, PRODUCT_WHY, ROBOT_STATE, TIP, outcomeWord, plainError, robotName } from "../lib/words";
+import { OUTCOME_TONE, ROBOT_STATE, TIP, outcomeWord, plainError, robotName } from "../lib/words";
+import { DEMO_ACTIONS_NOTE, demoActive } from "../lib/demo";
 import "./home.css";
 
 type Live = ReturnType<typeof useLive>;
@@ -26,51 +26,26 @@ const PHASE_NOW: Record<string, string> = {
 const ENDED = ["DONE", "ABORTED", "FAILSAFE_STOPPED", "TRIPPED"];
 const ENDED_OUTCOME: Record<string, string> = { DONE: "DONE", ABORTED: "ABORTED", FAILSAFE_STOPPED: "FAILSAFE", TRIPPED: "TRIPPED" };
 
-/** The 4 how-it-works steps: titles from HOW_IT_WORKS, one short plain line each (no tech names), and an ⓘ that
- *  names the technology behind the step. */
-const STEP_LINE = [
-  "An AI looks through the camera and picks each move.",
-  "Every moment is locked and signed by the robot itself.",
-  "Anyone can find a run and check it. Its contents stay locked.",
-  "After an incident the owner claims and the insurer pays.",
-];
-const STEP_TECH = [TIP.ogCompute, `${TIP.ogStorage} ${TIP.ogChain}`, TIP.arkiv, `${TIP.worldId} ${TIP.pool}`];
-const STEPS = HOW_IT_WORKS.map((s, i) => ({ title: s.title, body: STEP_LINE[i], info: STEP_TECH[i] }));
-
-const RUN_ID = /^ep_[A-Za-z0-9_-]+$/;
-
-export function Home({ live }: { live: Live }) {
+export function Overview({ live }: { live: Live }) {
   const [retry, setRetry] = useState(0);
   const runs = useRuns(live.tick + retry);
   const stats = useStats(live.tick + retry);
-  const latest: any[] = (runs.items ?? []).slice(0, 4);
+  const latest: any[] = (runs.items ?? []).slice(0, 5);
   const runsLoading = !runs.source && !runs.err && latest.length === 0;
   const [lastCheck, setLastCheck] = useState<{ kind: VerdictKind; at: number } | null>(null);
 
   return (
     <div className="page home">
-      <header className="home-hero">
-        <h1 className="home-title">{PRODUCT_SHORT}</h1>
-        <p className="home-tagline">
-          <b className="home-why">{PRODUCT_WHY}</b> {PRODUCT_HOW} The proof gets out <a href={to.offline()}>even without internet</a>.
-        </p>
-        <p className="home-built" aria-label="Built on">
-          <span className="home-built-label">Built on</span>
-          {BUILT_ON.map((b, i) => (
-            <span key={b.name} className="home-built-item">
-              {i > 0 && <span aria-hidden className="home-dot">·</span>}
-              <b>{b.name}</b><InfoTip text={b.role} label={`What does ${b.name} do in Pearl?`} below />
-            </span>
-          ))}
-        </p>
-      </header>
-
-      <Roles tick={live.tick} latestId={latest[0]?.episodeId} />
+      <PageHeader
+        title="Overview"
+        description="Your robot right now, its latest sealed runs, and the totals."
+      />
+      <Counters stats={stats} tick={live.tick} lastCheck={lastCheck} />
 
       <div className="home-grid">
         <LivePanel live={live} latestId={latest[0]?.episodeId} />
 
-        <section className="home-runs" aria-labelledby="home-runs-title">
+        <section className="home-runs sect boxed" aria-labelledby="home-runs-title">
           <div className="home-runs-head">
             <h2 className="sect-title" id="home-runs-title">Latest runs</h2>
             <a className="home-more" href={to.runs()}>All runs <Icon name="arrow" size={14} /></a>
@@ -87,85 +62,11 @@ export function Home({ live }: { live: Live }) {
                   </ul>
                 )}
           <p className="home-source small">
-            {runs.source === "arkiv" ? "Found through public labels on Arkiv" : runs.source ? "Read from the robot" : " "}
+            {runs.source === "arkiv" ? "Found through public labels on Arkiv" : runs.source ? "Read from the robot" : " "}
             {runs.source && <InfoTip text={TIP.arkiv} label="Where this list comes from" />}
           </p>
-          <Counters stats={stats} tick={live.tick} lastCheck={lastCheck} />
         </section>
       </div>
-
-      <section className="home-how" aria-labelledby="home-how-title">
-        <h2 className="sr-only" id="home-how-title">How it works</h2>
-        <StepStrip steps={STEPS} />
-      </section>
-
-      <a className="home-offline" href={to.offline()}>
-        <span className="home-offline-icon" aria-hidden><Icon name="offline" size={18} /></span>
-        <span>{OFFLINE_LINE}</span>
-        <span className="home-offline-go">See how <Icon name="arrow" size={14} /></span>
-      </a>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------------------------------------ who are you? */
-
-function Roles({ tick, latestId }: { tick: number; latestId?: string }) {
-  const { account } = useAccount(tick);
-  const insurer = useInsurerSession(tick);
-  const [waiting, setWaiting] = useState<number | null>(null);
-  useEffect(() => {
-    if (!insurer?.signedIn) return setWaiting(null);
-    get("/api/insurer/claims").then((cs: any[]) => setWaiting(cs.filter((c) => c.status === "INSURER_REVIEW").length)).catch(() => setWaiting(null));
-  }, [insurer?.signedIn, tick]);
-
-  return (
-    <nav className="home-roles" aria-label="Choose what you came to do">
-      <RoleCard icon="robot" href={to.robot()} title="I own a robot"
-        body={account ? "You're signed in. Watch it live, see runs, claim incidents." : "Watch it live, see runs, claim incidents."} />
-      <RoleCard icon="wallet" href={to.insurance("insurer")}
-        title={<>I'm an insurer{waiting ? <span className="home-new">{waiting} new</span> : null}</>}
-        body="Review claims, check the proof, approve and pay." />
-      <CheckRecord latestId={latestId} />
-    </nav>
-  );
-}
-
-/** The third role: verify the newest run in one click, or paste any run ID. */
-function CheckRecord({ latestId }: { latestId?: string }) {
-  const [paste, setPaste] = useState(false);
-  const [id, setId] = useState("");
-  const [err, setErr] = useState("");
-  const input = useRef<HTMLInputElement>(null);
-  useEffect(() => { if (paste) input.current?.focus(); }, [paste]);
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    const raw = id.trim();
-    const v = raw.match(/ep_[A-Za-z0-9_-]+/)?.[0] ?? raw;
-    if (!v) return setErr("Paste a run ID, like ep_20261106061500_ab12.");
-    if (!RUN_ID.test(v)) return setErr("A run ID starts with ep_, like ep_20261106061500_ab12.");
-    go("proof", v);
-  };
-  return (
-    <div className="rolecard home-check" role="group" aria-labelledby="home-check-title">
-      <span className="rolecard-icon" aria-hidden><Icon name="shield" size={22} /></span>
-      <span className="home-check-main">
-        <span className="rolecard-title" id="home-check-title">Check a record</span>
-        <span className="rolecard-body">Was a run altered? Anyone can check.</span>
-        <span className="home-check-row">
-          <a className="btn primary" href={latestId ? to.proof(latestId) : to.proof()}><Icon name="shield" size={15} /> Verify the latest run</a>
-          {!paste && <button type="button" className="linkish small" onClick={() => setPaste(true)} aria-expanded={false}>or paste a run ID</button>}
-        </span>
-        {paste && (
-          <form className="home-check-row" onSubmit={submit} role="search" aria-label="Check a run by its ID">
-            <label htmlFor="home-run-id" className="sr-only">Run ID</label>
-            <input ref={input} id="home-run-id" className="mono" value={id} placeholder="Run ID, e.g. ep_20261106…" spellCheck={false} autoComplete="off"
-              onChange={(e) => { setId(e.target.value); setErr(""); }} aria-invalid={!!err} aria-describedby={err ? "home-check-err" : undefined} />
-            <button type="submit" className="btn">Check</button>
-          </form>
-        )}
-        {err && <span className="home-check-err small" id="home-check-err" role="alert">{err}</span>}
-      </span>
     </div>
   );
 }
@@ -201,7 +102,7 @@ function LivePanel({ live, latestId }: { live: Live; latestId?: string }) {
     setMsg(null);
     post("/api/episode/start", task)
       .then(() => setMsg({ bad: false, text: `Started: picking the ${task.color} cube. Watch it here.` }))
-      .catch((e) => setMsg({ bad: true, text: plainError(e, "Couldn't start a run right now. Open the Robot page to see why, or try again.") }))
+      .catch((e) => demoActive() && e?.status === 409 ? setMsg({ bad: false, text: DEMO_ACTIONS_NOTE }) : setMsg({ bad: true, text: plainError(e, "Couldn't start a run right now. Open the Robot page to see why, or try again.") }))
       .finally(() => setBusy(false));
   };
 
@@ -242,7 +143,7 @@ function LivePanel({ live, latestId }: { live: Live; latestId?: string }) {
         ) : (
           <StatusPill tone="neutral" title={access?.why ?? undefined}>View only</StatusPill>
         )}
-        {latestId && <a className="btn" href={to.proof(latestId, { tamper: true })} title="Opens the latest run's proof and changes one byte of a copy, so you can watch it get caught"><Icon name="alert" size={15} /> Try tampering</a>}
+        {latestId && <a className="btn" href={to.verify(latestId, { tamper: true })} title="Opens the latest run's proof and changes one byte of a copy, so you can watch it get caught"><Icon name="alert" size={15} /> Try tampering</a>}
         <a className="home-more push" href={to.robot()}>Open the robot <Icon name="arrow" size={14} /></a>
       </div>
       {!task && canStart && !running && <p className="small muted">No cube on the table. Put one back from the Robot page.</p>}

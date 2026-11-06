@@ -161,7 +161,7 @@ function TryIt({ runId, v, kind, autoStart = false }: { runId: string; v: any; k
   useEffect(() => {
     if (!autoStart || !can || autoRan.current === runId) return;
     autoRan.current = runId;
-    history.replaceState(null, "", to.proof(runId));
+    history.replaceState(null, "", to.verify(runId));
     run();
   }, [autoStart, can, runId]);
   const editedKind = edited ? normalise(edited).kind : null;
@@ -261,7 +261,7 @@ function RecentRuns({ runs, selected, onPick, limit }: { runs: any; selected?: s
       {items.map((e: any) => (
         <li key={e.episodeId}>
           <RunRow
-            href={to.proof(e.episodeId)}
+            href={to.verify(e.episodeId)}
             selected={selected === e.episodeId}
             time={e.ts ? shortWhen(e.ts) : "—"}
             outcome={outcomeWord(e.outcome, e.kind === "incident")}
@@ -315,7 +315,7 @@ function SearchBar({ runId, runs }: { runId?: string; runs: any }) {
     if (!raw) return setErr("Paste a run id, or pick a recent run.");
     if (!ID_RE.test(id)) return setErr("That doesn't look like a run id. A run id looks like ep_20261106061500_ab12.");
     setErr("");
-    go("proof", id);
+    go("verify", id);
   };
   return (
     <div className="pf-search" ref={wrap}>
@@ -397,7 +397,7 @@ export function Proof({ tick, runId, tamper = false }: { tick: number; runId?: s
           </Section>
           <div className="pf-side">
             <EmptyState title="The answer shows here" icon="shield"
-              action={runs.items[0] ? <a className="btn primary" href={to.proof(runs.items[0].episodeId)}>Check the latest run</a> : undefined}>
+              action={runs.items[0] ? <a className="btn primary" href={to.verify(runs.items[0].episodeId)}>Check the latest run</a> : undefined}>
               One clear word: <b>Verified</b>, <b>Not verified</b> or <b>Altered</b>. Then try changing a single byte and watch the check catch it.
             </EmptyState>
           </div>

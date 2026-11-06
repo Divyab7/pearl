@@ -1,15 +1,19 @@
-// Thin client for the dashboard server (proxied by Vite to :8080) and the robot's live stream.
+// Thin client for the dashboard server (proxied by Vite to :8080) and the robot's live stream. While a demo workspace
+// is on, every /api path goes to /demo-api instead (lib/demo.ts apiPath).
 import { useEffect, useRef, useState } from "react";
+import { apiPath } from "./lib/demo";
+
+export { apiPath };
 
 export async function get(path: string, init?: RequestInit) {
-  const r = await fetch(path, init);
+  const r = await fetch(apiPath(path), init);
   const body = await r.json().catch(() => ({}));
   if (!r.ok) throw Object.assign(new Error(body.error ?? `HTTP ${r.status}`), { status: r.status });
   return body;
 }
 
 export async function post(path: string, body: unknown = {}) {
-  const r = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const r = await fetch(apiPath(path), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const out = await r.json().catch(() => ({}));
   if (!r.ok) throw Object.assign(new Error(out.error ?? `HTTP ${r.status}`), { status: r.status });
   return out;
@@ -37,7 +41,7 @@ export function useLive() {
       setStatus(s.orchestrator);
       setCut0g(!!s.cut0g);
     }).catch(() => setConnected(false));
-    const es = new EventSource("/api/stream");
+    const es = new EventSource(apiPath("/api/stream"));
     es.onopen = () => setConnected(true);
     es.onerror = () => setConnected(false);
     es.addEventListener("tel", (e) => setTel(JSON.parse(e.data)));
