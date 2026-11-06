@@ -1,6 +1,7 @@
 // Entry: #/ is the landing page (pages/Landing.tsx, its own top bar and footer); every other route loads the shells
 // (Shells.tsx: public verify, workspace chooser, app sidebar) on demand, so the landing page ships without them.
 import { lazy, Suspense, useEffect } from "react";
+import { WakeNotice } from "./api";
 import { useRouteInfo } from "./router";
 import { demoActive, useDemo } from "./lib/demo";
 import { Landing } from "./pages/Landing";
@@ -18,12 +19,12 @@ export function App() {
   useEffect(() => {
     if (landing) document.title = "Pearl · proof insurers can check";
   }, [landing]);
-  if (landing) return <Landing />;
+  if (landing) return <><WakeNotice /><Landing /></>;
   // a demo on/off switch reconnects everything (live stream, every page) to the right server
   const demoOn = demo.role !== null && demoActive();
   return (
-    <Suspense fallback={<div className="shell-loading" aria-busy="true" aria-label="Loading" />}>
+    <><WakeNotice /><Suspense fallback={<div className="shell-loading" aria-busy="true" aria-label="Loading" />}>
       <Shells key={demoOn ? `demo-${demo.role}` : "real"} route={route} demoRole={demoOn ? demo.role : null} />
-    </Suspense>
+    </Suspense></>
   );
 }
