@@ -182,6 +182,35 @@ Demo workspaces use clearly labelled sample data, so judges without World ID can
 - **How it earns:** a per-robot subscription for the black box, plus a fee per processed claim for insurers.
 - **Next:** more robot types (mobile robots, drones), multi-owner fleets on the mesh, and insurer pilots.
 
+### The numbers (a guesstimate)
+
+**Known facts**
+
+| Fact | Number | Source |
+|---|---|---|
+| Industrial robots working worldwide (2024) | **4.66 million** | IFR World Robotics 2025 |
+| New industrial robots per year | **542,000** in 2024, about **575,000** expected in 2025 | IFR World Robotics 2025 |
+| Cobots (robots built to work next to people) shipped in 2025 | about **58,000**, expected to reach about **129,000 a year by 2030** | industry shipment reports |
+| Insurance fraud, US, all lines | about **$308.6 billion a year** | Coalition Against Insurance Fraud, 2022 |
+
+**Our assumptions** (to be tested with insurer pilots)
+
+| Assumption | Value |
+|---|---|
+| Black-box subscription | $10 per robot per month ($120 a year) |
+| Robots with an insurable incident each year | 3% |
+| Fee to the insurer per processed claim | $150 |
+
+**Market size**
+
+| | Robots | Subscriptions | Claim fees | Total per year |
+|---|---|---|---|---|
+| **TAM:** every industrial robot today | 4.66 M | $559 M | 140 k claims → $21 M | **≈ $580 M** |
+| **SAM:** cobots installed 2025–2030, the robots that work next to people | ≈ 0.5 M | $60 M | 15 k claims → $2.3 M | **≈ $62 M** |
+| **SOM:** 2% of SAM in year 3 | 10,000 | $1.2 M | 300 claims → $45 k | **≈ $1.25 M ARR** |
+
+The TAM counts factory robots only. Warehouse, hospital, delivery and home robots, plus drones, would add to it, and AI-driven robots are the fastest-growing part. On the insurer side, Pearl attacks the costliest part of a claim: proving what happened, and who is claiming.
+
 ---
 
 ## Technology
