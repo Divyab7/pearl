@@ -173,8 +173,8 @@ export async function buildDemoWorld(): Promise<DemoWorld> {
   });
   // F: another bump, severity 2, not claimed yet (the owner can claim it in the demo)
   await build("f0a6", T0 + 38 * 60_000, async (rec, t) => {
-    const plan = decision("PLAN", { action: "PICK", slot: "A1", reason: "Red cube at A1.", confidence: 0.9 }, t());
-    addDecision(rec, plan, policyPlan(P(plan), { ...task, from: "A1" }, poses));
+    const plan = decision("PLAN", { action: "PICK", slot: "A2", reason: "Red cube clearly at A2.", confidence: 0.9 }, t());
+    addDecision(rec, plan, policyPlan(P(plan), task, poses));
     rec.addEvent({ ts: new Date(t()).toISOString(), ev: "trip_bump", data: { accG: 2.1 } });
     const inc = decision("INCIDENT", { action: "SAFE_STOP", severity: 2, reason: "Table knocked; arm stopped. Minor.", confidence: 0.86 }, t());
     addDecision(rec, inc, policyIncident(P(inc), P({ hardTrip: true, frozenHand: false, handClear: true, remaining: [] })));

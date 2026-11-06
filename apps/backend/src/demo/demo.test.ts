@@ -4,6 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDashboard } from "../dashboard/server.js";
+import { contentChecks } from "../verify/content.js";
+import { loadArmConfig } from "../shared/armConfig.js";
+import type { EpisodeLog } from "../orchestrator/log.js";
 import { openEpisode, parseSealed, runContext, unwrapRunKey, wrapRunKey, newRunKey, type WrappedKey } from "../shared/seal.js";
 import { mountDemo, type DemoInstance } from "./mount.js";
 import { DEMO_ACTIONS_OFF } from "./world.js";
@@ -76,6 +79,16 @@ describe("demo workspace at /demo-api", () => {
 
     const v = (await (await get(`/demo-api/verify/${id}`)).json()) as { result: string };
     expect(v.result).toBe("VALID");
+    // every sample run's contents pass the same checks the insurer's browser runs after unlocking (6–9)
+    for (const it of eps.items) {
+      const wk = (await (await get(`/demo-api/episodes/${it.episodeId}/key`, e.cookie)).json()) as WrappedKey;
+      const rk = await unwrapRunKey(wk, kr.privateJwk, runContext(demo.world.device.address, it.episodeId));
+      const sl = parseSealed(JSON.stringify(await (await get(`/demo-api/episodes/${it.episodeId}`)).json()));
+      const lg = await openEpisode<EpisodeLog>(sl, rk);
+      const pv = (await (await get(`/demo-api/verify/${it.episodeId}`)).json()) as { anchor?: { requestIdsHash?: string } | null };
+      const failed = contentChecks(lg, { headerHead: sl.headHash, anchoredRequestIdsHash: pv.anchor?.requestIdsHash ?? null, arm: loadArmConfig() }).filter((c) => c.status === "FAIL");
+      expect(failed.map((c) => `${it.episodeId}: ${c.name} — ${c.detail}`)).toEqual([]);
+    }
     // the run whose 0G Storage upload failed is shown honestly
     const failed = eps.items.find((x) => x.outcome === "FAILSAFE")!.episodeId;
     expect(((await (await get(`/demo-api/verify/${failed}`)).json()) as { result: string }).result).toBe("REJECTED");
