@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
  *
  *   #/                                  home
  *   #/robot                             robot: live view + runs list
- *   #/robot/run/<id>                    robot: one run's story            (#/robot/run with no id = runs list, interim)
+ *   #/robot/run/<id>                    robot: one run's story (#/robot/run with no id and old #/robot/runs → #/robot)
  *   #/proof        #/proof/<id>         proof: check any run
  *   #/insurance                         insurance (owner side by default)
  *   #/insurance/owner                   insurance: owner side (claim)
@@ -35,7 +35,7 @@ export const go = (...parts: (string | null | undefined)[]) => {
 export const to = {
   home: () => href(),
   robot: () => href("robot"),
-  runs: () => href("robot", "run"),
+  runs: () => href("robot"), // the runs list lives on the Robot page
   run: (id: string) => href("robot", "run", id),
   proof: (id?: string | null) => href("proof", id),
   insurance: (side?: "owner" | "insurer", claimId?: string | null) => href("insurance", side, side === "insurer" ? claimId : null),
@@ -48,7 +48,8 @@ export function legacyRedirect(p: string[]): string[] | null {
   const [a, b, c] = p;
   if (a === "robot") {
     if (b === "live") return ["robot"];
-    if (b === "runs") return c ? ["robot", "run", c] : ["robot", "run"];
+    if (b === "runs") return c ? ["robot", "run", c] : ["robot"];
+    if (b === "run" && !c) return ["robot"];
     if (b === "claims") return ["insurance", "owner"];
     if (b === "setup") return ["account"];
   }

@@ -11,6 +11,7 @@ import { Courier } from "./pages/Courier";
 import { Insurer } from "./pages/Insurer";
 import { Mesh } from "./pages/Mesh";
 import { MyRobot } from "./pages/MyRobot";
+import { Robot } from "./pages/Robot";
 import { Verify } from "./pages/Verify";
 import { Welcome } from "./pages/Welcome";
 import { Kit } from "./pages/Kit";
@@ -111,7 +112,7 @@ function Page({ route, live }: { route: Route; live: ReturnType<typeof useLive> 
     case "home":
       return <Welcome />;
     case "robot":
-      return route.runId || route.runs ? <MyRobot live={live} sub="runs" runId={route.runId} /> : <MyRobot live={live} sub="live" />;
+      return <Robot live={live} runId={route.runId} />;
     case "proof":
       return <Verify tick={live.tick} runId={route.runId} />;
     case "insurance":
