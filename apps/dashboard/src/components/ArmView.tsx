@@ -4,7 +4,7 @@
 const L1 = 70;
 const L2 = 60;
 
-export function ArmView({ joints, scene, ring, label }: { joints?: number[] | null; scene?: any; ring?: string; label?: string }) {
+export function ArmView({ joints, scene, ring, label, showAngles = true }: { joints?: number[] | null; scene?: any; ring?: string; label?: string; showAngles?: boolean }) {
   const [base, shoulder, elbow, grip] = joints ?? [90, 90, 90, 10];
   // schematic mapping: shoulder 90° = upright, larger = leaning toward the table; elbow 90° = right angle
   const t1 = ((180 - shoulder!) * Math.PI) / 180;
@@ -26,7 +26,7 @@ export function ArmView({ joints, scene, ring, label }: { joints?: number[] | nu
     <figure className="armfig">
       <figcaption className="armcap">
         <span>{label}</span>
-        <span className="tabular">Base {base}° · Shoulder {shoulder}° · Elbow {elbow}° · Gripper {grip}°</span>
+        {showAngles && <span className="tabular">Base {base}° · Shoulder {shoulder}° · Elbow {elbow}° · Gripper {grip}°</span>}
       </figcaption>
       <svg viewBox="0 0 320 175" className="armview" role="img" aria-label={`Arm: base ${base}°, shoulder ${shoulder}°, elbow ${elbow}°, gripper ${grip}°`} preserveAspectRatio="xMidYMax meet">
         <rect x="0" y="158" width="320" height="17" className="table" />

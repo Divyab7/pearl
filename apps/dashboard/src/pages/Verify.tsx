@@ -12,8 +12,9 @@ function FingerprintDiff({ a, b }: { a: string; b: string }) {
     <div className="fpdiff" aria-label="Fingerprints compared">
       <div><span className="fpdiff-label">Locked file's fingerprint, as recorded on 0G Chain</span><code className="mono">{a}</code></div>
       <div>
-        <span className="fpdiff-label">Same fingerprint, computed from the edited copy · {changed} of {b.length - 2} characters changed</span>
-        <code className="mono">{[...b].map((ch, i) => (ch === a[i] ? ch : <mark key={i}>{ch}</mark>))}</code>
+        <span className="fpdiff-label">Fingerprint of the edited copy · {changed} of {b.length - 2} characters differ</span>
+        <code className="mono dim">{[...b].map((ch, i) => (ch === a[i] ? ch : <mark key={i}>{ch}</mark>))}</code>
+        <span className="badge tone-bad nomatch">✕ Does not match 0G Chain</span>
       </div>
     </div>
   );
@@ -99,13 +100,12 @@ export function Verify({ tick, runId }: { tick: number; runId?: string }) {
           )}
           {edited && v && (
             <div ref={editedRef}>
-              <Card title="What if someone edits it?" sub="We changed one character of a copy of the locked file and checked it again.">
+              <Card title="What if someone edits it?" sub={`We changed ${edited.tampered} in a copy of the locked file and checked it again.`}>
                 <div className="two-up">
                   <Verdict kind={verdictOf(v)} compact title="Original" label="Same as the result above." />
-                  <Verdict kind={verdictOf(edited)} compact title="Edited copy" label="We changed 1 byte of a copy. Its fingerprint changed completely, so it no longer matches 0G Chain." />
+                  <Verdict kind={verdictOf(edited)} compact title="Edited copy" label="Its fingerprint changed completely, so it no longer matches 0G Chain." />
                 </div>
                 {v.rootHash && edited.editedRoot && <FingerprintDiff a={v.rootHash} b={edited.editedRoot} />}
-                <p className="muted small">We changed {edited.tampered}.</p>
               </Card>
             </div>
           )}

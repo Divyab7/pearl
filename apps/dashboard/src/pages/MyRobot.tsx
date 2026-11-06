@@ -47,12 +47,12 @@ export function MyRobot({ live, sub, runId }: { live: any; sub?: string; runId?:
           {account
             ? (
               <div className="account-ctl">
-                <Chip label="Owner" value={account.accountId} display={`${account.accountId.slice(0, 4)}…${account.accountId.slice(-4)}`} />
+                <span className="signed-in"><Icon name="check" size={14} /> Signed in · World ID</span>
                 {!setupDone && <a className="small" href={href("robot", "setup")}>Finish setup</a>}
                 <button type="button" className="btn ghost small-btn" onClick={() => post("/api/auth/logout").then(refresh)}>Sign out</button>
               </div>
             )
-            : account === null && tab !== "setup" ? <a className="btn" href={href("robot", "setup")}>Owner sign-in</a> : null}
+            : account === null ? <a className="btn" href={href("robot", "setup")}>Owner sign-in</a> : null}
         </div>
       </div>
       <Tabs
@@ -107,7 +107,7 @@ function LiveTab({ live }: { live: any }) {
     <div className="grid-2">
       <div className="stack">
         <Card title="Arm" sub={status?.phase && status.phase !== "IDLE" ? `Run phase: ${status.phase.replaceAll("_", " ").toLowerCase()}` : "No run in progress"}>
-          <ArmView joints={tel?.joints} scene={tel?.scene} ring={ringClass(tel?.status?.ring)} label={DEVICE_LABEL[state?.deviceKind] ?? "arm"} />
+          <ArmView joints={tel?.joints} scene={tel?.scene} ring={ringClass(tel?.status?.ring)} label={DEVICE_LABEL[state?.deviceKind] ?? "arm"} showAngles={false} />
           {state?.cameraKind && state.cameraKind !== "none" && <LiveCamera />}
           <div className="meters">
             {JOINTS.map((n, i) => (
@@ -221,7 +221,7 @@ function RunsTab({ live, account, linked, runId }: { live: any; account: any; li
       </Card>
       <div>
         {selected
-          ? <RunDetail episodeId={selected} unlock={unlock ? () => unlock(selected) : null} lockedReason={reason} lockedAction={!account ? <div className="row center"><a className="btn" href={href("robot", "setup")}>Owner sign-in</a><a className="small" href={href("verify", selected)}>or check it publicly on Verify</a></div> : !unlock ? <a className="btn" href={href("robot", "setup")}>Go to Setup</a> : null} unlockLabel="Unlock with my key" tick={live.tick} />
+          ? <RunDetail episodeId={selected} unlock={unlock ? () => unlock(selected) : null} lockedReason={reason} lockedAction={!account ? <a className="btn" href={href("robot", "setup")}>Owner sign-in</a> : !unlock ? <a className="btn" href={href("robot", "setup")}>Go to Setup</a> : null} unlockLabel="Unlock with my key" tick={live.tick} />
           : <Card><Empty title="Pick a run">Select a run to check it and, as the owner, unlock its contents.</Empty></Card>}
       </div>
     </div>
@@ -231,7 +231,7 @@ function RunsTab({ live, account, linked, runId }: { live: any; account: any; li
 // ---------------------------------------------------------------- Claims
 const STEP_OF: Record<string, number> = { AGENT_PASS: 1, IDKIT: 2, INSURER_REVIEW: 3, PAYING: 4, PAID: 4 };
 function claimSteps(c: any): Step[] {
-  const labels = ["Incident", "It's you", "Human", "Insurer", "Paid"];
+  const labels = ["Incident", "Owner confirmed", "Unique person", "Insurer review", "Paid"];
   const failedAt = c.status === "DENIED" ? 3 : c.status === "FAILED"
     ? STEP_OF[[...c.history].reverse().find((h: any) => h.status !== "FAILED")?.status ?? "AGENT_PASS"] ?? 1
     : -1;
@@ -455,6 +455,10 @@ function SetupTab({ live, account, refresh, linked }: { live: any; account: any;
           <WorldPrompt prompt={prompt} onCancel={() => post(`/api/auth/cancel/${prompt.attemptId}`).catch(() => {})} label="Approve the sign-in in World App" />
           {msg && <Callout tone={msg.tone}>{msg.text}</Callout>}
           <p className="muted small">Operating the arm on the Live tab needs no sign-in at the robot's site.</p>
+          <ol className="setup-next">
+            <li>Unlock key</li><li>Payout wallet</li><li>Link this robot</li>
+          </ol>
+          <p className="muted small">After you sign in, these three steps finish the setup.</p>
         </Card>
         <PrivacyAside />
       </div>

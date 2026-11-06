@@ -59,8 +59,9 @@ function verdictLine(v: any) {
   const robotNote = v.source === "robot" ? " The locked file was read from the robot itself, because 0G Storage could not serve it." : "";
   const ran = v.checks.filter((c: any) => c.status !== "SKIPPED").length;
   const passed = v.checks.filter((c: any) => c.status === "PASS").length;
-  if (k === "ok") return `${passed} of ${ran} applicable checks passed. This run matches what the robot signed and recorded on 0G Chain.${robotNote}`;
-  if (k === "incomplete") return `Nothing contradicts the robot's record, but it can't be fully checked: ${failedNames(v).join(", ")} ${failedNames(v).length > 1 ? "are" : "is"} not available.${robotNote}`;
+  const notNeeded = v.checks.length - ran;
+  if (k === "ok") return `${passed} of ${ran} public checks passed${notNeeded ? ` · ${notNeeded} not needed` : ""}. This run matches what the robot signed and recorded on 0G Chain.${robotNote}`;
+  if (k === "incomplete") return `${passed} of ${ran} public checks passed. Nothing contradicts the robot's record, but ${failedNames(v).join(", ")} ${failedNames(v).length > 1 ? "are" : "is"} not available.${robotNote}`;
   return `Does not match the robot's record: ${failedNames(v).join(", ")}.`;
 }
 
@@ -76,7 +77,7 @@ export function PublicResult({ v, compact = false, title, noVerdict = false }: {
       {!noVerdict && <CheckList checks={v.checks} only={v.tampered ? "failed" : undefined} />}
       {!compact && (
         <>
-          <div className="fp-head"><span className="h4">Fingerprints</span>{recorded && <span className="muted small">recorded on 0G Chain <time dateTime={recorded.toISOString()} title={recorded.toISOString()}>{fullWhen(recorded.getTime())}</time></span>}</div>
+          <div className="fp-head"><span className="h4">Fingerprints</span>{recorded && <span className="muted small">Recorded on 0G Chain · <time dateTime={recorded.toISOString()} title={recorded.toISOString()}>{fullWhen(recorded.getTime())}</time></span>}</div>
           <div className="chips">
             <Chip label="Robot" value={v.device} href={addr(v.device)} />
             <Chip label="Run fingerprint" value={h?.headHash} />
@@ -97,7 +98,7 @@ export function DecisionCard({ r, frame }: { r: any; frame?: string | null }) {
   return (
     <article className={`decision ${failsafe ? "is-failsafe" : ""}`}>
       <header>
-        <b>{r.checkpoint.replace("_", " ").toLowerCase()}</b>
+        <b>{CP_WORD[r.checkpoint] ?? r.checkpoint}</b>
         <Badge tone={failsafe ? "bad" : "accent"}>{failsafe ? "Failsafe" : "0G decision"}</Badge>
         {parsed.action && <Badge><span className={r.override ? "struck" : ""}>{parsed.action}</span></Badge>}
         {r.override && <Badge tone="bad">Overridden: {r.override}</Badge>}
@@ -156,7 +157,8 @@ function keyframes(log: any, gripOpen = 10, gripClosed = 80) {
   return frames;
 }
 
-const CP_WORD: Record<string, string> = { PLAN: "Plan", VERIFY_GRASP: "Check the grip", VERIFY_PLACE: "Check the drop", INCIDENT: "Incident", Start: "Start" };
+const CONTENT_CHECKS = 5;
+export const CP_WORD: Record<string, string> = { PLAN: "Plan", VERIFY_GRASP: "Check the grip", VERIFY_PLACE: "Check the drop", INCIDENT: "Incident", Start: "Start" };
 const EVENT_WORD: Record<string, string> = { trip_bump: "Bump detected", trip_watchdog: "Heartbeat lost", sensor_fault: "Sensor fault", hand_in_zone: "Hand in the work zone", hand_clear: "Work zone clear" };
 
 export function Replay({ log, frames, startAtIncident = false }: { log: any; frames: Record<number, string>; startAtIncident?: boolean }) {
@@ -191,7 +193,7 @@ export function Replay({ log, frames, startAtIncident = false }: { log: any; fra
   const f = pos - i;
   const joints = a.map((v, k) => Math.round(v + (b[k]! - v) * f));
   const currentIdx = kf[Math.min(i + 1, kf.length - 1)]?.idx;
-  const decision = log.records.find((r: any) => r.idx === currentIdx) ?? log.records.find((r: any) => r.kind === "decision");
+  const incDecision = log.records.find((r: any) => r.kind === "decision" && r.checkpoint === "INCIDENT");
   const marks = log.records.filter((r: any) => r.kind === "event" && EVENT_WORD[r.ev]);
   const sev = log.records.reduce((m: number, r: any) => (r.kind === "decision" && r.checkpoint === "INCIDENT" ? Math.max(m, r.parsed?.severity ?? 0) : m), 0);
   const sevCls = sev >= 3 ? "bad" : sev >= 2 ? "warn" : "neutral";
@@ -208,6 +210,8 @@ export function Replay({ log, frames, startAtIncident = false }: { log: any; fra
       setPos(stepOf(incident.idx));
     }
   }, [startAtIncident, incident?.idx]);
+  const atIncident = !!incident && Math.round(pos) === stepOf(incident.idx);
+  const decision = (atIncident && incDecision) || log.records.find((r: any) => r.idx === currentIdx) || log.records.find((r: any) => r.kind === "decision");
   return (
     <div className="replay">
       <div className="replay-stage">
@@ -219,11 +223,11 @@ export function Replay({ log, frames, startAtIncident = false }: { log: any; fra
             </button>
             <div className="scrub">
               <input type="range" aria-label="Replay position" min={0} max={Math.max(0, kf.length - 1)} step={0.01} value={pos} onChange={(e) => { pause(); setPos(Number(e.target.value)); }} />
-              {kf.map((k, n) => (n > 0 && kf[n - 1]!.idx !== k.idx ? <span key={`d${n}`} className="tick cp" style={{ left: `${((n - 1) / last) * 100}%` }} title={CP_WORD[k.cp] ?? k.cp} /> : null))}
+              {kf.map((k, n) => (n > 1 && kf[n - 1]!.idx !== k.idx ? <span key={`d${n}`} className="tick cp" style={{ left: `${((n - 1) / last) * 100}%` }} title={CP_WORD[k.cp] ?? k.cp} /> : null))}
               {marks.map((e: any) => <span key={e.idx} className={`tick ${e.ev === "hand_clear" ? "ok" : sevCls}`} style={{ left: `${(stepOf(e.idx) / last) * 100}%` }} title={EVENT_WORD[e.ev]} />)}
             </div>
             <span className="small tabular">Step {Math.min(i + 1, kf.length - 1)} of {kf.length - 1} · <b>{CP_WORD[kf[Math.min(i + 1, kf.length - 1)]?.cp ?? ""] ?? ""}</b></span>
-            {incident && <button type="button" className={`btn small-btn jump sev-${sevCls}`} onClick={() => { pause(); setPos(stepOf(incident.idx)); }}><Icon name="alert" size={14} /> {resultWord(log.outcome)} at step {stepOf(incident.idx)}: {EVENT_WORD[incident.ev]!.toLowerCase()}</button>}
+            {incident && <button type="button" className="btn small-btn jump" onClick={() => { pause(); setPos(stepOf(incident.idx)); }}>Go to the incident (step {stepOf(incident.idx)})</button>}
           </div>
           {marks.length > 0 && (
             <ul className="event-list">
@@ -318,14 +322,16 @@ export function RunDetail({ episodeId, unlock, lockedReason, lockedAction, unloc
   const fcRan = fc ? fc.checks.filter((c) => c.status !== "SKIPPED").length : 0;
   const combined = pub ? (fc ? (fc.result === "VALID" && pub.result === "VALID" ? "ok" : fc.result !== "VALID" ? "bad" : verdictOf(pub)) : verdictOf(pub)) : null;
   const summary = !pub ? "" : fc
-    ? `Public record ${pubPassed}/${pubRan} · Contents ${fcPassed}/${fcRan}. ${combined === "ok" ? "Everything the robot signed and recorded matches, inside and out." : "See the failing checks below."}`
-    : `Public record ${pubPassed}/${pubRan} · Contents ${unlock ? "not checked yet: unlock them below" : "locked"}. ${verdictLine(pub).replace(/^\d+ of \d+ applicable checks passed\. /, "")}`;
+    ? (combined === "ok" ? `${pubPassed} of ${pubRan} public checks and ${fcPassed} of ${fcRan} content checks passed. Everything the robot signed and recorded matches, inside and out.` : "Some checks failed. See the failing checks below.")
+    : verdictLine(pub);
+  const contentsLine = !pub || fc ? null : unlock ? `Contents: locked · unlock below to run ${CONTENT_CHECKS} more checks` : "Contents: locked · only the owner, or the insurer for a claimed incident, can read them";
   return (
     <div className="run-detail stack">
       <Card className="inset">
         <RunHeader id={episodeId} sealed={pub?.sealed} />
         {loading && <p className="muted"><Spinner /> Checking 0G Chain and 0G Storage…</p>}
         {combined && <Verdict kind={combined} label={summary} />}
+        {contentsLine && <p className="contents-line"><Icon name="lock" size={14} /> {contentsLine}</p>}
       </Card>
       <Card title="Public check" sub="Anyone can run this. It needs no key and reveals nothing inside the run." className="inset">
         {pubErr && <Callout tone="bad" title="Could not check this run">{pubErr}</Callout>}

@@ -512,3 +512,27 @@ html.demo { zoom: 1.125; }
   .step-label { line-height: 1.2; }
   .armcap span:last-child { display: none; }
 }
+
+/* ---------------------------------------------------------------- round-6 review additions */
+.verdict { border: 1px solid var(--border); border-left: 3px solid currentColor; }
+.verdict.tone-ok { background: color-mix(in srgb, var(--ok) 6%, var(--card)); }
+.verdict.tone-warn { background: color-mix(in srgb, var(--warn) 6%, var(--card)); }
+.verdict.tone-bad { background: color-mix(in srgb, var(--bad) 6%, var(--card)); }
+.verdict-word { font-size: 24px; }
+.verdict.compact { background: var(--card); }
+.contents-line { display: flex; gap: 8px; align-items: center; color: var(--text-2); font-size: 14px; }
+.signed-in { display: inline-flex; gap: 6px; align-items: center; font-size: 14px; color: var(--text); white-space: nowrap; }
+.signed-in .icon { color: var(--ok); }
+.setup-next { margin: 0; padding-left: 20px; color: var(--text-3); display: grid; gap: 4px; font-size: 14px; }
+.two-up { align-items: stretch; }
+.fpdiff code.dim { color: var(--text-3); }
+.fpdiff mark { background: transparent; color: var(--bad); font-weight: 700; }
+.nomatch { justify-self: start; margin-top: 4px; }
+.btn, .small-btn { min-height: 36px; }
+.btn.jump { color: var(--text); border-color: var(--border-strong); }
+.sim-box legend { color: var(--text-3); }
+html.demo { zoom: 1.25; }
+.tick { position: absolute; top: 50%; transform: translateY(-50%); width: 3px; height: 12px; margin-left: -1.5px; border-radius: 2px; pointer-events: none; }
+.tick.cp { width: 2px; height: 10px; background: var(--text-2); }
+.btn.stop { min-height: 40px; }
+@media (max-width: 640px) { .chip { white-space: nowrap; } }
