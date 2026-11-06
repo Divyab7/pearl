@@ -48,7 +48,7 @@ export interface RewardClaim {
   device: string;
   severity: number;
   wallet: string;
-  action: string; // claim:<episodeId>
+  action: string; // claimAction(episodeId), e.g. claim-ep-20261106142947-f024
   status: ClaimStatus;
   failure: string | null;
   agentPass: { prompt: HumanCheckPrompt | null; subject?: string; acr?: string | null; idTokenSha256?: string } | null;
@@ -90,6 +90,14 @@ export interface RewardDeps {
   requireValid: boolean;
   /** Called after every status change (the Arkiv claim record follows it); must not throw or block. */
   onChange?: (c: RewardClaim) => void;
+}
+
+/**
+ * The IDKit action for an incident. The Developer Portal only accepts lowercase letters, digits and hyphens, at most
+ * 32 characters (developer-portal form-schema-v4), so "ep_20261106142947_f024" → "claim-ep-20261106142947-f024".
+ */
+export function claimAction(episodeId: string): string {
+  return `claim-${episodeId.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`.slice(0, 32).replace(/-+$/, "");
 }
 
 export class RewardStore {
@@ -173,7 +181,7 @@ export class RewardDesk {
     const now = new Date().toISOString();
     let c: RewardClaim = this.store.put({
       claimId: `rc_${randomBytes(6).toString("hex")}`, accountId: account.accountId, episodeId, device: inc.device,
-      severity: inc.severity, wallet: account.wallet, action: `claim:${episodeId}`, status: "AGENT_PASS", failure: null,
+      severity: inc.severity, wallet: account.wallet, action: claimAction(episodeId), status: "AGENT_PASS", failure: null,
       agentPass: { prompt: null }, nullifier: null, amountWei: this.deps.amountWeiFor(inc.severity).toString(), insurerKey,
       review: null, payout: null, createdAt: now,
       history: [{ ts: now, status: "AGENT_PASS", note: "claim opened; fresh World ID Agent Pass verification requested" }],
@@ -269,12 +277,16 @@ export class RewardDesk {
     if (!responses.length) return this.fail(c, "IDKit proof has no responses");
     const want = this.deps.hashSignal(c.wallet).toLowerCase();
     if (responses.some((r) => String(r.signal_hash ?? "").toLowerCase() !== want)) return this.fail(c, "IDKit proof is bound to a different wallet");
-    if (responses.some((r) => r.identifier !== "proof_of_human")) return this.fail(c, "IDKit proof is not Proof of Human");
+    // World ID 4.0 proofs say "proof_of_human"; legacy (3.0) Orb proofs, which IDKit's proofOfHuman preset still
+    // returns for people without a 4.0 credential, say "orb" — both are Orb-level proof of a unique human
+    if (responses.some((r) => r.identifier !== "proof_of_human" && r.identifier !== "orb")) return this.fail(c, "IDKit proof is not Proof of Human");
 
     const v = await this.deps.verifyProof(k.rpId, res).catch((e) => ({ status: 0, body: { detail: String(e) } as Record<string, unknown> }));
     if (v.status !== 200 || v.body.success !== true || v.body.environment !== k.environment) {
       return this.fail(c, `World verify rejected the proof (${String(v.body.code ?? v.status)}: ${String(v.body.detail ?? "")})`);
     }
+    // World's own replay check (it answers 200 + nullifier_reused for a repeat), on top of ours below
+    if (v.body.nullifier_reused === true) return this.fail(c, "this person already claimed this incident (World: nullifier reused)");
     const nullifier = String(v.body.nullifier ?? responses[0]!.nullifier ?? "");
     if (!/^0x[0-9a-fA-F]+$/.test(nullifier)) return this.fail(c, "verify response has no nullifier");
     if (this.store.nullifierUsed(nullifier, c.action)) return this.fail(c, "this person already claimed this incident (nullifier replayed)");

@@ -498,7 +498,7 @@ function IdkitStep({ claim, onDone }: { claim: any; onDone: () => void }) {
       try {
         const cfg = await get(`/api/claims/${claim.claimId}/idkit`);
         const request = await IDKit.request({
-          app_id: cfg.app_id, action: cfg.action, rp_context: cfg.rp_context, allow_legacy_proofs: false, environment: cfg.environment,
+          app_id: cfg.app_id, action: cfg.action, rp_context: cfg.rp_context, allow_legacy_proofs: true, environment: cfg.environment,
           action_description: `Claim the insurance payout for incident ${claim.episodeId}`,
         }).preset(proofOfHuman({ signal: cfg.signal }));
         if (!live) return;

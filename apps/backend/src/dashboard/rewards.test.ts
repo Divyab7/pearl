@@ -7,7 +7,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { newRecipientKey, newRunKey, runContext, wrapRunKey, type WrappedKey } from "../shared/seal.js";
 import type { HumanCheckResult, HumanGate } from "../human/gate.js";
 import type { Account } from "./accounts.js";
-import { RewardDesk, RewardStore, type RewardDeps } from "./rewards.js";
+import { claimAction, RewardDesk, RewardStore, type RewardDeps } from "./rewards.js";
 
 const DEVICE = ethers.Wallet.createRandom().address;
 const WALLET = ethers.Wallet.createRandom().address;
@@ -80,9 +80,9 @@ describe("reward claims: World ID Agent Pass + IDKit Proof of Human", () => {
     expect(c.agentPass?.prompt?.userCode).toBe("ABCD");
     await waitFor(() => k.get(c.claimId, account().accountId)?.status === "IDKIT");
     const req = k.idkitRequest(c.claimId, account().accountId);
-    expect(req).toMatchObject({ app_id: "app_test", action: "claim:ep_1", signal: WALLET, rp_context: { rp_id: "rp_test", signature: "0xsig" } });
+    expect(req).toMatchObject({ app_id: "app_test", action: "claim-ep-1", signal: WALLET, rp_context: { rp_id: "rp_test", signature: "0xsig" } });
     expect(k.listForInsurer()).toEqual([]); // the insurer sees nothing before both human checks pass
-    const waiting = await k.idkitResult(c.claimId, account().accountId, { result: proof("claim:ep_1") });
+    const waiting = await k.idkitResult(c.claimId, account().accountId, { result: proof("claim-ep-1") });
     expect(waiting.status).toBe("INSURER_REVIEW");
     expect(d.paid).toEqual([]); // nothing is paid before a person at the insurer approves
     const seen = k.getForInsurer(c.claimId)!;
@@ -103,7 +103,7 @@ describe("reward claims: World ID Agent Pass + IDKit Proof of Human", () => {
     const k = desk(d);
     const c = await k.start(account(), "ep_1", await share("ep_1"));
     await waitFor(() => k.get(c.claimId, account().accountId)?.status === "IDKIT");
-    await k.idkitResult(c.claimId, account().accountId, { result: proof("claim:ep_1") });
+    await k.idkitResult(c.claimId, account().accountId, { result: proof("claim-ep-1") });
     expect((await k.decide(c.claimId, { approve: true, reason: "ok", by: "0xins" })).status).toBe("PAID");
     expect(statuses).toEqual(["AGENT_PASS", "IDKIT", "INSURER_REVIEW", "PAYING", "PAID"]);
   });
@@ -112,7 +112,7 @@ describe("reward claims: World ID Agent Pass + IDKit Proof of Human", () => {
     const k = desk(d);
     const c = await k.start(account(), "ep_1", await share("ep_1"));
     await waitFor(() => k.get(c.claimId, account().accountId)?.status === "IDKIT");
-    await k.idkitResult(c.claimId, account().accountId, { result: proof("claim:ep_1") });
+    await k.idkitResult(c.claimId, account().accountId, { result: proof("claim-ep-1") });
     return { k, id: c.claimId };
   };
 
@@ -174,10 +174,11 @@ describe("reward claims: World ID Agent Pass + IDKit Proof of Human", () => {
   it("IDKit cancelled, wrong environment, wrong wallet, wrong action, verify rejected: nothing paid", async () => {
     const cases: [Record<string, unknown>, RegExp, Partial<RewardDeps>?][] = [
       [{ error: "user_rejected" }, /IDKit user_rejected/],
-      [{ result: proof("claim:ep_1", "0x1", WALLET, "staging") }, /environment staging/],
-      [{ result: proof("claim:ep_1", "0x1", ethers.Wallet.createRandom().address) }, /different wallet/],
-      [{ result: proof("claim:ep_OTHER") }, /different action/],
-      [{ result: proof("claim:ep_1") }, /World verify rejected/, { verifyProof: async () => ({ status: 400, body: { success: false, code: "all_verifications_failed" } }) }],
+      [{ result: proof("claim-ep-1", "0x1", WALLET, "staging") }, /environment staging/],
+      [{ result: proof("claim-ep-1", "0x1", ethers.Wallet.createRandom().address) }, /different wallet/],
+      [{ result: proof("claim-ep-other") }, /different action/],
+      [{ result: proof("claim-ep-1") }, /nullifier reused/, { verifyProof: async () => ({ status: 200, body: { success: true, environment: "production", nullifier: "0x1", nullifier_reused: true } }) }],
+      [{ result: proof("claim-ep-1") }, /World verify rejected/, { verifyProof: async () => ({ status: 400, body: { success: false, code: "all_verifications_failed" } }) }],
     ];
     for (const [body, why, over] of cases) {
       const d = deps(over);
@@ -195,12 +196,12 @@ describe("reward claims: World ID Agent Pass + IDKit Proof of Human", () => {
     const second = account({ accountId: "b".repeat(32), subject: "sub-owner-2" });
     const c1 = await k.start(account(), "ep_1", await share("ep_1"));
     await waitFor(() => k.get(c1.claimId, account().accountId)?.status === "IDKIT");
-    expect((await k.idkitResult(c1.claimId, account().accountId, { result: proof("claim:ep_1", "0xABC") })).status).toBe("INSURER_REVIEW");
+    expect((await k.idkitResult(c1.claimId, account().accountId, { result: proof("claim-ep-1", "0xABC") })).status).toBe("INSURER_REVIEW");
     // a second account controlled by the same human produces the same nullifier for the same action
     d.agentPass = () => ({ ...gate("ok"), verify: async (r, p) => ({ ...(await gate("ok").verify(r, p)), subject: "sub-owner-2" }) as HumanCheckResult });
     const c2 = await k.start(second, "ep_1", await share("ep_1"));
     await waitFor(() => k.get(c2.claimId, second.accountId)?.status === "IDKIT");
-    const r = await k.idkitResult(c2.claimId, second.accountId, { result: proof("claim:ep_1", "0xabc") });
+    const r = await k.idkitResult(c2.claimId, second.accountId, { result: proof("claim-ep-1", "0xabc") });
     expect(r.failure).toMatch(/already claimed/);
     expect(k.listForInsurer().map((c) => c.claimId)).toEqual([c1.claimId]); // only the first claim reaches the insurer
   });
@@ -222,5 +223,13 @@ describe("reward claims: World ID Agent Pass + IDKit Proof of Human", () => {
     const c = await k.start(account(), "ep_1", await share("ep_1"));
     expect(k.cancel(c.claimId, account().accountId)).toMatchObject({ status: "FAILED", failure: "cancelled by the owner" });
     expect(d.paid).toEqual([]);
+  });
+
+  it("IDKit action names follow the Developer Portal rule (lowercase, digits, hyphens, ≤ 32)", () => {
+    for (const id of ["ep_1", "ep_20261106142947_f024", "ep_20261106142947_F024_extra_long_suffix"]) {
+      const a = claimAction(id);
+      expect(a).toMatch(/^[a-z0-9-]{1,32}$/);
+    }
+    expect(claimAction("ep_20261106142947_f024")).toBe("claim-ep-20261106142947-f024");
   });
 });

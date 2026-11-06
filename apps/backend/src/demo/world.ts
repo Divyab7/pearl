@@ -21,7 +21,7 @@ import { incidentOf, OUTCOME_CODE, requestIdsHash, type OnChainAnchor, type Pool
 import * as seal from "../shared/seal.js";
 import { REPO_ROOT } from "../shared/env.js";
 import { accountIdOf, type Account } from "../dashboard/accounts.js";
-import type { RewardClaim } from "../dashboard/rewards.js";
+import { claimAction, type RewardClaim } from "../dashboard/rewards.js";
 import type { ClaimFacts, ClaimRow } from "../index/arkivClaims.js";
 import type { IndexRow } from "../index/arkiv.js";
 import type { DashboardOptions } from "../dashboard/server.js";
@@ -217,7 +217,7 @@ export async function buildDemoWorld(): Promise<DemoWorld> {
   const paidTx = "0x6a1e3c9f7b2d4e8a0c5f1b3d7e9a2c4f6b8d0e1a3c5f7b9d2e4a6c8f0b1d3e5a";
   const claims: RewardClaim[] = [
     {
-      claimId: "rc_9b21f04c7a11", accountId, episodeId: claimB.id, device: device.address, severity: 3, wallet: payout, action: `claim:${claimB.id}`,
+      claimId: "rc_9b21f04c7a11", accountId, episodeId: claimB.id, device: device.address, severity: 3, wallet: payout, action: claimAction(claimB.id),
       status: "INSURER_REVIEW", failure: null, agentPass: { prompt: null, subject, acr: "https://world.org/oidc/acr/orb", idTokenSha256: "h" },
       nullifier: "0x1c4e9a77d02b5f3e8a61c0d94b7e2f5a3c8d1e6f9a0b4c7d2e5f8a1b3c6d9e0f", amountWei: ethers.parseEther("0.03").toString(),
       insurerKey: await seal.wrapRunKey(claimB.runKey, insurer.publicJwk, ctxOf(claimB.id)), review: null, payout: null,
@@ -229,7 +229,7 @@ export async function buildDemoWorld(): Promise<DemoWorld> {
       ]),
     },
     {
-      claimId: "rc_3f8d6e2b0c94", accountId, episodeId: claimD.id, device: device.address, severity: 2, wallet: payout, action: `claim:${claimD.id}`,
+      claimId: "rc_3f8d6e2b0c94", accountId, episodeId: claimD.id, device: device.address, severity: 2, wallet: payout, action: claimAction(claimD.id),
       status: "PAID", failure: null, agentPass: { prompt: null, subject, acr: "https://world.org/oidc/acr/orb", idTokenSha256: "h" },
       nullifier: "0x2d5f0b88e13c6a4f9b72d1e05c8f3a6b4d9e2f7a0b1c5d8e3f6a9b2c4d7e0f1a", amountWei: ethers.parseEther("0.02").toString(),
       insurerKey: await seal.wrapRunKey(claimD.runKey, insurer.publicJwk, ctxOf(claimD.id)),
