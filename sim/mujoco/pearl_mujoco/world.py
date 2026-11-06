@@ -171,7 +171,29 @@ class World:
         Image.fromarray(img).save(buf, format="JPEG", quality=quality)
         return buf.getvalue()
 
+    def render_view(self, azimuth: float, elevation: float, distance: float, width: int = 640, height: int = 480, quality: int = 82) -> bytes:
+        """A free orbit view for people (dashboard drag-to-rotate). Never used for decisions: those use render_jpeg."""
+        from PIL import Image
+
+        if getattr(self, "_view_renderer", None) is None:
+            self._view_renderer = mujoco.Renderer(self.model, height, width)
+            self._view_cam = mujoco.MjvCamera()
+            self._view_cam.type = mujoco.mjtCamera.mjCAMERA_FREE
+            self._view_cam.lookat[:] = self.data.xpos[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "look")]
+        cam = self._view_cam
+        cam.azimuth = float(azimuth) % 360.0
+        cam.elevation = max(-89.0, min(-5.0, float(elevation)))
+        cam.distance = max(0.2, min(1.5, float(distance)))
+        self._view_renderer.update_scene(self.data, camera=cam)
+        img = self._view_renderer.render()
+        buf = io.BytesIO()
+        Image.fromarray(img).save(buf, format="JPEG", quality=quality)
+        return buf.getvalue()
+
     def close(self) -> None:
+        if getattr(self, "_view_renderer", None) is not None:
+            self._view_renderer.close()
+            self._view_renderer = None
         if self._renderer is not None:
             self._renderer.close()
             self._renderer = None

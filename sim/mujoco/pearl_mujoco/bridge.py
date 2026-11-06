@@ -5,6 +5,7 @@ MuJoCo arm bridge: runs the physics world in real time and connects to the backe
   WebSocket client -> ws://127.0.0.1:8081   newline-JSON protocol, same lines as the firmware (prompt §7.5)
   HTTP server      -> http://127.0.0.1:8092
       GET  /frame.jpg      a fresh 640x480 render of the table camera (CAMERA_URL for the backend)
+      GET  /view.jpg       a free orbit view for people: ?az=&el=&dist= (never used for decisions)
       GET  /scene          tabletop state as JSON (cube positions read from the physics)
       GET  /health         {"ok": true, ...}
       POST /inject/hand?ms=2500   the operator's hand enters the ToF beam
@@ -115,25 +116,11 @@ class Bridge:
             method, target, _ = head.split(b"\r\n", 1)[0].decode().split(" ", 2)
             url = urlparse(target)
             q = parse_qs(url.query)
-            status, ctype, body = 404, "application/json", b'{"error":"not found"}'
-            if method == "GET" and url.path == "/frame.jpg":
-                status, ctype, body = 200, "image/jpeg", self.world.render_jpeg()
-            elif method == "GET" and url.path == "/scene":
-                status, body = 200, json.dumps(self.world.scene()).encode()
-            elif method == "GET" and url.path == "/health":
-                body = json.dumps({"ok": True, "linked": self.ws is not None, "state": self.fw.state, "simMs": round(self.world.ms)}).encode()
-                status = 200
-            elif method == "POST" and url.path == "/inject/hand":
-                ms = float(q.get("ms", ["2500"])[0])
-                self.world.inject_hand(max(0.0, min(60_000.0, ms)))
-                status, body = 200, json.dumps({"ok": True, "kind": "hand", "ms": ms}).encode()
-            elif method == "POST" and url.path == "/reset-table":
-                ok = self.world.reset_table()
-                status, body = (200, b'{"ok":true}') if ok else (409, b'{"error":"the gripper is holding a cube"}')
-            elif method == "POST" and url.path == "/inject/bump":
-                self.world.inject_bump()
-                status, body = 200, b'{"ok":true,"kind":"bump"}'
-            reason = {200: "OK", 404: "Not Found", 409: "Conflict"}[status]
+            try:
+                status, ctype, body = self._route(method, url, q)
+            except Exception as e:  # a failed render or bad value: answer 500 instead of dropping the connection
+                status, ctype, body = 500, "application/json", json.dumps({"error": str(e)[:300]}).encode()
+            reason = {200: "OK", 404: "Not Found", 409: "Conflict", 500: "Internal Server Error"}[status]
             writer.write(
                 f"HTTP/1.1 {status} {reason}\r\nContent-Type: {ctype}\r\nContent-Length: {len(body)}\r\n"
                 f"Cache-Control: no-store\r\nConnection: close\r\n\r\n".encode() + body
@@ -143,6 +130,30 @@ class Bridge:
             pass
         finally:
             writer.close()
+
+    def _route(self, method: str, url, q: dict):
+        status, ctype, body = 404, "application/json", b'{"error":"not found"}'
+        if method == "GET" and url.path == "/frame.jpg":
+            status, ctype, body = 200, "image/jpeg", self.world.render_jpeg()
+        elif method == "GET" and url.path == "/view.jpg":
+            num = lambda k, d: float(q.get(k, [d])[0])
+            status, ctype, body = 200, "image/jpeg", self.world.render_view(num("az", "150"), num("el", "-32"), num("dist", "0.55"))
+        elif method == "GET" and url.path == "/scene":
+            status, body = 200, json.dumps(self.world.scene()).encode()
+        elif method == "GET" and url.path == "/health":
+            body = json.dumps({"ok": True, "linked": self.ws is not None, "state": self.fw.state, "simMs": round(self.world.ms)}).encode()
+            status = 200
+        elif method == "POST" and url.path == "/inject/hand":
+            ms = float(q.get("ms", ["2500"])[0])
+            self.world.inject_hand(max(0.0, min(60_000.0, ms)))
+            status, body = 200, json.dumps({"ok": True, "kind": "hand", "ms": ms}).encode()
+        elif method == "POST" and url.path == "/reset-table":
+            ok = self.world.reset_table()
+            status, body = (200, b'{"ok":true}') if ok else (409, b'{"error":"the gripper is holding a cube"}')
+        elif method == "POST" and url.path == "/inject/bump":
+            self.world.inject_bump()
+            status, body = 200, b'{"ok":true,"kind":"bump"}'
+        return status, ctype, body
 
     async def run(self) -> None:
         self.outbox = asyncio.Queue()

@@ -73,29 +73,45 @@ export function MyRobot({ live, sub, runId }: { live: any; sub?: string; runId?:
 }
 
 // ---------------------------------------------------------------- Live
-/** The robot's table camera, refreshed a few times a second (fetched off-screen, swapped in when loaded: no flicker). */
-function LiveCamera({ label, phase }: { label: string; phase?: string }) {
+const VIEW0 = { az: 150, el: -32, dist: 0.55 };
+
+/**
+ * The robot's table camera, refreshed a few times a second (fetched off-screen, swapped in when loaded: no flicker).
+ * With the MuJoCo arm it is also a 3D view: drag to orbit, scroll to zoom, double-click to reset. "AI camera" shows
+ * the fixed camera the 0G model decides from.
+ */
+function LiveCamera({ label, phase, orbit }: { label: string; phase?: string; orbit: boolean }) {
   const [src, setSrc] = useState<string | null>(null);
   const [down, setDown] = useState(false);
+  const [mode, setMode] = useState<"3d" | "ai">(orbit ? "3d" : "ai");
+  const view = useRef({ ...VIEW0 });
+  const drag = useRef<{ x: number; y: number; az: number; el: number } | null>(null);
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   useEffect(() => {
     let alive = true;
     let timer: any;
     let last: string | null = null;
     const next = async () => {
       const t0 = Date.now();
+      const v = view.current;
+      const url = modeRef.current === "3d"
+        ? `/api/camera/view.jpg?az=${v.az.toFixed(1)}&el=${v.el.toFixed(1)}&dist=${v.dist.toFixed(3)}&t=${t0}`
+        : `/api/camera/live.jpg?t=${t0}`;
       try {
-        const r = await fetch(`/api/camera/live.jpg?t=${t0}`, { cache: "no-store" });
+        const r = await fetch(url, { cache: "no-store" });
         if (!r.ok) throw new Error(String(r.status));
-        const url = URL.createObjectURL(await r.blob());
-        if (!alive) return URL.revokeObjectURL(url);
-        setSrc(url);
+        const obj = URL.createObjectURL(await r.blob());
+        if (!alive) return URL.revokeObjectURL(obj);
+        setSrc(obj);
         setDown(false);
         if (last) URL.revokeObjectURL(last);
-        last = url;
+        last = obj;
       } catch {
         if (alive) setDown(true);
       }
-      if (alive) timer = setTimeout(next, Math.max(60, 250 - (Date.now() - t0)));
+      // faster while dragging, a few frames a second otherwise
+      if (alive) timer = setTimeout(next, Math.max(30, (drag.current ? 60 : 250) - (Date.now() - t0)));
     };
     void next();
     return () => {
@@ -104,14 +120,42 @@ function LiveCamera({ label, phase }: { label: string; phase?: string }) {
       if (last) URL.revokeObjectURL(last);
     };
   }, []);
+  const is3d = orbit && mode === "3d";
+  const onDown = (e: React.PointerEvent) => {
+    if (!is3d) return;
+    (e.target as Element).setPointerCapture(e.pointerId);
+    drag.current = { x: e.clientX, y: e.clientY, az: view.current.az, el: view.current.el };
+  };
+  const onMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d) return;
+    view.current.az = d.az - (e.clientX - d.x) * 0.4;
+    view.current.el = Math.max(-89, Math.min(-5, d.el - (e.clientY - d.y) * 0.3));
+  };
+  const onUp = () => (drag.current = null);
+  const onWheel = (e: React.WheelEvent) => {
+    if (!is3d) return;
+    view.current.dist = Math.max(0.2, Math.min(1.5, view.current.dist * (e.deltaY > 0 ? 1.08 : 1 / 1.08)));
+  };
   return (
-    <figure className="cam">
-      {src ? <img className="live-cam" alt="Live view of the robot's table" src={src} /> : <div className="cam-wait"><Spinner /> Connecting to the camera…</div>}
+    <figure className={`cam ${is3d ? "orbit" : ""}`}>
+      <div className="cam-stage" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onWheel={onWheel} onDoubleClick={() => (view.current = { ...VIEW0 })}>
+        {src ? <img className="live-cam" alt={is3d ? "3D view of the robot's table: drag to rotate" : "The camera the 0G model decides from"} src={src} draggable={false} /> : <div className="cam-wait"><Spinner /> Connecting to the camera…</div>}
+      </div>
       <figcaption className="cam-tags">
         <span className={`cam-live ${down ? "off" : ""}`}>{down ? "Camera offline" : "Live"}</span>
         <span className="cam-tag">{label}</span>
         {phase && phase !== "IDLE" && <span className="cam-tag">{phase.replaceAll("_", " ").toLowerCase()}</span>}
       </figcaption>
+      {orbit && (
+        <div className="cam-bar">
+          <div className="seg" role="group" aria-label="Camera">
+            <button type="button" className={mode === "3d" ? "on" : ""} aria-pressed={mode === "3d"} onClick={() => setMode("3d")}>3D view</button>
+            <button type="button" className={mode === "ai" ? "on" : ""} aria-pressed={mode === "ai"} onClick={() => setMode("ai")}>AI camera</button>
+          </div>
+          <span className="muted small">{is3d ? "Drag to rotate · scroll to zoom · double-click to reset" : "The fixed camera the 0G model decides from"}</span>
+        </div>
+      )}
     </figure>
   );
 }
@@ -147,7 +191,7 @@ function LiveTab({ live }: { live: any }) {
       <div className="stack">
         <Card title={hasCam ? "Table camera" : "Arm"} sub={status?.phase && status.phase !== "IDLE" ? `Run phase: ${status.phase.replaceAll("_", " ").toLowerCase()}` : "No run in progress"}>
           {hasCam
-            ? <LiveCamera label={state?.deviceKind === "mujoco" ? "MuJoCo physics" : DEVICE_LABEL[state?.deviceKind] ?? "Camera"} phase={status?.phase} />
+            ? <LiveCamera label={state?.deviceKind === "mujoco" ? "MuJoCo physics" : DEVICE_LABEL[state?.deviceKind] ?? "Camera"} phase={status?.phase} orbit={state?.deviceKind === "mujoco"} />
             : <ArmView joints={tel?.joints} scene={tel?.scene} ring={ringClass(tel?.status?.ring)} label={DEVICE_LABEL[state?.deviceKind] ?? "arm"} showAngles={false} />}
           {hasCam && (
             <details className="disclosure">

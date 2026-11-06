@@ -559,3 +559,11 @@ fieldset.plain:disabled .btn { opacity: .45; cursor: not-allowed; }
 .cam-live { display: inline-flex; align-items: center; gap: 6px; }
 .cam-live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #ff4d4f; box-shadow: 0 0 0 3px rgba(255, 77, 79, .25); }
 .cam-live.off::before { background: #8a93a3; box-shadow: none; }
+.cam-stage { touch-action: none; user-select: none; }
+.cam.orbit .cam-stage { cursor: grab; }
+.cam.orbit .cam-stage:active { cursor: grabbing; }
+.cam-bar { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; margin-top: var(--s2); }
+.seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--r2); overflow: hidden; }
+.seg button { background: transparent; border: 0; color: var(--text-2); font: 500 13px var(--sans); padding: 6px 12px; min-height: 32px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--border-strong); }
+.seg button.on { background: var(--accent-soft); color: var(--text); }

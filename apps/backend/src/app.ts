@@ -304,6 +304,25 @@ export async function createApp(opts: AppOptions = {}) {
     }
   });
 
+  // MuJoCo only: a free orbit view people can rotate (az/el/dist); decisions never use it
+  app.get("/api/camera/view.jpg", async (req, res) => {
+    if (!mj) {
+      res.status(404).json({ error: "the orbit view exists only with DEVICE=mujoco" });
+      return;
+    }
+    const n = (k: string, lo: number, hi: number, d: number) => {
+      const v = Number((req.query as Record<string, unknown>)[k]);
+      return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d;
+    };
+    try {
+      const r = await fetch(`${mj.bridgeUrl}/view.jpg?az=${n("az", -720, 720, 150)}&el=${n("el", -89, -5, -32)}&dist=${n("dist", 0.2, 1.5, 0.55)}`, { signal: AbortSignal.timeout(5000) });
+      if (!r.ok) throw new Error(`bridge ${r.status}`);
+      res.set("Cache-Control", "no-store").type("image/jpeg").send(Buffer.from(await r.arrayBuffer()));
+    } catch (e) {
+      res.status(502).json({ error: errMsg(e) });
+    }
+  });
+
   // live camera view for the dashboard (the same source the decisions use); 404 when there is no camera
   app.get("/api/camera/live.jpg", async (_req, res) => {
     if (camera.kind === "none") {
