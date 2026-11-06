@@ -25,34 +25,113 @@ declare global {
   }
 }
 
-type Side = "owner" | "insurer";
+type Live = { tick: number; state?: any; [k: string]: any };
 
-export function Insurance({ live, side, claimId }: { live: any; side: Side; claimId?: string }) {
+/** Owner workspace → Claims (#/app/owner/claims): claim a payout after an incident. */
+export function OwnerClaimsPage({ live }: { live: Live }) {
   const pool = usePool(live.tick);
   return (
     <div className="page ins">
       <PageHeader
-        title={PAGE.insurance}
-        description="After an incident the robot's owner claims an insurance payout. World ID proves it's really them, and one unique human. The insurer checks the incident and the pool pays out."
+        title="Claims"
+        description="After an incident, claim an insurance payout. World ID proves it's really you, and one unique human. The insurer checks the incident and the pool pays out."
         actions={<PoolPill pool={pool.data} />}
       />
-      <SideSwitch side={side} />
-      {side === "owner" ? <OwnerSide live={live} /> : <InsurerSide tick={live.tick} claimId={claimId} reloadPool={pool.reload} pool={pool.data} />}
+      <OwnerSide live={live} />
     </div>
   );
 }
 
-/** Owner | insurer: two links, so the switch always reflects (and sets) the route. */
-function SideSwitch({ side }: { side: Side }) {
-  const items: [Side, string, string][] = [["owner", "I'm the owner", "user"], ["insurer", "I'm the insurer", "wallet"]];
+/** Insurer workspace → Claims (#/app/insurer[/claim/<id>]): the queue and the review of one claim. */
+export function InsurerClaimsPage({ live, claimId }: { live: Live; claimId?: string }) {
+  const pool = usePool(live.tick);
   return (
-    <nav className="ins-switch" aria-label="Insurance side">
-      {items.map(([id, label, icon]) => (
-        <a key={id} href={to.insurance(id)} className={side === id ? "on" : ""} aria-current={side === id ? "page" : undefined}>
-          <Icon name={icon} size={15} />{label}
-        </a>
-      ))}
-    </nav>
+    <div className="page ins">
+      <PageHeader
+        title="Claims"
+        description="Claims from robot owners who passed both World ID checks. Open one, check the sealed incident, then approve or decline."
+        actions={<a className="ins-pool-link" href={to.pool()}><PoolPill pool={pool.data} /></a>}
+      />
+      <InsurerGate tick={live.tick}>
+        {(info, reload) => <Desk info={info} reload={reload} tick={live.tick} claimId={claimId} reloadPool={pool.reload} />}
+      </InsurerGate>
+    </div>
+  );
+}
+
+/** Insurer workspace → Pool (#/app/insurer/pool): what's left to pay, and every payout. */
+export function InsurerPoolPage({ live }: { live: Live }) {
+  const pool = usePool(live.tick);
+  return (
+    <div className="page ins">
+      <PageHeader title="Pool" description="The insurance pool on 0G Chain pays approved claims straight to the owner's payout wallet." />
+      <PoolCard pool={pool.data} />
+      <Payouts pool={pool.data} />
+    </div>
+  );
+}
+
+/** Insurer workspace → Settings (#/app/insurer/settings): wallet sign-in and the receiving key. */
+export function InsurerSettingsPage({ live }: { live: Live }) {
+  const cfg = useConfig();
+  return (
+    <div className="page ins ins-settings">
+      <PageHeader title="Settings" description="Sign in with the insurer's wallet, and keep the receiving key that opens claimed incidents on this browser." />
+      <InsurerGate tick={live.tick}>
+        {(info, reload) => {
+          const rec = loadKey("insurer", info.address);
+          const keyReady = !!(info.key && rec && rec.kid === info.key.kid);
+          return (
+            <>
+              <Section boxed title="Insurer wallet" description="You signed a one-time message with this wallet. It moved no money.">
+                <div className="row">
+                  <StatusPill tone="ok" size="sm">Signed in</StatusPill>
+                  <code className="mono">{info.address}</code>
+                  <CopyButton value={info.address} label="Copy the insurer wallet" />
+                  <button type="button" className="btn ghost push" onClick={() => post("/api/insurer/logout").then(() => { accountChanged(); reload(); })}><Icon name="logout" /> Sign out</button>
+                </div>
+                <TechDetails>
+                  <Chip label="Insurer wallet" value={info.address} href={cfg.explorer ? `${cfg.explorer}/address/${info.address}` : null} />
+                </TechDetails>
+              </Section>
+              <Section boxed title="Receiving key" info={INS_TIP.receivingKey} description={keyReady ? "Ready on this browser. Owners lock each claimed incident for this key." : "Owners lock each claimed incident for this key. You need it on this browser to open them."}>
+                <KeySetup embedded role="insurer" who={info.address} registeredKid={info.key?.kid ?? null} register={(publicJwk) => post("/api/insurer/key", { publicJwk }).then(reload)} />
+              </Section>
+            </>
+          );
+        }}
+      </InsurerGate>
+    </div>
+  );
+}
+
+/** Every payout the pool has sent (newest first). */
+function Payouts({ pool }: { pool: any }) {
+  const cfg = useConfig();
+  if (!pool || !pool.configured || pool.error) return null;
+  const paid: any[] = pool.paid ?? [];
+  return (
+    <Section boxed title="Payouts" description={paid.length ? `${paid.length} payout${paid.length === 1 ? "" : "s"} sent from the pool.` : undefined}>
+      {paid.length === 0 ? (
+        <EmptyState plain icon="wallet" title="No payouts yet">When you approve a claim, its payment shows up here.</EmptyState>
+      ) : (
+        <ul className="ins-payouts">
+          {paid.map((p: any) => {
+            const at = p.at ?? p.ts ?? p.paidAt ?? p.timestamp;
+            return (
+              <li key={p.txHash}>
+                <span className="ins-payout-main">
+                  <Amount wei={p.amountWei} paid />
+                  <span className="muted small">{at ? when(typeof at === "number" && at < 1e12 ? at * 1000 : at) : "Paid to the owner's payout wallet"}</span>
+                </span>
+                {cfg.explorer ? <a className="btn small-btn" href={`${cfg.explorer}/tx/${p.txHash}`} target="_blank" rel="noreferrer">See the payment<span className="sr-only"> (opens a new tab)</span> <Icon name="ext" size={13} /></a>
+                  : <code className="mono small">{String(p.txHash ?? "").slice(0, 10)}…</code>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Section>
   );
 }
 
@@ -180,8 +259,8 @@ function OwnerSide({ live }: { live: any }) {
       {account === undefined ? (
         <Skeleton lines={4} label="Loading your account" />
       ) : !account ? (
-        <EmptyState title="Sign in as the robot's owner to claim" icon="user" action={<a className="btn primary" href={to.account()}>Sign in with World ID</a>}>
-          You need your World ID sign-in. Insurer? Use <a href={to.insurance("insurer")}>I'm the insurer</a>.
+        <EmptyState title="Sign in as the robot's owner to claim" icon="user" action={<a className="btn primary" href={to.settings()}>Sign in with World ID</a>}>
+          You need your World ID sign-in. Insurer? Open the <a href={to.insurer()}>insurer workspace</a>.
         </EmptyState>
       ) : (
         <OwnerClaims live={live} account={account} linked={linked} claims={claims} setClaims={setClaims} />
@@ -234,7 +313,7 @@ function OwnerClaims({ live, account, linked, claims, setClaims }: { live: any; 
     setMsg(null);
     try {
       if (!unlock) throw new Error(reason);
-      if (!account.wallet) throw new Error("Add a payout wallet in Account first.");
+      if (!account.wallet) throw new Error("Add a payout wallet in Settings first.");
       const ins = await get("/api/insurer");
       if (!ins.key) throw new Error("The insurer hasn't set up its receiving key yet, so it couldn't read this incident. Try again later.");
       // this run's key: unlocked here with your key, then locked for the insurer: for this one incident only
@@ -270,7 +349,7 @@ function OwnerClaims({ live, account, linked, claims, setClaims }: { live: any; 
         {blockers.length > 0 && (
           <Callout tone="warn" title="Before you can claim">
             <ul className="ins-blockers">{blockers.map((b) => <li key={b}>{b}</li>)}</ul>
-            <a className="btn" href={to.account()}>Open Account</a>
+            <a className="btn" href={to.settings()}>Open Settings</a>
           </Callout>
         )}
         {!linked && account.robots?.length === 0 && <p className="muted small">No robot is linked to your account yet.</p>}
@@ -385,7 +464,7 @@ function ClaimCard({ claim: c, incident, onChange, cancel }: { claim: any; incid
       <TechDetails>
         <Dl rows={[
           ["Claim", <code className="mono">{c.claimId}</code>],
-          ["Run", <a href={to.proof(c.episodeId)}><code className="mono">{c.episodeId}</code></a>],
+          ["Run", <a href={to.verify(c.episodeId)}><code className="mono">{c.episodeId}</code></a>],
           ["Checks", "World ID Agent Pass (owner) · IDKit Proof of Human (unique person)"],
         ]} />
         {c.arkiv?.entityKey && <Chip label="Arkiv record" value={c.arkiv.entityKey} href={`${ARKIV_EXPLORER}/entity/${c.arkiv.entityKey}`} />}
@@ -446,7 +525,8 @@ function IdkitStep({ claim, onDone }: { claim: any; onDone: () => void }) {
 }
 
 // ================================================================ INSURER
-function InsurerSide({ tick, claimId, pool, reloadPool }: { tick: number; claimId?: string; pool: any; reloadPool: () => void }) {
+/** Loads the insurer session; shows sign-in until the insurer's wallet has signed in, then renders `children`. */
+function InsurerGate({ tick, children }: { tick: number; children: (info: any, reload: () => void) => ReactNode }) {
   const [info, setInfo] = useState<any>(null);
   const [err, setErr] = useState("");
   const load = () => get("/api/insurer").then((i) => { setInfo((prev: any) => { if (i?.signedIn !== prev?.signedIn) accountChanged(); return i; }); setErr(""); }).catch((e) => setErr(e.message));
@@ -458,7 +538,7 @@ function InsurerSide({ tick, claimId, pool, reloadPool }: { tick: number; claimI
   if (!info) return <Skeleton lines={4} label="Loading the insurer desk" />;
   if (!info.configured) return <EmptyState title="No insurer is set up here" icon="wallet">Whoever runs this dashboard needs to name the insurer's wallet before claims can be reviewed.</EmptyState>;
   if (!info.signedIn) return <SignIn address={info.address} onDone={load} />;
-  return <Desk info={info} reload={load} tick={tick} claimId={claimId} pool={pool} reloadPool={reloadPool} />;
+  return <>{children(info, load)}</>;
 }
 
 function SignIn({ address, onDone }: { address: string; onDone: () => void }) {
@@ -488,7 +568,7 @@ function SignIn({ address, onDone }: { address: string; onDone: () => void }) {
         <button type="button" className="btn primary lg" onClick={signIn} disabled={busy || !hasWallet} aria-describedby={!hasWallet ? "ins-no-wallet" : undefined}>
           {busy ? <><Spinner /> Waiting for your wallet…</> : <><Icon name="wallet" /> Connect wallet and sign in</>}
         </button>
-        <span className="muted small">Robot owner? Use <a href={to.insurance("owner")}>I'm the owner</a>.</span>
+        <span className="muted small">Robot owner? Open the <a href={to.claims()}>owner workspace</a>.</span>
       </div>
       {!hasWallet && <div id="ins-no-wallet"><Callout tone="warn" title="No wallet in this browser">Open this page in a browser with MetaMask (or another wallet) holding the insurer account, then reload.</Callout></div>}
       {msg && <PlainError raw={msg} fallback="Sign-in didn't finish. Try again." />}
@@ -508,7 +588,7 @@ function InsurerStatus({ status }: { status: string }) {
   return <StatusPill tone={t} size="sm">{w}</StatusPill>;
 }
 
-function Desk({ info, reload, tick, claimId, pool, reloadPool }: { info: any; reload: () => void; tick: number; claimId?: string; pool: any; reloadPool: () => void }) {
+function Desk({ info, reload, tick, claimId, reloadPool }: { info: any; reload: () => void; tick: number; claimId?: string; reloadPool: () => void }) {
   const [claims, setClaims] = useState<any[] | null>(null);
   const [err, setErr] = useState("");
   const rec = loadKey("insurer", info.address);
@@ -540,7 +620,7 @@ function Desk({ info, reload, tick, claimId, pool, reloadPool }: { info: any; re
       <div className="ins-who">
         <span className="ins-who-text"><Icon name="check" size={14} /> Signed in as the insurer</span>
         {keyReady && <span className="muted small ins-who-key"><Icon name="key" size={13} /> Receiving key ready on this browser<InfoTip text={INS_TIP.receivingKey} /></span>}
-        <button type="button" className="btn ghost" onClick={() => post("/api/insurer/logout").then(reload)}><Icon name="logout" /> Sign out</button>
+        <a className="btn ghost" href={to.insurerSettings()}><Icon name="key" /> Wallet and key</a>
       </div>
       {!keyReady && (
         <Section boxed title="Set up your receiving key" info={INS_TIP.receivingKey} description="Owners lock each claimed incident for this key. You need it on this browser to open them." className="ins-keysetup">
@@ -562,7 +642,7 @@ function Desk({ info, reload, tick, claimId, pool, reloadPool }: { info: any; re
                   const on = sel?.claimId === c.claimId;
                   return (
                     <li key={c.claimId}>
-                      <a className={`ins-q-row ${on ? "sel" : ""}`} href={to.insurance("insurer", c.claimId)} aria-current={on ? "true" : undefined}>
+                      <a className={`ins-q-row ${on ? "sel" : ""}`} href={to.insurer(c.claimId)} aria-current={on ? "true" : undefined}>
                         <span className="ins-q-main">
                           <span className="ins-q-title">Incident · {incidentTime(c.episodeId)} <Severity value={c.severity} incident short /></span>
                           <span className="ins-q-sub">{qtab === "decided" ? <InsurerStatus status={c.status} /> : <>Submitted {ago(c.createdAt)}</>}</span>
@@ -575,11 +655,10 @@ function Desk({ info, reload, tick, claimId, pool, reloadPool }: { info: any; re
               </ul>
             )}
           </Section>
-          <PoolCard pool={pool} />
         </aside>
         <div className="ins-desk-main" ref={reviewRef} tabIndex={-1} aria-label="Selected claim">
           {sel ? <Review claim={sel} rec={keyReady ? rec : null} onDecided={() => { void loadClaims(); reloadPool(); }} />
-            : claims && claimId ? <EmptyState title="Claim not found" icon="search" action={<a className="btn" href={to.insurance("insurer")}>Back to the queue</a>}>It may have been withdrawn by the owner.</EmptyState>
+            : claims && claimId ? <EmptyState title="Claim not found" icon="search" action={<a className="btn" href={to.insurer()}>Back to the queue</a>}>It may have been withdrawn by the owner.</EmptyState>
               : claims ? <EmptyState title="Pick a claim" icon="doc">Select a claim to open the incident and decide.</EmptyState>
                 : <Skeleton lines={6} label="Loading the claim" />}
         </div>
@@ -626,7 +705,7 @@ function Review({ claim, rec, onDecided }: { claim: any; rec: any; onDecided: ()
         <TechDetails>
           <Dl rows={[
             ["Claim", <code className="mono">{claim.claimId}</code>],
-            ["Run", <a href={to.proof(claim.episodeId)}><code className="mono">{claim.episodeId}</code></a>],
+            ["Run", <a href={to.verify(claim.episodeId)}><code className="mono">{claim.episodeId}</code></a>],
             ["Payout wallet", <span className="row"><code className="mono">{claim.wallet}</code><CopyButton value={claim.wallet} label="Copy payout wallet" /></span>],
             ["Claimant id", <code className="mono" title="World ID nullifier: one per person per incident, reveals no identity">{claim.nullifier}</code>],
             ["Checks passed", "World ID Agent Pass (owner) · IDKit Proof of Human (unique person)"],

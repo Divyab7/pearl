@@ -38,8 +38,8 @@ export function Kit() {
       <Section title="Choose a role">
         <div className="grid-3">
           <RoleCard icon="robot" title="I own a robot" body="Watch it live and read its runs." href={to.robot()} primary />
-          <RoleCard icon="wallet" title="I'm an insurer" body="Review claims and pay from the pool." href={to.insurance("insurer")} />
-          <RoleCard icon="shield" title="Check a record" body="Anyone can check a run is untouched." href={to.proof()} />
+          <RoleCard icon="wallet" title="I'm an insurer" body="Review claims and pay from the pool." href={to.insurer()} />
+          <RoleCard icon="shield" title="Check a record" body="Anyone can check a run is untouched." href={to.verify()} />
         </div>
       </Section>
 

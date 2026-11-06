@@ -105,7 +105,7 @@ export function RoleCard({ icon, title, body, href, onClick, primary = false }: 
 /**
  * RunRow: one run as a sentence: time · outcome in words · verdict · optional "Claimable". Wrap rows in
  * <ul className="rrows"><li>…</li></ul>. Use outcomeWord()/OUTCOME_TONE from lib/words.ts for `outcome`/`tone`.
- * `href` makes it a link (preferred: to.run(id) / to.proof(id)); otherwise `onClick`. `note` is a dim second line.
+ * `href` makes it a link (preferred: to.run(id) / to.verify(id)); otherwise `onClick`. `note` is a dim second line.
  */
 export function RunRow({ time, outcome, tone = "neutral", verdict, claimable = false, note, href, onClick, selected = false, side, title }: {
   time: ReactNode; outcome: ReactNode; tone?: Tone; verdict?: VerdictKind | null; claimable?: boolean; note?: ReactNode;

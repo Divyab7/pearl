@@ -53,7 +53,7 @@ export function Offline({ section }: { section?: "courier" | "mesh" }) {
         <Courier />
       </Section>
 
-      <p className="offline-back small muted"><Icon name="lock" size={13} /> Records stay locked and signed by the robot the whole way. <a href={to.proof()}>Check any record</a></p>
+      <p className="offline-back small muted"><Icon name="lock" size={13} /> Records stay locked and signed by the robot the whole way. <a href={to.verify()}>Check any record</a></p>
     </div>
   );
 }

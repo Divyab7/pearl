@@ -397,7 +397,7 @@ function LiveRunStory({
         <div className="rs-alert tone-bad" role="alert">
           <Icon name="alert" size={16} />
           <span>
-            <b>Couldn't unlock.</b> {plainError(err, "The key in this browser couldn't open this run. Check you're using the right key on the Account page, then try again.")}
+            <b>Couldn't unlock.</b> {plainError(err, "The key in this browser couldn't open this run. Check you're using the right key in Settings, then try again.")}
             {isTechy(err) && <TechDetails boxless><code className="mono small">{err}</code></TechDetails>}
           </span>
         </div>
@@ -405,7 +405,7 @@ function LiveRunStory({
       {incident && (
         <div className={`rs-alert tone-${severityTone(sev)}`}>
           <Icon name="alert" size={16} />
-          <span><b>Incident.</b> {incidentLine}{mode === "owner" && sev >= 2 ? <> · This run can be claimed. <a href={to.insurance("owner")}>Claim insurance</a></> : null}</span>
+          <span><b>Incident.</b> {incidentLine}{mode === "owner" && sev >= 2 ? <> · This run can be claimed. <a href={to.claims()}>Claim insurance</a></> : null}</span>
         </div>
       )}
 
