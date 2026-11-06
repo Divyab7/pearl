@@ -419,7 +419,8 @@ export function Proof({ tick, runId, tamper = false }: { tick: number; runId?: s
       live = false;
     };
   }, [runId, runs.items.length, !!runs.source]);
-  const arkiv: boolean | null = runs.source === "arkiv" ? !!listed : null;
+  // shown only when this run is in the Arkiv list we read (the list is the recent runs, so absence proves nothing)
+  const arkiv: boolean | null = runs.source === "arkiv" && listed ? true : null;
 
   return (
     <div className="page proof">

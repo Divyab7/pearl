@@ -23,7 +23,7 @@ export const BUILT_ON = [
   },
   {
     name: "Arkiv", tag: "The searchable public record",
-    role: "Every run and every claim is a live, public Arkiv record that anyone can query.",
+    role: "Every run and every claim is a public Arkiv record that anyone can query. Claims update live.",
     points: [
       "The robot writes its own Arkiv entry for every run: outcome, incident, severity and time. Never the contents.",
       "Run lists and your claimable incidents are live Arkiv queries, so they work even when the robot is offline.",

@@ -39,7 +39,7 @@
 .signin-card { width: 100%; max-width: 460px; display: grid; gap: var(--s4); }
 .signin-head { display: grid; gap: var(--s2); margin-bottom: var(--s2); }
 .signin-head h1 { font-size: 32px; }
-.seg { margin: 0; padding: 0; border: 0; min-width: 0; width: 100%; }
+.seg { margin: 0; padding: 0; border: 0; min-width: 0; width: 100%; display: grid; justify-self: stretch; }
 .seg legend { font-size: 14px; font-weight: 650; color: var(--text); padding: 0; margin-bottom: var(--s2); }
 .seg-track { padding: 4px; border: 1px solid var(--border-strong); border-radius: var(--r3); background: var(--raise); display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
 .seg-opt { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; border-radius: var(--r2); font-weight: 600; font-size: var(--fs-ui); color: var(--text-2); cursor: pointer; transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
