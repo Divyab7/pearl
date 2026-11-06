@@ -18,8 +18,12 @@ import type { ArmConfig } from "../shared/armConfig.js";
 import { hashCanonical, sha256Hex } from "../shared/hash.js";
 import type { Checkpoint, ChainedRecord, DeviceMsg, EpisodeLog, EpisodeOutcome, TaskSpec } from "../shared/types.js";
 import { decide, failsafeDecision, type DecisionCore } from "./decision.js";
-import { EpisodeRecorder, framePath, writeEpisode } from "./log.js";
+import { EpisodeRecorder, framePath, sealedPath, writeEpisode } from "./log.js";
 import { localRoot } from "../og/storage.js";
+import { RobotKeys } from "../shared/runKeys.js";
+import { lockFrame, sealEpisode, sealedBytes, type SealedEpisode } from "../shared/seal.js";
+import { incidentOf } from "../og/anchor.js";
+import { zerobotOriginOf } from "./pipeline.js";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import {
@@ -66,12 +70,17 @@ export interface OrchestratorDeps {
   deviceId: string;
   routerConfig: () => RouterConfig;
   scene?: () => SceneState | null;
-  /** Called with every closed episode; app.ts publishes it here (0G Storage, 0G Chain anchor, Arkiv). */
-  onEpisodeClosed?: (log: EpisodeLog) => Promise<void> | void;
+  /**
+   * Called with every closed episode and its sealed (locked) copy; app.ts publishes the sealed copy here (0G Storage,
+   * 0G Chain anchor, Arkiv). `sealed` is null only without a device signer (unit tests).
+   */
+  onEpisodeClosed?: (log: EpisodeLog, sealed: SealedEpisode | null) => Promise<void> | void;
   /** The device's own key: signs every closed log's head (rev 5, device-first). */
   deviceSigner?: DeviceSigner;
   fetchImpl?: typeof fetch;
   writeFiles?: boolean;
+  /** The robot's key memory: a fresh run key per episode locks its frames and, after close, its log. */
+  keys?: RobotKeys;
 }
 
 export interface OrchStatus {
@@ -101,9 +110,12 @@ export class Orchestrator {
   private callSeq = 0;
   private readonly poses: Poses;
   private listeners: Listener[] = [];
+  private runKey: Uint8Array | null = null;
+  readonly keys: RobotKeys;
 
   constructor(private readonly deps: OrchestratorDeps) {
     this.poses = new Poses(deps.arm);
+    this.keys = deps.keys ?? new RobotKeys(deps.deviceId, deps.writeFiles !== false);
     deps.monitor.onAny((m) => this.onDeviceMsg(m));
   }
 
@@ -137,6 +149,7 @@ export class Orchestrator {
     if (st === "FROZEN_HAND") throw new Error("device is FROZEN_HAND: clear the zone first");
     const episodeId = `ep_${new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}_${randomBytes(2).toString("hex")}`;
     this.rec = new EpisodeRecorder(episodeId, this.deps.deviceId, this.deps.armId, task);
+    this.runKey = this.keys.createRunKey(episodeId);
     this.task = task;
     this.outcome = null;
     this.lastDecision = null;
@@ -278,10 +291,18 @@ export class Orchestrator {
       const signer = this.deps.deviceSigner;
       log.device = { address: signer.address, signature: await signer.sign(headMessage(log.episodeId, log.headHash)) };
     }
+    // lock the log with this run's key; the public header carries only what 0G Chain and Arkiv already show
+    const origin = zerobotOriginOf(log);
+    const sealed = log.device
+      ? await sealEpisode(log, this.runKey!, { ...incidentOf(log), origin: origin ? { kind: "zerobot", ...origin } : null })
+      : null;
     this.setPhase(OUTCOME_PHASE[outcome]);
-    if (this.deps.writeFiles !== false) writeEpisode(log);
+    if (this.deps.writeFiles !== false) {
+      writeEpisode(log); // the robot's own memory
+      if (sealed) writeFileSync(sealedPath(log.episodeId), sealedBytes(sealed));
+    }
     try {
-      await this.deps.onEpisodeClosed?.(log);
+      await this.deps.onEpisodeClosed?.(log, sealed);
     } catch (e) {
       console.error("onEpisodeClosed failed:", e);
     }
@@ -360,16 +381,18 @@ export class Orchestrator {
   }
 
   /**
-   * Saves a checkpoint frame next to the log and returns its 0G Storage root, computed offline now (same bytes → same
-   * root); the frame itself is uploaded after the episode.
+   * Locks a checkpoint frame with this run's key, saves the locked file next to the log and returns ITS 0G Storage
+   * root, computed offline now (same bytes → same root); the locked file is uploaded after the episode. The record
+   * also keeps the sha256 of the unlocked JPEG, so a key holder can check the frame after unlocking it.
    */
   private async keepFrame(bytes: Uint8Array): Promise<string> {
+    const locked = await lockFrame(this.runKey!, bytes);
     if (this.deps.writeFiles !== false) {
       const p = framePath(this.rec!.episodeId, this.rec!.nextIdx);
       mkdirSync(dirname(p), { recursive: true });
-      writeFileSync(p, bytes);
+      writeFileSync(p, locked);
     }
-    return localRoot(bytes);
+    return localRoot(locked);
   }
 
   /** Executes steps in order. Stops at the first safety interruption (returns its index) or refusal. */

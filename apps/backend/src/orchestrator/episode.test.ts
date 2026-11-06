@@ -12,7 +12,7 @@ import { Orchestrator } from "./episode.js";
 import { verifyChain } from "./log.js";
 import { localRoot } from "../og/storage.js";
 import { sha256Hex } from "../shared/hash.js";
-import { replayPolicy } from "../verify/verifier.js";
+import { replayPolicy } from "../verify/content.js";
 
 const arm = parseArmConfig({ ...loadArmConfig(), maxDegPerS: 360, handClearMs: 300 });
 const task = { task: "pick" as const, color: "red", from: "A2" as const, to: "BIN" as const };
@@ -175,7 +175,9 @@ describe("episode orchestrator (sim)", () => {
     await t.teardown();
     const [plan, grasp] = decisions(log.records);
     expect(sentImage).toBe(true);
-    expect(plan).toMatchObject({ source: "0g", frameHash: sha256Hex(jpeg), frameRoot: await localRoot(jpeg) });
+    // the record keeps the hash of the JPEG and the 0G Storage root of the LOCKED frame (never of the readable JPEG)
+    expect(plan).toMatchObject({ source: "0g", frameHash: sha256Hex(jpeg), frameRoot: expect.stringMatching(/^0x[0-9a-f]{64}$/) });
+    expect((plan as { frameRoot: string }).frameRoot).not.toBe(await localRoot(jpeg));
     expect(grasp).toMatchObject({ source: "failsafe", frameHash: null, error: "camera: camera offline" });
     expect(log.outcome).toBe("FAILSAFE");
   }, 30_000);

@@ -15,13 +15,14 @@
 import { createPublicClient, createWalletClient, ExpirationTime } from "@arkiv-network/sdk";
 import { rabdi } from "@arkiv-network/sdk/chains";
 import { and, desc, eq } from "@arkiv-network/sdk/query";
-import { bytes, defineSchema, i32, str, u64 } from "@arkiv-network/sdk/schema";
+import { defineSchema, i32, str, u64 } from "@arkiv-network/sdk/schema";
 import { http, isAddress, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { loadEnv } from "../shared/env.js";
 import { isPrivateKey } from "../shared/util.js";
 
-export const SCHEMA_NAME = "pearl.episode";
+/** v2 (6 Nov 2026): search labels and public fingerprints only; the decision count and 0G request ids were dropped. */
+export const SCHEMA_NAME = "pearl.episode.v2";
 
 export const EpisodeIndex = defineSchema(SCHEMA_NAME, {
   kind: str().indexed(), // "episode" | "incident"
@@ -30,16 +31,10 @@ export const EpisodeIndex = defineSchema(SCHEMA_NAME, {
   outcome: str().indexed(), // DONE | ABORTED | FAILSAFE | TRIPPED
   ts: u64().indexed(), // episode end, ms since epoch
   severity: i32().indexed(), // 0..3 from the INCIDENT decision, 0 otherwise
-  headHash: str(),
-  nDecisions: i32(),
-  rootHash: str().optional(), // 0G Storage root
+  headHash: str(), // fingerprint of the locked log's content (also on 0G Chain)
+  rootHash: str().optional(), // 0G Storage root of the LOCKED file
   storageTx: str().optional(),
   anchorTx: str().optional(), // 0G Chain EpisodeAnchor tx
-  reqId0: str().optional(),
-  reqId1: str().optional(),
-  reqId2: str().optional(),
-  reqId3: str().optional(),
-  reqIds: bytes().optional(), // JSON array of every 0G request id
 });
 
 export interface ArkivConfig {
@@ -80,11 +75,9 @@ export interface IndexInput {
   endedAtMs: number;
   severity: number;
   headHash: string;
-  nDecisions: number;
   rootHash: string | null;
   storageTx: string | null;
   anchorTx: string | null;
-  requestIds: string[];
 }
 
 const opt = <T>(v: T | null | undefined) => (v === null || v === undefined || v === "" ? undefined : v);
@@ -106,15 +99,9 @@ export async function indexEpisode(c: ArkivConfig, e: IndexInput): Promise<{ ent
       ts: u64(BigInt(e.endedAtMs)),
       severity: e.severity,
       headHash: e.headHash,
-      nDecisions: e.nDecisions,
       rootHash: opt(e.rootHash),
       storageTx: opt(e.storageTx),
       anchorTx: opt(e.anchorTx),
-      reqId0: opt(e.requestIds[0]),
-      reqId1: opt(e.requestIds[1]),
-      reqId2: opt(e.requestIds[2]),
-      reqId3: opt(e.requestIds[3]),
-      reqIds: e.requestIds.length ? new TextEncoder().encode(JSON.stringify(e.requestIds)) : undefined,
     },
     { expiration: ExpirationTime.fromDays(c.lifetimeDays), flags: { readonly: true } },
   );
@@ -130,10 +117,8 @@ export interface IndexRow {
   ts: number;
   severity: number;
   headHash: string;
-  nDecisions: number;
   rootHash: string | null;
   anchorTx: string | null;
-  reqIds: string[];
 }
 
 const val = (v: unknown): unknown => (v && typeof v === "object" && "value" in (v as object) ? (v as { value: unknown }).value : v);
@@ -157,15 +142,6 @@ export async function listIndex(
   const page = await q.fetch();
   const rows = page.entities.map((row) => {
     const r = row as Record<string, unknown>;
-    const reqBytes = val(r.reqIds);
-    let reqIds: string[] = [];
-    if (typeof reqBytes === "string" && reqBytes.startsWith("0x")) {
-      try {
-        reqIds = JSON.parse(Buffer.from(reqBytes.slice(2), "hex").toString("utf8")) as string[];
-      } catch {
-        reqIds = [];
-      }
-    }
     return {
       entityKey: String(r.$key ?? ""),
       kind: String(val(r.kind)),
@@ -175,10 +151,8 @@ export async function listIndex(
       ts: Number(val(r.ts)),
       severity: Number(val(r.severity)),
       headHash: String(val(r.headHash)),
-      nDecisions: Number(val(r.nDecisions)),
       rootHash: (val(r.rootHash) as string | undefined) ?? null,
       anchorTx: (val(r.anchorTx) as string | undefined) ?? null,
-      reqIds,
     };
   });
   return { rows, query, blockNumber: String(page.blockNumber), skipped: page.skipped };

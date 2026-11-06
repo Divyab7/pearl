@@ -40,9 +40,11 @@ describe("zerobot command → episode → receipt → verifier", () => {
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
     const { fakeChain } = await import("./zerobot/testing.js");
-    const { verifyEpisode } = await import("./verify/verifier.js");
+    const { verifyPublic } = await import("./verify/verifier.js");
+    const { newRecipientKey, openEpisode, runContext, unwrapRunKey } = await import("./shared/seal.js");
     const { readMeta } = await import("./orchestrator/meta.js");
     process.env.EPISODES_DIR = mkdtempSync(join(tmpdir(), "pearl-zb-"));
+    process.env.KEYS_DIR = mkdtempSync(join(tmpdir(), "pearl-keys-"));
     Object.assign(process.env, { INDEX_ARKIV: "off", OG_CHAIN_ANCHOR: "off", ROBOT_ZEROBOT: "on", CAMERA_SOURCE: "none" });
     process.env.OG_API_KEY = "sk-test";
     process.env.OG_MODEL = "test-model";
@@ -60,15 +62,32 @@ describe("zerobot command → episode → receipt → verifier", () => {
     }) as typeof fetch;
     const chain = fakeChain();
     const arm = parseArmConfig({ ...loadArmConfig(), maxDegPerS: 360 });
-    let closed: (l: import("./shared/types.js").EpisodeLog) => void;
-    const episode = new Promise<import("./shared/types.js").EpisodeLog>((r) => (closed = r));
-    const ctx = await createApp({ arm, device: new SimArm(arm, { tickMs: 10 }), zerobot: chain, fetchImpl, skipStorage: true, onEpisodeClosed: (l) => closed(l) });
+    type Sealed = import("./shared/seal.js").SealedEpisode;
+    let closed: (l: [import("./shared/types.js").EpisodeLog, Sealed | null]) => void;
+    const episode = new Promise<[import("./shared/types.js").EpisodeLog, Sealed | null]>((r) => (closed = r));
+    const ctx = await createApp({ arm, device: new SimArm(arm, { tickMs: 10 }), zerobot: chain, fetchImpl, skipStorage: true, onEpisodeClosed: (l, s) => closed([l, s]) });
     await ctx.startDevice();
     await new Promise((r) => setTimeout(r, 100));
     await chain.dispatch(1, JSON.stringify({ color: "red", from: "A2" }), "pick red A2");
     await ctx.zerobot!.poll();
-    const log = await episode;
+    const [log, sealed] = await episode;
     for (let i = 0; i < 50 && !chain.receipts.has(0); i++) await new Promise((r) => setTimeout(r, 100));
+
+    // the robot serves only the locked copy; the owner it is linked to gets this run's key, locked for them
+    const server = ctx.app.listen(0);
+    await new Promise((r) => server.once("listening", r));
+    const base = `http://127.0.0.1:${(server.address() as import("node:net").AddressInfo).port}`;
+    const served = await (await fetch(`${base}/api/episodes/${log.episodeId}`)).text();
+    expect(served).not.toContain("red at A2");
+    expect(JSON.parse(served)).toMatchObject({ type: "pearl.sealed-episode", headHash: log.headHash, origin: { kind: "zerobot", nonce: 0 } });
+    expect((await fetch(`${base}/api/episodes/${log.episodeId}/key`)).status).toBe(409); // no owner yet
+    const owner = await newRecipientKey();
+    const link = await (await fetch(`${base}/api/link`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accountId: "a".repeat(32), nonce: "b".repeat(32), ownerKey: owner.publicJwk }) })).json();
+    expect(link.ownerKid).toBe(owner.kid);
+    const wrapped = await (await fetch(`${base}/api/episodes/${log.episodeId}/key`)).json();
+    const runKey = await unwrapRunKey(wrapped, owner.privateJwk, runContext(ctx.deviceAddress, log.episodeId));
+    expect((await openEpisode<typeof log>(JSON.parse(served), runKey)).headHash).toBe(log.headHash);
+    server.close();
     await ctx.stop();
 
     expect(log.outcome).toBe("DONE");
@@ -79,12 +98,14 @@ describe("zerobot command → episode → receipt → verifier", () => {
     expect(JSON.parse(rc.resultData)).toMatchObject({ episodeId: log.episodeId, headHash: log.headHash, outcome: "DONE" });
     expect(readMeta(log.episodeId).zerobot).toMatchObject({ status: "ok", nonce: 0, receiptTx: "0xreceipt0" });
 
-    const deps = { arm, anchorOn: false, readZerobotReceipt: (k: number) => chain.receipt(k) };
-    const v = await verifyEpisode(log, readMeta(log.episodeId), deps);
-    expect(v.checks.find((c) => c.id === 7)).toMatchObject({ status: "PASS" });
+    // the receipt check is public: it reads the zerobot command from the locked file's header
+    const deps = { device: ctx.deviceAddress, anchorOn: false, zerobotOn: true, robotCopy: async () => sealed, readZerobotReceipt: (k: number) => chain.receipt(k) };
+    const v = await verifyPublic(log.episodeId, deps);
+    expect(v.checks.find((c) => c.id === 5)).toMatchObject({ status: "PASS" });
+    expect(v.checks.find((c) => c.id === 4)).toMatchObject({ status: "PASS" });
     chain.receipts.set(0, { ...rc, resultData: rc.resultData.replace(log.headHash, "0".repeat(64)) });
-    const v2 = await verifyEpisode(log, readMeta(log.episodeId), deps);
-    expect(v2.checks.find((c) => c.id === 7)).toMatchObject({ status: "FAIL" });
+    const v2 = await verifyPublic(log.episodeId, deps);
+    expect(v2.checks.find((c) => c.id === 5)).toMatchObject({ status: "FAIL" });
     expect(v2.result).toBe("REJECTED");
   }, 30_000);
 });

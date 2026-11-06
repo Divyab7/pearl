@@ -1,10 +1,11 @@
 /**
- * After an episode closes, the device (rev 5: with its own key) uploads the canonical log and frames to 0G Storage,
+ * After an episode closes, the device (rev 5: with its own key) uploads the LOCKED log and LOCKED frames to 0G Storage
+ * (owner decision 5 Nov 2026: nothing readable leaves the robot; shared/seal.ts),
  * anchors it on 0G Chain (OG_CHAIN_ANCHOR), indexes it on Arkiv (INDEX_ARKIV) and, for an episode started by a
  * zerobot command, submits that command's receipt (ROBOT_ZEROBOT).
  * Each module's real result, or the honest reason it did not run, goes into <id>.meta.json.
  */
-import { canonicalize } from "../shared/canonical.js";
+import { sealedBytes, type SealedEpisode } from "../shared/seal.js";
 import { envFlag } from "../shared/env.js";
 import type { EpisodeLog } from "../shared/types.js";
 import { publicFileUrl, storageConfigFromEnv, storageConfigured, uploadWithRetry } from "../og/storage.js";
@@ -44,10 +45,10 @@ async function unfundedReason(rpcUrl: string, privateKey: string, coin = "test 0
   }
 }
 
-export const episodeBytes = (log: EpisodeLog): Uint8Array => Buffer.from(canonicalize(log), "utf8");
-
 export async function publishEpisode(
   log: EpisodeLog,
+  /** The locked copy made at close (orchestrator); its exact canonical bytes are what 0G Storage holds. */
+  sealed: SealedEpisode,
   notify: (m: EpisodeMeta) => void = () => {},
   /** The app passes its zerobot connection; without one, the env config is used. */
   zerobotChain?: () => ZerobotChain,
@@ -66,7 +67,7 @@ export async function publishEpisode(
     meta = updateMeta(log.episodeId, { storage: { status: "not_configured", missing: unfunded } });
   } else {
     try {
-      const r = await uploadWithRetry(sc, episodeBytes(log));
+      const r = await uploadWithRetry(sc, sealedBytes(sealed));
       meta = updateMeta(log.episodeId, { storage: { status: "ok", ...r, url: publicFileUrl(sc, r.rootHash) } });
     } catch (e) {
       meta = updateMeta(log.episodeId, { storage: { status: "failed", error: errMsg(e) } });
@@ -75,7 +76,7 @@ export async function publishEpisode(
   notify(meta);
   const rootHash = meta.storage?.status === "ok" ? meta.storage.rootHash : null;
 
-  // 1b. camera frames, each as its own 0G Storage file (its root is already in the decision record)
+  // 1b. locked camera frames, each as its own 0G Storage file (its root is already in the decision record)
   const framed = log.records.flatMap((r) => (r.kind === "decision" && r.frameRoot ? [{ idx: r.idx, root: r.frameRoot }] : []));
   if (framed.length) {
     const frames: NonNullable<EpisodeMeta["frames"]> = [];
@@ -134,20 +135,18 @@ export async function publishEpisode(
       meta = updateMeta(log.episodeId, { arkiv: { status: "not_configured", missing: noGas } });
     } else {
       try {
-        const inc = incidentOf(log);
+        // public search labels only (owner decision 6 Nov 2026); everything else stays in the locked file
         const r = await indexEpisode(kc, {
-          kind: inc.incident ? "incident" : "episode",
-          armId: log.armId,
-          episodeId: log.episodeId,
-          outcome: log.outcome,
-          endedAtMs: Date.parse(log.endedAt),
-          severity: inc.severity,
-          headHash: log.headHash,
-          nDecisions: log.records.filter((x) => x.kind === "decision").length,
+          kind: sealed.incident ? "incident" : "episode",
+          armId: sealed.armId,
+          episodeId: sealed.episodeId,
+          outcome: sealed.outcome,
+          endedAtMs: Date.parse(sealed.endedAt),
+          severity: sealed.severity,
+          headHash: sealed.headHash,
           rootHash,
           storageTx: meta.storage?.status === "ok" ? meta.storage.txHash : null,
           anchorTx: meta.anchor?.status === "ok" ? meta.anchor.txHash : null,
-          requestIds: requestIdsOf(log),
         });
         meta = updateMeta(log.episodeId, { arkiv: { status: "ok", ...r } });
       } catch (e) {

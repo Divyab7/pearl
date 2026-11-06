@@ -121,9 +121,15 @@ export function episodesDir(): string {
   return process.env.EPISODES_DIR ?? resolve(REPO_ROOT, "data", "episodes");
 }
 
-/** Where the camera frame of decision record `idx` is kept. */
+/** Where the LOCKED camera frame of decision record `idx` is kept (the robot never stores frames unlocked). */
 export function framePath(episodeId: string, idx: number, dir = episodesDir()): string {
-  return resolve(dir, episodeId, `frame-${idx}.jpg`);
+  return resolve(dir, episodeId, `frame-${idx}.locked`);
+}
+
+/** The sealed (locked) copy of an episode: what goes to 0G Storage and what the robot serves. */
+export function sealedPath(episodeId: string, dir = episodesDir()): string {
+  if (!/^ep_[A-Za-z0-9_-]+$/.test(episodeId)) throw new Error("bad episode id");
+  return resolve(dir, `${episodeId}.sealed.json`);
 }
 
 export function writeEpisode(log: EpisodeLog, dir = episodesDir()): string {
@@ -141,7 +147,7 @@ export function readEpisode(episodeId: string, dir = episodesDir()): EpisodeLog 
 export function listEpisodeIds(dir = episodesDir()): string[] {
   try {
     return readdirSync(dir)
-      .filter((f) => /^ep_.*\.json$/.test(f) && !f.endsWith(".meta.json"))
+      .filter((f) => /^ep_.*\.json$/.test(f) && !f.endsWith(".meta.json") && !f.endsWith(".sealed.json"))
       .map((f) => f.slice(0, -5))
       .sort()
       .reverse();

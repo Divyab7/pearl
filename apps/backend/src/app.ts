@@ -16,8 +16,9 @@ import { SerialArm } from "./device/SerialArm.js";
 import { WsArm } from "./device/WsArm.js";
 import { MujocoArm } from "./device/MujocoArm.js";
 import { routerConfigFromEnv } from "./og/config.js";
-import { framePath, listEpisodeIds, readEpisode } from "./orchestrator/log.js";
-import { readFileSync } from "node:fs";
+import { framePath, listEpisodeIds, sealedPath } from "./orchestrator/log.js";
+import { existsSync, readFileSync } from "node:fs";
+import { headerOf, isPublicJwk, keyId, parseSealed, type SealedEpisode } from "./shared/seal.js";
 import { readMeta } from "./orchestrator/meta.js";
 import { publishEpisode } from "./orchestrator/pipeline.js";
 import { downloadBytes, storageConfigFromEnv } from "./og/storage.js";
@@ -43,7 +44,7 @@ export interface AppOptions {
   publish?: boolean;
   /** Tests only: run the publish pipeline without the networked 0G Storage upload. */
   skipStorage?: boolean;
-  onEpisodeClosed?: (log: EpisodeLog) => Promise<void> | void;
+  onEpisodeClosed?: (log: EpisodeLog, sealed: SealedEpisode | null) => Promise<void> | void;
 }
 
 const simDeviceId = () => process.env.SIM_DEVICE_ID ?? "sim-arm-01";
@@ -99,14 +100,14 @@ export async function createApp(opts: AppOptions = {}) {
     scene: sceneNow,
     ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
     ...(opts.writeFiles !== undefined ? { writeFiles: opts.writeFiles } : {}),
-    onEpisodeClosed: async (log) => {
+    onEpisodeClosed: async (log, sealed) => {
       sse.send("episode", { episodeId: log.episodeId, outcome: log.outcome, headHash: log.headHash });
-      if (opts.publish !== false) {
+      if (opts.publish !== false && sealed) {
         // storage, anchor, index and receipt run after the episode, off the control path; the dashboard sees each result
-        void publishEpisode(log, (meta) => sse.send("meta", meta), zbChain ? () => zbChain : undefined, { devicePrivateKey: deviceWallet.privateKey, ...(opts.skipStorage ? { skipStorage: true } : {}) })
+        void publishEpisode(log, sealed, (meta) => sse.send("meta", meta), zbChain ? () => zbChain : undefined, { devicePrivateKey: deviceWallet.privateKey, ...(opts.skipStorage ? { skipStorage: true } : {}) })
           .catch((e) => console.error("publish failed:", e));
       }
-      await opts.onEpisodeClosed?.(log);
+      await opts.onEpisodeClosed?.(log, sealed);
     },
   });
 
@@ -319,29 +320,46 @@ export async function createApp(opts: AppOptions = {}) {
     }
   });
 
+  // the robot serves only LOCKED runs (owner decision 5–6 Nov 2026): the public header, never the log itself
+  const readSealedFile = (id: string): SealedEpisode | null => {
+    try {
+      const p = sealedPath(id);
+      return existsSync(p) ? parseSealed(readFileSync(p)) : null;
+    } catch {
+      return null;
+    }
+  };
   const localList = () =>
     listEpisodeIds().slice(0, 100).map((id) => {
-      try {
-        const e = readEpisode(id);
-        return { episodeId: id, outcome: e.outcome, startedAt: e.startedAt, n: e.records.length, headHash: e.headHash, armId: e.armId };
-      } catch {
-        return { episodeId: id, error: "unreadable" };
-      }
+      const s = readSealedFile(id);
+      if (!s) return { episodeId: id, locked: false, note: "recorded before locking; not served" };
+      const h = headerOf(s);
+      return {
+        episodeId: id, locked: true, armId: h.armId, kind: h.incident ? "incident" : "episode", outcome: h.outcome,
+        severity: h.severity, ts: Date.parse(h.endedAt), headHash: h.headHash, device: h.device.address,
+      };
     });
 
-  // robot linking (R6): the device signs ONLY the fixed link text for an account, proving the dashboard holds this robot.
+  // robot linking (R6): the device signs ONLY the fixed link text for an account and its owner key, proving the dashboard
+  // holds this robot, and from then on locks every run key for that owner key.
   // On hardware the firmware asks for a BOOT-button press before signing; the simulated arm signs directly.
   app.post("/api/link", async (req: Request, res: Response) => {
-    const b = (req.body ?? {}) as { accountId?: unknown; nonce?: unknown };
+    const b = (req.body ?? {}) as { accountId?: unknown; nonce?: unknown; ownerKey?: unknown };
     if (typeof b.accountId !== "string" || !/^[0-9a-f]{32}$/.test(b.accountId) || typeof b.nonce !== "string" || !/^[0-9a-f]{32}$/.test(b.nonce)) {
-      res.status(400).json({ error: "body must be {accountId: 32 hex, nonce: 32 hex}" });
+      res.status(400).json({ error: "body must be {accountId: 32 hex, nonce: 32 hex, ownerKey: P-256 public JWK}" });
       return;
     }
-    const signature = await deviceWallet.signMessage(linkMessage(b.accountId, b.nonce));
-    res.json({ address: deviceWallet.address, deviceId: deviceIdNow, signature });
+    if (!isPublicJwk(b.ownerKey)) {
+      res.status(400).json({ error: "ownerKey must be the owner's P-256 public key (JWK)" });
+      return;
+    }
+    const kid = keyId(b.ownerKey);
+    const signature = await deviceWallet.signMessage(linkMessage(b.accountId, b.nonce, kid));
+    orch.keys.setOwner(b.accountId, b.ownerKey);
+    res.json({ address: deviceWallet.address, deviceId: deviceIdNow, ownerKid: kid, signature });
   });
 
-  // the device's own episode list (its local memory); the dashboard reads the public index on Arkiv
+  // the device's own episode list (labels only); the dashboard reads the public index on Arkiv
   app.get("/api/episodes", (req, res) => {
     const armId = typeof req.query.armId === "string" ? req.query.armId : "";
     let items = localList();
@@ -349,39 +367,45 @@ export async function createApp(opts: AppOptions = {}) {
     res.json({ source: "device", items });
   });
   app.get("/api/episodes/:id", (req, res) => {
-    try {
-      res.json(readEpisode(req.params.id));
-    } catch {
-      res.status(404).json({ error: "not found" });
-    }
+    const s = readSealedFile(String(req.params.id));
+    if (s) res.json(s);
+    else res.status(404).json({ error: "no locked copy of this run on the robot" });
   });
 
-  // a camera frame of a decision: from 0G Storage by its recorded root when possible, else the local copy (labelled)
+  // this run's key, locked for the linked owner's key (useless to anyone else)
+  app.get("/api/episodes/:id/key", async (req, res) => {
+    const id = String(req.params.id);
+    if (!orch.keys.owner()) {
+      res.status(409).json({ error: "no owner linked yet: link the robot to your account first" });
+      return;
+    }
+    const w = await orch.keys.wrapForOwner(deviceWallet.address, id).catch(() => null);
+    if (w) res.json(w);
+    else res.status(404).json({ error: "the robot has no key for this run" });
+  });
+
+  // a LOCKED camera frame of a decision, by the root recorded in the log: from 0G Storage, else the robot's copy
   app.get("/api/frames/:id/:idx", async (req, res) => {
-    let log: EpisodeLog;
-    try {
-      log = readEpisode(req.params.id);
-    } catch {
-      res.status(404).json({ error: "not found" });
-      return;
-    }
-    const rec = log.records.find((r) => r.idx === Number(req.params.idx));
-    if (!rec || rec.kind !== "decision" || !rec.frameRoot) {
-      res.status(404).json({ error: "no frame for this record" });
-      return;
-    }
-    try {
-      const bytes = await downloadBytes(storageConfigFromEnv(), rec.frameRoot);
-      res.setHeader("X-Frame-Source", "0g-storage");
-      res.type("image/jpeg").send(Buffer.from(bytes));
-    } catch {
+    const id = String(req.params.id);
+    const idx = Number(req.params.idx);
+    const root = typeof req.query.root === "string" && /^0x[0-9a-f]{64}$/.test(req.query.root) ? req.query.root : null;
+    if (root) {
       try {
-        const bytes = readFileSync(framePath(log.episodeId, rec.idx));
-        res.setHeader("X-Frame-Source", "local");
-        res.type("image/jpeg").send(bytes);
+        const bytes = await downloadBytes(storageConfigFromEnv(), root);
+        res.setHeader("X-Frame-Source", "0g-storage");
+        res.type("application/octet-stream").send(Buffer.from(bytes));
+        return;
       } catch {
-        res.status(404).json({ error: "frame not available" });
+        // fall through to the robot's copy
       }
+    }
+    try {
+      if (!/^ep_[A-Za-z0-9_-]+$/.test(id) || !Number.isInteger(idx)) throw new Error("bad id");
+      const bytes = readFileSync(framePath(id, idx));
+      res.setHeader("X-Frame-Source", "robot");
+      res.type("application/octet-stream").send(bytes);
+    } catch {
+      res.status(404).json({ error: "frame not available" });
     }
   });
 

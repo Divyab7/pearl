@@ -21,9 +21,12 @@ export function headMessage(episodeId: string, headHash: string): string {
   return `Pearl episode ${episodeId} head ${headHash}`;
 }
 
-/** The exact text a device signs to link itself to a dashboard account (pairing). */
-export function linkMessage(accountId: string, nonce: string): string {
-  return `Pearl link to account ${accountId} nonce ${nonce}`;
+/**
+ * The exact text a device signs to link itself to a dashboard account (pairing). It names the owner's key fingerprint:
+ * from then on the robot locks every run key for that key only.
+ */
+export function linkMessage(accountId: string, nonce: string, ownerKid: string): string {
+  return `Pearl link to account ${accountId} nonce ${nonce} owner key ${ownerKid}`;
 }
 
 export function deviceKeyPath(deviceId: string): string {
