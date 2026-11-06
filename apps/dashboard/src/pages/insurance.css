@@ -96,7 +96,7 @@
 .ins-q-sub { color: var(--text-2); font-size: var(--fs-small); }
 .ins-poolcard { padding: var(--s4); gap: var(--s3); }
 .ins-poolstats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s3) var(--s4); }
-.ins-poolstats .stat-value .amount { font-size: 18px; }
+.ins-poolstats .stat-value { font-size: 26px; }
 
 /* the selected claim */
 .ins-review { display: grid; gap: var(--s4); }

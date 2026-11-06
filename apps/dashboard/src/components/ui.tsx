@@ -57,7 +57,7 @@ export function Amount({ wei, paid = false }: { wei?: string | number | bigint |
   return (
     <span className={`amount ${paid ? "paid" : ""}`}>
       <span className="amount-num">{v.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 4 })}</span>
-      <span className="amount-unit">0G</span>
+      <span className="amount-unit" title="0G testnet tokens">test 0G</span>
     </span>
   );
 }

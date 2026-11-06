@@ -83,7 +83,7 @@ export const short = (s?: string | null, n = 10) => {
 export const og = (wei?: string | number | bigint | null) => {
   if (wei === null || wei === undefined) return "—";
   const v = Number(BigInt(wei)) / 1e18;
-  return `${v.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 4 })} 0G`;
+  return `${v.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 4 })} test 0G`;
 };
 export const when = (iso?: string | number | null) => {
   if (!iso) return "—";

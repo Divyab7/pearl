@@ -178,7 +178,7 @@ function PoolCard({ pool }: { pool: any }) {
       <TechDetails>
         <Chip label="RewardPool contract" value={pool.address} href={cfg.explorer ? `${cfg.explorer}/address/${pool.address}` : null} />
         {pool.paid.slice(0, 3).map((p: any) => (
-          <Chip key={p.txHash} label={`Payout ${Number(BigInt(p.amountWei)) / 1e18} 0G`} value={p.txHash} href={cfg.explorer ? `${cfg.explorer}/tx/${p.txHash}` : null} tone="ok" />
+          <Chip key={p.txHash} label={`Payout ${Number(BigInt(p.amountWei)) / 1e18} test 0G`} value={p.txHash} href={cfg.explorer ? `${cfg.explorer}/tx/${p.txHash}` : null} tone="ok" />
         ))}
       </TechDetails>
     </Section>
