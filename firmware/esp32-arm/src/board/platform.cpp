@@ -75,7 +75,33 @@ pearl::run::HttpResult Esp32Platform::post(const std::string& url, const pearl::
   return r;
 }
 
-bool Esp32Platform::get(const std::string& url, pearl::Bytes& out, std::string& err, uint32_t timeoutMs) {
+// "http://user:pass@host/…" → the bare URL + a percent-decoded login (HTTPClient would base64 the raw "%20" text, so a
+// username with a space, like a phone camera's "Pearl cam", failed with 401)
+static std::string pctDecode(const std::string& v) {
+  std::string o;
+  for (size_t i = 0; i < v.size(); i++) {
+    if (v[i] == '%' && i + 2 < v.size() && isxdigit((unsigned char)v[i + 1]) && isxdigit((unsigned char)v[i + 2])) {
+      o.push_back(static_cast<char>(strtol(v.substr(i + 1, 2).c_str(), nullptr, 16)));
+      i += 2;
+    } else o.push_back(v[i]);
+  }
+  return o;
+}
+static std::string splitLogin(const std::string& url, std::string& user, std::string& pass) {
+  size_t scheme = url.find("://");
+  if (scheme == std::string::npos) return url;
+  size_t hostStart = scheme + 3, pathStart = url.find('/', hostStart), at = url.find('@', hostStart);
+  if (at == std::string::npos || (pathStart != std::string::npos && at > pathStart)) return url;
+  std::string info = url.substr(hostStart, at - hostStart);
+  size_t colon = info.find(':');
+  user = pctDecode(info.substr(0, colon));
+  pass = colon == std::string::npos ? "" : pctDecode(info.substr(colon + 1));
+  return url.substr(0, hostStart) + url.substr(at + 1);
+}
+
+bool Esp32Platform::get(const std::string& rawUrl, pearl::Bytes& out, std::string& err, uint32_t timeoutMs) {
+  std::string user, pass;
+  const std::string url = splitLogin(rawUrl, user, pass);
   bool tls = url.rfind("https://", 0) == 0;
   NetworkClientSecure secure;
   NetworkClient plain;
@@ -87,6 +113,7 @@ bool Esp32Platform::get(const std::string& url, pearl::Bytes& out, std::string& 
     err = "bad URL";
     return false;
   }
+  if (!user.empty()) http.setAuthorization(user.c_str(), pass.c_str());
   int code = http.GET();
   if (code != 200) {
     err = code <= 0 ? std::string(HTTPClient::errorToString(code).c_str()) : "HTTP " + std::to_string(code);
