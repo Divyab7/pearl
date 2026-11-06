@@ -52,3 +52,6 @@ __pycache__/
 *.pyc
 *.egg-info/
 .pytest_cache/
+
+# firmware host-test output
+firmware/esp32-arm/test/host/out/
