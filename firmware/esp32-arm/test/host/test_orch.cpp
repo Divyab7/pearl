@@ -138,6 +138,7 @@ struct SimPlatform : orch::Platform {
     using namespace std::chrono;
     return static_cast<uint32_t>(duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
   }
+  void sleep(uint32_t) override {}
   std::string nowIso() override {
     long long ms = t0 + 1500LL * tick++;
     time_t s = ms / 1000;

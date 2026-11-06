@@ -29,6 +29,7 @@ using Headers = std::vector<std::pair<std::string, std::string>>;
 struct Platform {
   virtual ~Platform() = default;
   virtual uint32_t millis() = 0;
+  virtual void sleep(uint32_t ms) = 0;
   /** ISO 8601 UTC with milliseconds, e.g. 2026-11-06T05:10:00.123Z (NTP time on the board). */
   virtual std::string nowIso() = 0;
   virtual run::HttpResult post(const std::string& url, const Headers& headers, const std::string& body, uint32_t timeoutMs) = 0;
