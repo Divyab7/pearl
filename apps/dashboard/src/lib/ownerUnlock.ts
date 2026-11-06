@@ -3,7 +3,7 @@
 // from the copy the robot locked for the owner inside the stored file.
 import { get } from "../api";
 import { unwrapWith } from "./fullcheck";
-import { loadKey } from "./keys";
+import { loadKey, type KeyRecord } from "./keys";
 
 export interface OwnerUnlock {
   /** Returns this run's key, or null when the viewer can't unlock (see `reason`). */
@@ -14,12 +14,16 @@ export interface OwnerUnlock {
   next: "signin" | "setup" | null;
   /** The robot address a run belongs to (explicit device, else the live robot, else the first linked robot). */
   robotOf: (device?: string | null) => string;
+  /** The live robot is linked to this account. */
   linked: boolean;
+  /** The owner's key record in this browser, if any. */
+  rec: KeyRecord | null;
 }
 
-export function ownerUnlock(live: any, account: any): OwnerUnlock {
+/** `linked` overrides the computed "live robot is linked to this account" (kept for older callers). */
+export function ownerUnlock(live: any, account: any, linkedOverride?: boolean): OwnerUnlock {
   const addr: string | undefined = live?.state?.deviceAddress;
-  const linked = !!account?.robots?.some((r: any) => r.address.toLowerCase() === addr?.toLowerCase());
+  const linked = linkedOverride ?? !!account?.robots?.some((r: any) => r.address.toLowerCase() === addr?.toLowerCase());
   const rec = account ? loadKey("owner", account.accountId) : null;
   const robotOf = (device?: string | null): string => device || addr || account?.robots?.[0]?.address || "";
   const offline = !addr;
@@ -35,5 +39,8 @@ export function ownerUnlock(live: any, account: any): OwnerUnlock {
       return unwrapWith(wrap, rec!, robotOf(device), episodeId);
     }
     : null;
-  return { unlock, reason, next: ready ? null : !account ? "signin" : "setup", robotOf, linked };
+  return { unlock, reason, next: ready ? null : !account ? "signin" : "setup", robotOf, linked, rec };
 }
+
+/** Same as ownerUnlock (name used by the Insurance page). */
+export const useOwnerUnlock = (live: any, account: any, linked: boolean) => ownerUnlock(live, account, linked);

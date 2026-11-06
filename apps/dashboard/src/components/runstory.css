@@ -5,6 +5,7 @@
 .rs-head-text .eyebrow { margin: 0; }
 .rs-title { font-size: var(--fs-title); font-weight: 680; letter-spacing: -.02em; line-height: var(--lh-tight); }
 h2.rs-title { font-size: 24px; }
+h3.rs-title { font-size: 22px; }
 .rs-pills { display: flex; gap: var(--s2); flex-wrap: wrap; align-items: center; }
 .rs-pills .spill .icon { margin-left: -2px; }
 .rs-verdict { color: var(--text-2); font-size: var(--fs-ui); line-height: 1.5; }

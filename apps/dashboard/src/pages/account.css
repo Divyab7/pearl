@@ -1,0 +1,63 @@
+/* Account page (#/account): a calm checklist with progress, plus a privacy aside. Tokens only (see styles.css). */
+.page.account { padding-top: var(--s6); gap: var(--s5); }
+.ac-insurer { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text-2); }
+.ac-insurer:hover { color: var(--accent); }
+.ac-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 320px); gap: var(--s6); align-items: start; }
+
+/* progress */
+.ac-progress { display: grid; gap: var(--s2); }
+.ac-progress-text { display: flex; flex-wrap: wrap; gap: 4px var(--s3); align-items: baseline; }
+.ac-progress-text b { font-size: var(--fs-lg); }
+.ac-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.ac-bar span { height: 6px; border-radius: var(--r-pill); background: var(--raise); border: 1px solid var(--border); transition: background var(--t-slow) var(--ease); }
+.ac-bar span.on { background: var(--ok); border-color: transparent; }
+
+/* steps */
+.ac-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s3); }
+.ac-step { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: var(--s4); padding: var(--s4) var(--s5); border: 1px solid var(--border); border-radius: var(--r3); background: var(--panel); }
+.ac-step.st-next { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); box-shadow: 0 0 0 3px var(--accent-soft); }
+.ac-step.st-attention { border-color: var(--warn-line); background: linear-gradient(180deg, var(--warn-soft), transparent 80%), var(--panel); }
+.ac-step.st-waiting { background: transparent; border-style: dashed; }
+.ac-step.st-waiting .ac-title, .ac-step.st-waiting .ac-why { color: var(--text-3); }
+.ac-mark { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 13px; border: 2px solid var(--border-strong); color: var(--text-2); margin-top: 1px; }
+.ac-step.st-done .ac-mark { background: var(--ok-soft); border-color: transparent; color: var(--ok); }
+.ac-step.st-next .ac-mark { border-color: var(--accent); color: var(--accent); }
+.ac-step.st-attention .ac-mark { border-color: transparent; background: var(--warn-soft); color: var(--warn); }
+.ac-body { display: grid; gap: var(--s3); min-width: 0; }
+.ac-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s2); }
+.ac-title { font-size: 17px; font-weight: 640; margin-top: 3px; }
+.ac-why { color: var(--text-2); font-size: var(--fs-ui); max-width: 62ch; }
+.ac-why b { color: var(--text); font-weight: 600; }
+.ac-hint { display: flex; gap: 6px; align-items: flex-start; color: var(--text-3); font-size: var(--fs-small); }
+.ac-hint .icon { margin-top: 2px; flex: none; }
+.ac-step .tech.boxless { padding-top: 0; }
+.ac-step .row > .tech { flex: 1 1 220px; }
+.ac-key { display: grid; gap: var(--s2); }
+.ac-key .keysetup { gap: var(--s3); }
+.ac-robots { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s2); }
+.ac-robots li { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
+.ac-wallet { display: grid; gap: var(--s2); max-width: 520px; }
+.ac-wallet input[aria-invalid="true"] { border-color: var(--bad); }
+.ac-err, .ac-msg { display: flex; gap: 6px; align-items: center; color: var(--bad); font-size: 14px; }
+.ac-msg { padding: var(--s3) var(--s4); border: 1px solid var(--bad-line); background: var(--bad-soft); border-radius: var(--r2); }
+.ac-done { display: flex; gap: var(--s2); align-items: center; padding: var(--s3) var(--s4); border: 1px solid var(--ok-line); background: var(--ok-soft); border-radius: var(--r2); color: var(--text); }
+.ac-done > .icon { color: var(--ok); flex: none; }
+
+/* privacy aside */
+.ac-aside { position: sticky; top: 76px; display: grid; gap: var(--s3); padding: var(--s5); border: 1px solid var(--border); border-radius: var(--r3); background: var(--card); }
+.ac-aside-title { font-size: 14px; font-weight: 640; }
+.ac-aside .ticks { margin: 0; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .ac-step.st-done .ac-mark { animation: appear var(--t-slow) var(--ease-out) both; }
+}
+@media (max-width: 1080px) {
+  .ac-grid { grid-template-columns: minmax(0, 1fr); }
+  .ac-aside { position: static; }
+}
+@media (max-width: 640px) {
+  .page.account { padding-top: var(--s5); }
+  .ac-step { grid-template-columns: 24px minmax(0, 1fr); gap: var(--s3); padding: var(--s4); }
+  .ac-mark { width: 24px; height: 24px; }
+  .ac-step .btn.primary { width: 100%; }
+}

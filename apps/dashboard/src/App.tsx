@@ -3,17 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import { post, short, useLive } from "./api";
 import { to, useRouteInfo, type Route } from "./router";
-import { Icon, Tabs } from "./components/ui";
+import { Icon } from "./components/ui";
 import { EmptyState, PageHeader, StatusPill } from "./components/blocks";
 import { useAccount, useInsurerSession } from "./lib/account";
-import { OFFLINE_DETAIL, PAGE, ROBOT_LINK } from "./lib/words";
-import { Courier } from "./pages/Courier";
-import { Insurer } from "./pages/Insurer";
-import { Mesh } from "./pages/Mesh";
-import { MyRobot } from "./pages/MyRobot";
+import { PAGE, ROBOT_LINK } from "./lib/words";
+import { Home } from "./pages/Home";
+import { Insurance } from "./pages/Insurance";
 import { Robot } from "./pages/Robot";
-import { Verify } from "./pages/Verify";
-import { Welcome } from "./pages/Welcome";
+import { Offline } from "./pages/Offline";
+import { Proof } from "./pages/Proof";
+import { Account } from "./pages/Account";
 import { Kit } from "./pages/Kit";
 import "./styles.css";
 
@@ -110,22 +109,17 @@ export function App() {
 function Page({ route, live }: { route: Route; live: ReturnType<typeof useLive> }) {
   switch (route.page) {
     case "home":
-      return <Welcome />;
+      return <Home live={live} />;
     case "robot":
       return <Robot live={live} runId={route.runId} />;
     case "proof":
-      return <Verify tick={live.tick} runId={route.runId} />;
+      return <Proof tick={live.tick} runId={route.runId} />;
     case "insurance":
-      return <InsuranceInterim live={live} side={route.side} claimId={route.claimId} />;
+      return <Insurance live={live} side={route.side} claimId={route.claimId} />;
     case "offline":
-      return <OfflineInterim section={route.section} />;
+      return <Offline section={route.section} />;
     case "account":
-      return (
-        <div className="page">
-          <PageHeader title={PAGE.account} description="Sign in as the robot's owner, keep your unlock key, link your robot and choose where insurance payouts go." />
-          <MyRobot live={live} sub="setup" bare />
-        </div>
-      );
+      return <Account live={live} />;
     case "kit":
       return <Kit />;
     default:
@@ -137,37 +131,6 @@ function Page({ route, live }: { route: Route; live: ReturnType<typeof useLive> 
         </div>
       );
   }
-}
-
-function InsuranceInterim({ live, side, claimId }: { live: ReturnType<typeof useLive>; side: "owner" | "insurer"; claimId?: string }) {
-  return (
-    <>
-      <div className="page interim-head">
-        <PageHeader title={PAGE.insurance} description="After an incident the owner claims, proven a real person by World ID. The insurer reviews it and the pool pays." />
-        <Tabs label="Insurance side" active={side} onChange={(s) => (location.hash = to.insurance(s as "owner" | "insurer"))}
-          tabs={[{ id: "owner", label: "I own the robot" }, { id: "insurer", label: "I'm the insurer" }]} />
-      </div>
-      {side === "owner"
-        ? <div className="page"><MyRobot live={live} sub="claims" bare /></div>
-        : <Insurer tick={live.tick} claimId={claimId} />}
-    </>
-  );
-}
-
-function OfflineInterim({ section }: { section?: "courier" | "mesh" }) {
-  useEffect(() => {
-    if (section) document.getElementById(`offline-${section}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [section]);
-  return (
-    <>
-      <div className="page interim-head">
-        <PageHeader title={PAGE.offline} description={OFFLINE_DETAIL}
-          actions={<><a className="btn" href={to.offline("courier")}>Carry by phone or laptop</a><a className="btn" href={to.offline("mesh")}>Robots carry each other's</a></>} />
-      </div>
-      <div id="offline-courier" style={{ scrollMarginTop: 72 }}><Courier /></div>
-      <div id="offline-mesh" style={{ scrollMarginTop: 72 }}><Mesh /></div>
-    </>
-  );
 }
 
 /** Account menu: "Sign in" or the signed-in identity; opens Account, Insurance review, Works without internet, Sign out. */

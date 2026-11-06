@@ -35,7 +35,7 @@ export interface RunStoryProps {
   lockedReason?: string;
   lockedAction?: ReactNode;
   unlockLabel?: string;
-  titleAs?: "h1" | "h2";
+  titleAs?: "h1" | "h2" | "h3";
   startAtIncident?: boolean;
   autoUnlock?: boolean;
   tick?: number;

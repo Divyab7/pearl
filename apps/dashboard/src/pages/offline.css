@@ -1,0 +1,12 @@
+/* Works without internet (#/offline) only. Tokens from styles.css. */
+.page.offline { gap: var(--s6); }
+.offline-jump { display: flex; gap: var(--s2); flex-wrap: wrap; }
+.offline-sect { scroll-margin-top: calc(var(--topbar-h) + var(--s4)); padding-top: var(--s5); border-top: 1px solid var(--border); }
+.offline .courier-status { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
+.offline .mesh > .tabs { align-self: start; }
+.offline-back { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+@media (max-width: 640px) {
+  .offline-jump { width: 100%; }
+  .offline-jump .btn { flex: 1; }
+}
+.offline .mesh-name { fill: var(--text); font-weight: 600; font-size: 13px; }
