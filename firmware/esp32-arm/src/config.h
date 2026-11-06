@@ -10,6 +10,10 @@
 #define PIN_TOF_XSHUT 14
 #define PIN_RESET_BTN 0          // BOOT button, active LOW, read after boot only
 #define BUZZER_ACTIVE_HIGH 1     // via NPN low-side switch
+#ifndef BUZZER_LEVEL
+#define BUZZER_LEVEL 48          // loudness 1–255: the buzzer is driven with PWM at this duty (255 = full volume)
+#endif
+#define BUZZER_PWM_HZ 4000
 #define RING_LEDS 12             // WCMCU-2812B-12, data to DI
 #define RING_MAX_BRIGHTNESS 48
 #define SERVO_HZ 50

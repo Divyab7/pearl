@@ -12,11 +12,13 @@ static uint32_t enteredMs = 0;
 static uint32_t oneShotUntil = 0;
 
 static void buzzer(bool on) {
-  digitalWrite(PIN_BUZZER, (on == (BUZZER_ACTIVE_HIGH == 1)) ? HIGH : LOW);
+  // PWM at BUZZER_LEVEL instead of full on: same sound, quieter (owner request)
+  uint32_t duty = on ? BUZZER_LEVEL : 0;
+  ledcWrite(PIN_BUZZER, BUZZER_ACTIVE_HIGH == 1 ? duty : 255 - duty);
 }
 
 void begin() {
-  pinMode(PIN_BUZZER, OUTPUT);
+  ledcAttach(PIN_BUZZER, BUZZER_PWM_HZ, 8);
   buzzer(false);
   ring.begin();
   ring.setBrightness(RING_MAX_BRIGHTNESS);
