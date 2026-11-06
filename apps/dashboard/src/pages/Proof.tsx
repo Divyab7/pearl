@@ -9,6 +9,7 @@ import { go, to } from "../router";
 import { tamperPublic, useRuns, fullWhen, shortWhen, dayOf } from "../components/run";
 import { EmptyState, ErrorState, PlainError, RunRow, Section, Skeleton, StatusPill, TechDetails, InfoTip } from "../components/blocks";
 import { Amount, Chip, Icon, Spinner, Verdict, verdictOf, type Tone, type VerdictKind } from "../components/ui";
+import { RecordStrip, serialOf } from "../components/record";
 import { ShareProofButton } from "../components/blocks";
 import { ARKIV_EXPLORER } from "../components/claims";
 import { CLAIM_STATE, OUTCOME_TONE, TIP, isTechy, outcomeWord } from "../lib/words";
@@ -469,7 +470,8 @@ export function Proof({ tick, runId, tamper = false }: { tick: number; runId?: s
 
       {runId && v && n && (
         <div className="pf-grid">
-          <section className="pf-card pf-result" aria-label="Result">
+          <section className="pf-card pf-result record" aria-label="Result">
+            <RecordStrip serial={serialOf(v.sealed?.headHash, v.anchor?.headHash, v.rootHash)} seal={n.notFound ? "neutral" : n.kind === "ok" ? "ok" : n.kind === "bad" ? "bad" : "warn"} />
             <Verdict kind={n.kind} word={n.kind === "ok" ? "Verified ✓ · not altered" : undefined} label={verdictLine(n.kind, n.notFound, n.checks, v, arkiv)} />
             {v.sealed && (
               <p className="pf-runline">

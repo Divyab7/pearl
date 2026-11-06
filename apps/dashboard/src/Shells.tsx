@@ -197,7 +197,7 @@ function BrandPanel() {
     <aside className="signin-brand" aria-label="About Pearl">
       <Brand />
       <figure className="signin-photo">
-        <img src="/img/factory-800.webp" srcSet="/img/factory-640.webp 640w, /img/factory-800.webp 800w" sizes="(max-width: 900px) 0px, 520px" width={800} height={533} alt="Orange industrial robot arms working along an assembly line" decoding="async" />
+        <img src="/img/pearl-arm-640.webp" srcSet="/img/pearl-arm-640.webp 640w, /img/pearl-arm-1120.webp 1120w" sizes="(max-width: 900px) 0px, 520px" width={1120} height={1400} alt="The Pearl robot arm, rendered from our 3D model, holding a red cube above its work table" decoding="async" />
       </figure>
       <p className="signin-promise">Insure robots with evidence nobody can fake.</p>
       <div className="signin-built">

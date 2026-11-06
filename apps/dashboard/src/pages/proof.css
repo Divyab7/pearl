@@ -106,3 +106,6 @@
 /* check another run (bottom of the page) */
 .pf-another { display: grid; gap: var(--s3); padding-top: var(--s5); border-top: 1px solid var(--border); }
 .pf-result .verdict-word { font-size: 28px; }
+
+/* the verdict card is a sealed record (signature motif, styles.css) */
+@media (max-width: 640px) { .pf-card.record { --rec-pad: var(--s4); } }

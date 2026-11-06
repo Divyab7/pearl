@@ -17,7 +17,7 @@
 /* roles */
 .home-roles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s4); }
 .home-roles .rolecard { padding: var(--s4) var(--s5); align-items: center; }
-.home-new { display: inline-block; margin-left: var(--s2); padding: 1px 8px; border-radius: var(--r-pill); background: var(--accent); color: var(--accent-ink); font-size: var(--fs-small); font-weight: 700; vertical-align: 2px; }
+.home-new { display: inline-block; margin-left: var(--s2); padding: 1px 8px; border-radius: var(--r-pill); background: var(--accent-fill); color: var(--accent-ink); font-size: var(--fs-small); font-weight: 700; vertical-align: 2px; }
 .home-roles .rolecard:focus-visible { border-color: var(--accent); }
 .home-check { grid-template-columns: auto minmax(0, 1fr); cursor: default; }
 .home-check:hover { transform: translateY(-1px); border-color: var(--accent); }

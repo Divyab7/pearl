@@ -16,26 +16,30 @@
    motion    --t-fast 120ms · --t-mid 200ms · --t-slow 320ms · --ease · --ease-out (all 0ms under prefers-reduced-motion)
    layout    --page-max 1200px · --page-narrow 760px · --topbar-h 60px
    One rule per thing: base rules by component, then the responsive rules in breakpoint order at the end. */
-/* LIGHT ONLY (owner decision 6 Nov). Re-evaluated 7 Nov: a warm paper canvas, white cards on hairline borders with soft
-   shadows, deep warm ink text, ONE confident indigo accent used sparingly (primary action, current nav, links), and
-   calm status colours (tinted backgrounds, strong text). Every page (landing, shells, app) reads these tokens.
-   Contrast (on --bg #f9f7f3 / --panel #fff / --raise #f2eee7): text 16.6 / 17.7 / 15.3, text-2 8.7 / 9.4 / 8.1,
-   text-3 5.9 / 6.3 / 5.5, accent 7.2 / 7.7 / 6.7, ok 6.2+, warn 6.4+, bad 6.2+, info 6.5+, --line-input 3.6:1. */
+/* LIGHT ONLY (owner decision 6 Nov). Brand round 5 (7 Nov): Pearl's signature is BLACK-BOX ORANGE, the international
+   orange of real flight recorders. Two shades: --accent-fill #ff5a1f (bright: fills, always with dark --accent-ink text,
+   6.0:1) and --accent #b03a08 (deep: text, links, focus ring, active marks). Deep ink neutrals on a cool paper canvas.
+   Status colours stay clearly apart from the orange: ok green, warn OCHRE (olive-gold, not orange), bad CRIMSON.
+   Type: --display Bricolage Grotesque 600 (headlines), --mono JetBrains Mono 500 (proofs, fingerprints, serials),
+   body = system UI. Signature motif: .record (sealed flight-recorder tag: stencil label, serial, tear line, seal).
+   Contrast (on --bg #f6f5f2 / --panel #fff / --raise #eeece7): text 17.5+ , text-2 8.6 / 9.4 / 8.0,
+   text-3 5.8 / 6.4 / 5.4, accent 5.6 / 6.1 / 5.2, ok 6.1+, warn 6.4+, bad 7.2+, info 6.4+, --line-input 3.3:1. */
 :root, [data-theme="light"] {
-  --bg: #f9f7f3; --panel: #ffffff; --card: #fdfcfa; --raise: #f2eee7; --border: #e9e4da; --border-strong: #d9d1c3;
-  --line-input: #8a8172;
-  --text: #1a1814; --text-2: #4b463e; --text-3: #665f54;
-  --accent: #3546b8; --accent-ink: #ffffff; --accent-soft: rgba(53, 70, 184, .075);
+  --bg: #f6f5f2; --panel: #ffffff; --card: #fcfcfa; --raise: #eeece7; --border: #e4e1da; --border-strong: #d2cec5;
+  --line-input: #8a8780;
+  --text: #141416; --text-2: #46464a; --text-3: #5f5f63;
+  --accent: #b03a08; --accent-fill: #ff5a1f; --accent-fill-hover: #ff7342; --accent-ink: #16120f; --accent-soft: rgba(255, 90, 31, .1);
+  --ink: #141416; --ink-2: #1f1f23; /* the dark "recorder" surfaces (hero visual, seal stamp) */
   --ok: #0d6a3f; --ok-soft: rgba(13, 106, 63, .07); --ok-line: rgba(13, 106, 63, .26);
-  --warn: #8a4a00; --warn-soft: rgba(176, 116, 0, .085); --warn-line: rgba(176, 116, 0, .3);
-  --bad: #b1261d; --bad-soft: rgba(177, 38, 29, .065); --bad-line: rgba(177, 38, 29, .26);
+  --warn: #6f5600; --warn-soft: rgba(140, 112, 0, .1); --warn-line: rgba(140, 112, 0, .32);
+  --bad: #a3122a; --bad-soft: rgba(163, 18, 42, .065); --bad-line: rgba(163, 18, 42, .26);
   --info: #0b5e91; --info-soft: rgba(11, 94, 145, .065); --info-line: rgba(11, 94, 145, .26);
   --red-cube: #d93434; --blue-cube: #3552d6; --input-bg: #ffffff;
-  --shadow: 0 1px 2px rgba(56, 42, 20, .04), 0 2px 8px -2px rgba(56, 42, 20, .05);
-  --shadow-lg: 0 1px 2px rgba(56, 42, 20, .04), 0 18px 44px -18px rgba(56, 42, 20, .2);
-  --shadow-pop: 0 16px 40px -8px rgba(56, 42, 20, .18), 0 0 0 1px var(--border);
-  --skeleton: linear-gradient(90deg, #eee9e0 0%, #f6f3ee 50%, #eee9e0 100%);
-  --canvas: radial-gradient(1100px 520px at 0% -8%, #fffefc 0%, rgba(255, 254, 252, 0) 70%), radial-gradient(900px 480px at 100% 0%, rgba(53, 70, 184, .035) 0%, rgba(53, 70, 184, 0) 70%), var(--bg);
+  --shadow: 0 1px 2px rgba(20, 20, 22, .05), 0 2px 8px -2px rgba(20, 20, 22, .05);
+  --shadow-lg: 0 1px 2px rgba(20, 20, 22, .05), 0 18px 44px -18px rgba(20, 20, 22, .22);
+  --shadow-pop: 0 16px 40px -8px rgba(20, 20, 22, .2), 0 0 0 1px var(--border);
+  --skeleton: linear-gradient(90deg, #ebe9e4 0%, #f4f3f0 50%, #ebe9e4 100%);
+  --canvas: var(--bg);
   color-scheme: light;
 }
 
@@ -47,9 +51,15 @@
   --t-fast: 120ms; --t-mid: 200ms; --t-slow: 320ms;
   --ease: cubic-bezier(.2, .7, .2, 1); --ease-out: cubic-bezier(.16, 1, .3, 1);
   --page-max: 1200px; --page-narrow: 760px; --topbar-h: 60px;
-  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  --sans: "Inter var", Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --display: "Bricolage Grotesque", var(--sans);
+  /* the pearl sheen: ONLY on the logomark (and favicon), never on large surfaces */
+  --pearl: conic-gradient(from 200deg at 42% 40%, #fff6ee, #ffd9c4, #f4e7ff, #d9f1ff, #e9fff4, #fff3d6, #fff6ee);
 }
+/* self-hosted, OFL (public/fonts/LICENSES.txt); only the display face is preloaded (index.html, landing only) */
+@font-face { font-family: "Bricolage Grotesque"; src: url("/fonts/bricolage-grotesque-600.woff2") format("woff2"); font-weight: 500 800; font-style: normal; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("/fonts/jetbrains-mono-500.woff2") format("woff2"); font-weight: 400 700; font-style: normal; font-display: swap; }
 @media (prefers-reduced-motion: reduce) { :root { --t-fast: 0ms; --t-mid: 0ms; --t-slow: 0ms; } }
 
 /* ---------------------------------------------------------------- base */
@@ -58,8 +68,10 @@ html, body { margin: 0; }
 html.demo { zoom: 1.25; } /* ?demo: larger type for the recorded video */
 body { background: var(--canvas, var(--bg)); background-attachment: fixed; color: var(--text); font: var(--fs-body)/var(--lh-body) var(--sans); -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums; }
 h1, h2, h3, h4 { margin: 0; line-height: var(--lh-tight); letter-spacing: -.01em; }
-h1 { font-size: var(--fs-title); font-weight: 680; letter-spacing: -.02em; }
+h1 { font-family: var(--display); font-size: var(--fs-title); font-weight: 600; letter-spacing: -.025em; }
 h2 { font-size: 18px; font-weight: 620; }
+/* headlines in the display face (page titles, section titles, big numbers' headings) */
+.sect-title, .home-title, .hero h1, .run-title, .ins-sum-title, .ins-story-title, .state-title { font-family: var(--display); font-weight: 600; letter-spacing: -.015em; }
 h3 { font-size: 16px; font-weight: 600; }
 .h4 { font-size: var(--fs-small); font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: .06em; }
 p { margin: 0; }
@@ -81,19 +93,20 @@ code, .mono { font-family: var(--mono); font-size: 13.5px; }
 .ok-text { color: var(--ok); } .bad-text { color: var(--bad); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .eyebrow { font-size: var(--fs-small); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); margin-bottom: var(--s1); }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r1); }
+:focus-visible { outline: 2.5px solid var(--accent); outline-offset: 2px; border-radius: var(--r1); }
 #main [ref], .fpdiff { scroll-margin-top: 76px; }
 .icon { flex: none; vertical-align: -3px; }
 ::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
 
 /* ---------------------------------------------------------------- shell */
 .shell { min-height: 100vh; display: flex; flex-direction: column; }
-.skip { position: absolute; left: -999px; top: 8px; background: var(--accent); color: var(--accent-ink); padding: 8px 12px; border-radius: var(--r2); z-index: 20; }
+.skip { position: absolute; left: -999px; top: 8px; background: var(--accent-fill); color: var(--accent-ink); padding: 8px 12px; border-radius: var(--r2); z-index: 20; }
 .skip:focus { left: 8px; }
 .topbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: var(--s5); padding: 0 var(--s5); height: var(--topbar-h); background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid var(--border); }
 .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--text); font-weight: 700; letter-spacing: .01em; font-size: 18px; }
 .brand:hover { text-decoration: none; }
-.brand-mark { width: 18px; height: 18px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff 0 12%, var(--accent) 55%); box-shadow: inset 0 0 0 3px var(--bg), 0 0 0 1.5px var(--accent); }
+.brand { font-family: var(--display); font-weight: 600; letter-spacing: -.01em; }
+.brand-mark { width: 22px; height: 22px; border-radius: 50%; flex: none; background: radial-gradient(circle at 34% 30%, #fff 0 14%, rgba(255, 255, 255, 0) 42%), var(--pearl); box-shadow: inset 0 0 0 1px rgba(20, 20, 22, .08), inset -2px -3px 5px rgba(120, 90, 140, .22), 0 0 0 2.5px var(--ink), 0 0 0 4.5px var(--accent-fill); margin: 0 3px; }
 .nav { display: flex; gap: 2px; }
 .nav a { white-space: nowrap; color: var(--text-2); padding: 8px 14px; border-radius: var(--r2); font-weight: 520; font-size: var(--fs-ui); transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
 .nav a:hover { color: var(--text); background: var(--raise); text-decoration: none; }
@@ -170,8 +183,8 @@ main { flex: 1; outline: none; }
 .btn:hover:not(:disabled) { border-color: var(--text-3); text-decoration: none; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 .btn.primary:disabled { opacity: 1; background: var(--raise); border-color: var(--border); color: var(--text-3); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
-.btn.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 88%, #fff); }
+.btn.primary { background: var(--accent-fill); border-color: color-mix(in srgb, var(--accent-fill) 70%, var(--ink)); color: var(--accent-ink); font-weight: 650; }
+.btn.primary:hover:not(:disabled) { background: var(--accent-fill-hover); border-color: var(--accent); }
 .btn.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); background: transparent; }
 .btn.danger:hover:not(:disabled) { background: var(--bad-soft); border-color: var(--bad); }
 .btn.danger.on { background: var(--bad); color: #fff; border-color: var(--bad); }
@@ -752,3 +765,24 @@ a.spill:hover { text-decoration: none; filter: brightness(1.08); }
 .toast.on { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
 .toast .icon { color: #7fe0ae; }
 .toast code { color: inherit; overflow-wrap: anywhere; font-size: 13px; }
+
+/* ---------------------------------------------------------------- signature motif: the sealed record (components/record.tsx)
+   A flight-recorder tag: a black-box-orange band (stencil label · serial · seal) whose bottom edge is a perforated tear
+   line with punched notches. --rec-pad must equal the card's padding (the band bleeds to its edges); --rec-behind is the
+   colour behind the card, so the notches read as punched holes. `.quiet` is the outlined version for lists of records. */
+.record { --rec-pad: var(--s5); --rec-band: 36px; --rec-behind: var(--bg); }
+.record-strip { position: relative; display: flex; align-items: center; gap: var(--s3); min-height: var(--rec-band); margin: calc(var(--rec-pad) * -1) calc(var(--rec-pad) * -1) 0; padding: 6px var(--rec-pad); background: var(--accent-fill); color: var(--accent-ink); border-radius: calc(var(--r4) - 1px) calc(var(--r4) - 1px) 0 0; border-bottom: 2px dashed color-mix(in srgb, var(--ink) 55%, var(--accent-fill)); }
+.record-strip::before, .record-strip::after { content: ""; position: absolute; bottom: -9px; width: 16px; height: 16px; border-radius: 50%; background: var(--rec-behind); box-shadow: inset 0 0 0 1px var(--border); }
+.record-strip::before { left: -9px; clip-path: inset(0 0 0 50%); background: var(--rec-behind-l, var(--rec-behind)); }
+.record-strip::after { right: -9px; clip-path: inset(0 50% 0 0); background: var(--rec-behind-r, var(--rec-behind)); }
+.record-label { font: 500 12px/1 var(--mono); letter-spacing: .2em; text-transform: uppercase; white-space: nowrap; }
+.record-serial { margin-left: auto; font: 500 12.5px/1 var(--mono); letter-spacing: .06em; white-space: nowrap; }
+.record-seal { flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--ink); color: #fff; box-shadow: 0 0 0 2px var(--accent-fill), 0 0 0 3px var(--ink); }
+.record-serial + .record-seal { margin-left: 2px; }
+.record-label + .record-seal { margin-left: auto; }
+.record-seal.tone-ok { color: #7ee2a8; } .record-seal.tone-bad { color: #ff8a9a; } .record-seal.tone-warn { color: #f3d36b; } .record-seal.tone-neutral { color: #c9c9cf; }
+.record.quiet .record-strip { background: transparent; color: var(--accent); min-height: 32px; border-bottom-color: var(--border-strong); }
+.record.quiet .record-serial { color: var(--text-2); }
+.record.quiet .record-seal { width: 20px; height: 20px; box-shadow: none; }
+.record.quiet .record-seal svg { width: 12px; height: 12px; }
+@media (max-width: 640px) { .record-label { letter-spacing: .1em; font-size: 11.5px; } .record-serial { font-size: 11.5px; letter-spacing: .02em; } .record-strip { gap: var(--s2); } }

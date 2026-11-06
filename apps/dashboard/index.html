@@ -4,21 +4,25 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Pearl is a tamper-proof black box for robots: evidence insurers can check, sealed on the robot and recorded on 0G." />
-    <meta name="theme-color" content="#f8f5ef" />
+    <meta name="theme-color" content="#f6f5f2" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Pearl</title>
     <script>
       // before first paint: the site is light only (owner decision 6 Nov 2026), so drop any theme stored by an older
-      // build; on the landing page only, preload its hero image (LCP on #/) so app routes don't pay for it
+      // build; on the landing page only, preload its hero image (LCP on #/) and the display face of its headline, so
+      // app routes don't pay for them
       try {
         localStorage.removeItem("pearl.theme");
         if (!location.hash || location.hash === "#" || location.hash === "#/") {
           var l = document.createElement("link");
-          l.rel = "preload"; l.as = "image"; l.type = "image/webp"; l.href = "/img/factory-1600.webp";
-          l.setAttribute("imagesrcset", "/img/factory-640.webp 640w, /img/factory-800.webp 800w, /img/factory-1600.webp 1600w");
-          l.setAttribute("imagesizes", "(max-width: 900px) calc(100vw - 32px), 600px");
+          l.rel = "preload"; l.as = "image"; l.type = "image/webp"; l.href = "/img/pearl-arm-1120.webp";
+          l.setAttribute("imagesrcset", "/img/pearl-arm-640.webp 640w, /img/pearl-arm-1120.webp 1120w");
+          l.setAttribute("imagesizes", "(max-width: 900px) calc(100vw - 32px), 480px");
           l.setAttribute("fetchpriority", "high");
           document.head.appendChild(l);
+          var f = document.createElement("link");
+          f.rel = "preload"; f.as = "font"; f.type = "font/woff2"; f.href = "/fonts/bricolage-grotesque-600.woff2"; f.crossOrigin = "anonymous";
+          document.head.appendChild(f);
         }
       } catch (e) {}
     </script>

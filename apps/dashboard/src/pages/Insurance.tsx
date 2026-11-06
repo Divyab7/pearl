@@ -18,6 +18,7 @@ import { runContext, wrapRunKey } from "../lib/core";
 import { unwrapWith, type FullCheck } from "../lib/fullcheck";
 import { useOwnerUnlock } from "../lib/ownerUnlock";
 import { CLAIM_STATE, CLAIM_STEPS, INS_TIP, PAGE, TIP, outcomeWord, plainError } from "../lib/words";
+import { RecordStrip, serialOf } from "../components/record";
 import "./insurance.css";
 
 declare global {
@@ -415,7 +416,8 @@ function ClaimCard({ claim: c, incident, onChange, cancel }: { claim: any; incid
   const st = CLAIM_STATE[c.status] ?? { word: c.status, tone: "neutral" };
   const name = `${incident?.outcome ? outcomeWord(incident.outcome, true) : "Incident"} · ${incidentTime(c.episodeId, incident?.ts)}`;
   return (
-    <article className={`ins-claim is-${c.status.toLowerCase()}`} id={`claim-${c.episodeId}`} aria-labelledby={hid}>
+    <article className={`ins-claim record quiet is-${c.status.toLowerCase()}`} id={`claim-${c.episodeId}`} aria-labelledby={hid}>
+      <RecordStrip label="Claim record" serial={serialOf(c.headHash, c.claimId, c.episodeId)} seal={c.status === "PAID" ? "ok" : c.status === "DENIED" || c.status === "FAILED" ? "bad" : null} />
       <header className="ins-claim-head">
         <div className="ins-claim-title">
           <h3 id={hid}><a href={to.run(c.episodeId)}>{name}</a></h3>
@@ -696,7 +698,8 @@ function Review({ claim, rec, onDecided }: { claim: any; rec: any; onDecided: ()
     <section className="ins-review" aria-labelledby={hid}>
       <div className="ins-review-grid">
         <div className="ins-evidence">
-          <div className="ins-sum">
+          <div className="ins-sum record">
+            <RecordStrip label="Sealed claim" serial={serialOf(claim.headHash, claim.claimId, claim.episodeId)} seal={claim.status === "PAID" ? "ok" : claim.status === "DENIED" || claim.status === "FAILED" ? "bad" : null} />
             <div className="ins-sum-head">
               <div>
                 <div className="eyebrow">Claim · submitted {ago(claim.createdAt)}</div>
