@@ -261,6 +261,76 @@ Decision interpret(const std::string& cp, const std::string& cid, const HttpResu
   return d;
 }
 
+bool isProviderFailure(const HttpResult& r) {
+  if (r.status == 0) return true;
+  if (r.status >= 200 && r.status < 300) return false;
+  JsonDocument body;
+  if (parseExact(r.body, body)) {
+    JsonVariantConst e = body["error"];
+    const char* code = e["code"].is<const char*>() ? e["code"].as<const char*>() : (e["type"] | "");
+    if (strcmp(code, "no_provider_for_trust_mode") == 0 || strcmp(code, "no_available_provider") == 0) return true;
+  }
+  return r.status >= 500 || r.status == 429;
+}
+
+std::vector<std::string> modelsOf(const RouterConfig& cfg) {
+  std::vector<std::string> out;
+  auto add = [&](const std::string& m) {
+    if (m.empty()) return;
+    for (const std::string& x : out)
+      if (x == m) return;
+    out.push_back(m);
+  };
+  add(cfg.model);
+  for (const std::string& m : cfg.fallbackModels) add(m);
+  if (out.empty()) out.push_back(cfg.model);
+  return out;
+}
+
+Decision decide(const RouterConfig& cfg, const std::string& cp, const std::string& cid, const CallFn& call, const std::function<uint32_t()>& nowMs) {
+  std::vector<std::string> models = modelsOf(cfg);
+  if (models.size() == 1) return interpret(cp, cid, call(models[0], cfg.timeoutMs), cfg.timeoutMs);
+  uint32_t started = nowMs();
+  std::vector<Attempt> attempts;
+  Decision last;
+  bool budgetLeft = true, providerFail = false;
+  for (const std::string& model : models) {
+    uint32_t used = nowMs() - started;
+    if (used >= cfg.timeoutMs) {
+      budgetLeft = false;
+      break;
+    }
+    uint32_t left = cfg.timeoutMs - used;
+    HttpResult r = call(model, left);
+    last = interpret(cp, cid, r, left);
+    Attempt a;
+    a.model = model;
+    a.status = r.status;
+    a.requestId = last.requestId;
+    a.hasRequestId = last.hasRequestId;
+    a.latencyMs = r.latencyMs;
+    bool answered = r.status >= 200 && r.status < 300 && last.error != "response has no message content";
+    if (!answered) {
+      a.error = last.error;
+      a.hasError = true;
+    }
+    attempts.push_back(a);
+    providerFail = isProviderFailure(r);
+    if (!providerFail) break;  // an answer (good or bad) or a fault in our request: never ask another model
+  }
+  last.latencyMs = nowMs() - started;
+  size_t n = attempts.size();
+  if (!last.fromZeroG && (n > 1 || !budgetLeft)) {
+    std::string why = !budgetLeft ? "time budget of " + std::to_string(cfg.timeoutMs) + " ms used up after " + std::to_string(n) + (n == 1 ? " model" : " models")
+                      : providerFail ? "all " + std::to_string(n) + " models failed"
+                                     : "model " + std::to_string(n) + " of " + std::to_string(models.size()) + " refused the request";
+    last.error = why + "; last (" + attempts.back().model + "): " + last.error;
+    last.hasError = true;
+  }
+  if (n > 1) last.attempts = attempts;
+  return last;
+}
+
 static void thinkingOff(JsonObject b, const std::string& model) {
   if (model.rfind("0gm-", 0) == 0) b["chat_template_kwargs"]["enable_thinking"] = false;
   else if (model.rfind("qwen3", 0) == 0) b["enable_thinking"] = false;
@@ -525,6 +595,18 @@ std::string Recorder::addDecision(const Decision& d, const std::string& ts, cons
   JsonArray cmds = r["commandsSent"].to<JsonArray>();
   for (const std::string& c : commandsOf(p.steps)) cmds.add(c);
   r["latencyMs"] = d.latencyMs;
+  if (!d.attempts.empty()) {
+    JsonArray at = r["attempts"].to<JsonArray>();
+    for (const Attempt& a : d.attempts) {
+      JsonObject o = at.add<JsonObject>();
+      o["model"] = a.model;
+      if (a.status) o["status"] = a.status;
+      else o["status"] = nullptr;
+      nullable(o, "requestId", a.hasRequestId, a.requestId);
+      nullable(o, "error", a.hasError, a.error);
+      o["latencyMs"] = a.latencyMs;
+    }
+  }
   if (d.hasRequestId) requestIds_.push_back(d.requestId);
   if (d.fromZeroG && d.checkpoint == "INCIDENT") {
     int s = d.parsed["severity"].as<int>();

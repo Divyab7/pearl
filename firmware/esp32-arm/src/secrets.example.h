@@ -10,6 +10,9 @@
 // ---- env:device (the robot runs everything itself; the dashboard server reads http://<board-ip>:8070)
 #define OG_API_KEY "sk-..."                       // 0G Compute Router key (pc.0g.ai)
 #define OG_MODEL "glm-5.3-flash"                  // an image-capable model (pnpm og:smoke)
+// other 0G models tried in order when OG_MODEL's provider is down (5xx, 429, no response, no provider for the trust mode),
+// inside the same time budget; "" = none. Leave out for the default list below.
+#define OG_MODEL_FALLBACKS "qwen2.5-vl-72b-instruct,gemini-2.5-flash-lite"
 #define OG_BASE_URL "https://router-api.0g.ai/v1"
 #define OG_ANCHOR_ADDRESS ""                       // EpisodeAnchor on Galileo (pnpm anchor:deploy)
 #define ARKIV_ACCESS_KEY ""                        // hub.arkiv.network/access-keys ("" = public, rate-limited)

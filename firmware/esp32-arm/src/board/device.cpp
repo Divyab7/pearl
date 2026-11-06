@@ -38,6 +38,10 @@
 #ifndef OG_MODEL
 #define OG_MODEL ""
 #endif
+#ifndef OG_MODEL_FALLBACKS
+// tried in order only when OG_MODEL fails on the provider side (same list as apps/backend og/config.ts); "" = none
+#define OG_MODEL_FALLBACKS "qwen2.5-vl-72b-instruct,gemini-2.5-flash-lite"
+#endif
 #ifndef OG_BASE_URL
 #define OG_BASE_URL "https://router-api.0g.ai/v1"
 #endif
@@ -572,6 +576,7 @@ void begin() {
   orchestrator->router.baseUrl = OG_BASE_URL;
   orchestrator->router.apiKey = OG_API_KEY;
   orchestrator->router.model = OG_MODEL;
+  orchestrator->router.fallbackModels = split(OG_MODEL_FALLBACKS);
   orchestrator->router.timeoutMs = 30000;
   startQ = xQueueCreate(1, sizeof(StartReq));
   // the run task: 0G calls, TLS and publishing block here, never in loop() where the safety checks run
