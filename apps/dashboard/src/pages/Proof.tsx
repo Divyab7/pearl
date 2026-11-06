@@ -1,0 +1,461 @@
+// Proof (public): anyone checks a run is untouched, and can watch a one-byte edit get caught. No sign-in; the run's
+// contents stay locked. Plain words up front; fingerprints, contracts and the five technical checks live in
+// <TechDetails>.
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { get, useConfig } from "../api";
+import { go, to } from "../router";
+import { tamperPublic, useRuns, fullWhen, shortWhen, dayOf } from "../components/run";
+import { EmptyState, ErrorState, RunRow, Section, Skeleton, StatusPill, TechDetails, InfoTip } from "../components/blocks";
+import { Amount, Chip, Icon, Spinner, Verdict, verdictOf, type Tone, type VerdictKind } from "../components/ui";
+import { ARKIV_EXPLORER } from "../components/claims";
+import { CLAIM_STATE, OUTCOME_TONE, TIP, outcomeWord } from "../lib/words";
+import "./proof.css";
+
+const ID_RE = /^ep_[A-Za-z0-9_-]+$/;
+const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+type Check = { id: number; name: string; status: "PASS" | "FAIL" | "SKIPPED"; detail: string; tech?: string; missing?: boolean };
+
+/**
+ * The checks as the page reads them. A run with no record on 0G Chain at all is "missing" (we can't prove it), not
+ * evidence of an edit: only a real mismatch says Tampered.
+ */
+function normalise(v: any): { checks: Check[]; kind: VerdictKind; notFound: boolean } {
+  const checks: Check[] = v.checks.map((c: Check) => (c.id === 1 && c.status === "FAIL" && !v.anchor ? { ...c, missing: true } : c));
+  const notFound = !v.anchor && !v.sealed;
+  return { checks, kind: verdictOf({ result: v.result, checks }), notFound };
+}
+
+/** The three plain checks (summary-match and remote-receipt join them only when they fail). */
+const PLAIN: Record<number, { title: string; pass: string; missing: string; fail: string; tip?: string }> = {
+  1: {
+    title: "Recorded on 0G Chain",
+    pass: "Its fingerprint was written to a public ledger when the run ended.",
+    missing: "We found no record of this run on the public ledger yet.",
+    fail: "The public record doesn't match this run.",
+    tip: TIP.ogChain,
+  },
+  2: {
+    title: "Stored copy matches",
+    pass: "The locked file on 0G Storage is exactly the one that was recorded.",
+    missing: "The stored copy isn't available, so it can't be compared.",
+    fail: "The stored copy is different from what was recorded.",
+    tip: TIP.ogStorage,
+  },
+  4: {
+    title: "Signed by the robot",
+    pass: "Only this robot's own key could have signed it.",
+    missing: "There's no locked file to read the signature from.",
+    fail: "The signature doesn't belong to this robot.",
+    tip: TIP.signed,
+  },
+  3: { title: "Summary matches", pass: "", missing: "", fail: "The run's summary differs from the public record." },
+  5: { title: "Remote command receipt", pass: "", missing: "", fail: "The remote start command doesn't match its receipt." },
+};
+
+function PlainChecks({ checks }: { checks: Check[] }) {
+  const shown = checks.filter((c) => c.id === 1 || c.id === 2 || c.id === 4 || (c.status === "FAIL" && !c.missing));
+  return (
+    <ul className="pf-checks" aria-label="What we checked">
+      {shown.map((c) => {
+        const p = PLAIN[c.id]!;
+        const st = c.status === "PASS" ? "ok" : c.status === "SKIPPED" ? "skip" : c.missing ? "warn" : "bad";
+        const line = st === "ok" ? p.pass : st === "warn" ? p.missing : st === "bad" ? p.fail : "Not needed for this run.";
+        const word = st === "ok" ? "Yes" : st === "warn" ? "Not available" : st === "bad" ? "No match" : "Not needed";
+        return (
+          <li key={c.id} className={`pf-check st-${st}`}>
+            <span className="pf-check-mark" aria-hidden><Icon name={st === "ok" ? "check" : st === "bad" ? "x" : st === "warn" ? "alert" : "minus"} size={14} /></span>
+            <span className="pf-check-text">
+              <b>{p.title}{p.tip && <InfoTip text={p.tip} />}</b>
+              <span>{line}</span>
+            </span>
+            <span className="sr-only">: {word}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** The five checks with their technical names (inside Technical details only). */
+function TechChecks({ checks }: { checks: Check[] }) {
+  const word = (c: Check) => (c.status === "PASS" ? "Pass" : c.status === "SKIPPED" ? "Not used" : c.missing ? "Not available" : "Fail");
+  return (
+    <ol className="checks pf-techchecks">
+      {checks.map((c) => (
+        <li key={c.id} className={`check ${c.status === "FAIL" && c.missing ? "s-MISSING" : `s-${c.status}`}`}>
+          <span className="check-mark" aria-hidden><Icon name={c.status === "PASS" ? "check" : c.status === "SKIPPED" ? "minus" : c.missing ? "alert" : "x"} size={14} /></span>
+          <div>
+            <div className="check-name">{c.id}. {c.name}{c.tech && <span className="check-tech">{c.tech}</span>}</div>
+            <div className="check-detail">{c.detail.charAt(0).toUpperCase() + c.detail.slice(1)}</div>
+          </div>
+          <span className="check-status">{word(c)}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** One plain sentence under the big word. */
+function verdictLine(kind: VerdictKind, notFound: boolean, checks: Check[], v: any) {
+  if (notFound) return "We found no record of this run. Check the id is right; a run that just finished can take a minute to appear.";
+  const robot = v.source === "robot" ? " (The stored copy was read from the robot itself.)" : "";
+  if (kind === "ok") return `Matches exactly what the robot signed and recorded on 0G. Nobody has changed it.${robot}`;
+  if (kind === "incomplete") {
+    const gone = checks.filter((c) => c.status === "FAIL").map((c) => PLAIN[c.id]?.title.toLowerCase() ?? c.name);
+    return `Part of the proof is missing (${gone.join(", ")}), so we can't confirm it yet. Nothing shows it was changed.`;
+  }
+  return "This doesn't match what the robot signed and recorded. Someone changed it after the fact.";
+}
+
+/** The fingerprint the chain holds vs the edited copy's: the differing characters reveal and light up in turn. */
+function FingerprintDiff({ a, b }: { a: string; b: string }) {
+  const body = (s: string) => s.replace(/^0x/, "");
+  const A = body(a);
+  const B = body(b);
+  const changed = [...B].filter((ch, i) => ch !== A[i]).length;
+  return (
+    <figure className="pf-diff" aria-label={`Fingerprints compared: ${changed} of ${B.length} characters differ`}>
+      <div className="pf-diff-row">
+        <span className="pf-diff-label"><Icon name="shield" size={13} /> Recorded on 0G Chain</span>
+        <code className="mono" aria-hidden>{A}</code>
+      </div>
+      <div className="pf-diff-row edited">
+        <span className="pf-diff-label"><Icon name="x" size={13} /> Edited copy</span>
+        <code className="mono" aria-hidden>
+          {[...B].map((ch, i) => (ch === A[i] ? <span key={i}>{ch}</span> : <mark key={i} style={{ ["--i" as any]: i }}>{ch}</mark>))}
+        </code>
+      </div>
+      <figcaption>
+        <b className="pf-diff-count">{changed} of {B.length}</b> characters changed from a single byte. It no longer matches 0G Chain, so the edit is caught.
+      </figcaption>
+    </figure>
+  );
+}
+
+/** The hero demo: copy the locked file, change one byte, check the copy the same way. */
+function TryIt({ runId, v, kind }: { runId: string; v: any; kind: VerdictKind }) {
+  const [edited, setEdited] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const result = useRef<HTMLHeadingElement>(null);
+  const hid = useId();
+  useEffect(() => {
+    setEdited(null);
+    setErr("");
+  }, [runId]);
+  useEffect(() => {
+    if (!edited) return;
+    result.current?.focus({ preventScroll: true });
+    result.current?.closest(".pf-try")?.scrollIntoView({ behavior: reduceMotion() ? "auto" : "smooth", block: "nearest" });
+  }, [edited]);
+  const run = () => {
+    setBusy(true);
+    setErr("");
+    setEdited(null);
+    tamperPublic(runId).then(setEdited).catch((e) => setErr(e.message)).finally(() => setBusy(false));
+  };
+  const can = !!v.sealed;
+  const editedKind = edited ? normalise(edited).kind : null;
+  return (
+    <section className={`pf-try ${edited ? "done" : ""}`} aria-labelledby={hid}>
+      <div className="pf-try-head">
+        <span className="eyebrow">Try it</span>
+        <h2 id={hid} className="sect-title">What if someone edits it?</h2>
+        <p className="sect-desc">We copy this run's locked file, change a single byte, then check the copy the same way.</p>
+      </div>
+      <div className="pf-try-pair">
+        <Verdict kind={kind} compact title="Original" label={kind === "ok" ? "Matches 0G Chain." : "Same as the result."} />
+        <span className="pf-try-vs" aria-hidden><Icon name="arrow" size={16} /></span>
+        {edited
+          ? <div className="pf-try-edited"><Verdict kind={editedKind} compact title="Edited copy" label="1 byte changed. Caught." /></div>
+          : busy
+            ? <Verdict kind={null} pending compact title="Edited copy" />
+            : <div className="verdict compact pf-try-ghost"><span className="verdict-icon" aria-hidden><Icon name="doc" size={18} /></span><div><div className="verdict-title">Edited copy</div><div className="verdict-word">?</div><div className="verdict-sub">Not checked yet.</div></div></div>}
+      </div>
+      {edited && (
+        <div className="stack">
+          <h3 className="sr-only" tabIndex={-1} ref={result}>Result: the edited copy is {editedKind === "bad" ? "tampered" : "not verified"}. We changed {edited.tampered}.</h3>
+          {v.rootHash && edited.editedRoot && <FingerprintDiff a={v.rootHash} b={edited.editedRoot} />}
+        </div>
+      )}
+      {err && <p className="pf-err" role="alert"><Icon name="alert" size={14} /> Couldn't make the edited copy: {err}</p>}
+      <div className="row">
+        {!edited
+          ? <button type="button" className="btn primary lg" onClick={run} disabled={!can || busy}>{busy ? <><Spinner label="Editing and checking" /> Checking the copy…</> : <><Icon name="spark" /> Edit 1 byte</>}</button>
+          : <button type="button" className="btn" onClick={() => setEdited(null)}>Reset the demo</button>}
+        {!can && <span className="muted small">Needs a run whose locked file can be read.</span>}
+        {can && !edited && <span className="muted small">Only a copy changes. The real record stays as it is.</span>}
+      </div>
+    </section>
+  );
+}
+
+/** Claims on this run, read from the insurer desk's public records on Arkiv. Status and amount only. */
+function ClaimsHere({ runId, tick }: { runId: string; tick: number }) {
+  const cfg = useConfig();
+  const [r, setR] = useState<any>(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    let live = true;
+    setR(null);
+    setErr("");
+    get(`/api/arkiv/claims?episodeId=${encodeURIComponent(runId)}`).then((x) => live && setR(x)).catch((e) => live && setErr(e.message));
+    return () => {
+      live = false;
+    };
+  }, [runId, tick]);
+  if (r && !r.configured) return null;
+  return (
+    <Section title="Insurance claims on this run" info="Read from Arkiv, where the insurer publishes each claim's status and amount. Never who claimed." className="pf-claims">
+      {err && <p className="muted small"><Icon name="alert" size={12} /> Couldn't read the claims right now.</p>}
+      {!r && !err && <Skeleton lines={1} label="Reading claims" />}
+      {r && !r.items.length && <p className="muted">No claims on this run.</p>}
+      {r?.items.length > 0 && (
+        <ul className="pf-claimlist">
+          {r.items.map((c: any) => {
+            const s = CLAIM_STATE[c.status] ?? { word: c.status, tone: "neutral" as Tone };
+            return (
+              <li key={c.entityKey}>
+                <StatusPill tone={s.tone} size="sm">{s.word}</StatusPill>
+                <Amount wei={c.amountWei} paid={c.status === "PAID"} />
+                <span className="muted small">updated {shortWhen(c.ts)}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {r?.items.length > 0 && (
+        <TechDetails boxless>
+          <div className="chips">
+            {r.items.map((c: any) => (
+              <div key={c.entityKey} className="stack-tight">
+                <Chip label="Arkiv record" value={c.entityKey} href={`${ARKIV_EXPLORER}/entity/${c.entityKey}`} />
+                {c.payoutTx && <Chip label="Payout" value={c.payoutTx} href={cfg.explorer ? `${cfg.explorer}/tx/${c.payoutTx}` : null} tone="ok" />}
+              </div>
+            ))}
+          </div>
+          {r.query && <pre className="code">{r.query}</pre>}
+        </TechDetails>
+      )}
+    </Section>
+  );
+}
+
+/** Recent runs from Arkiv (or the robot), as plain rows. */
+function RecentRuns({ runs, selected, onPick, limit }: { runs: any; selected?: string; onPick?: () => void; limit?: number }) {
+  if (runs.err && !runs.items.length) return <p className="muted small"><Icon name="alert" size={12} /> Couldn't load recent runs. You can still paste a run id.</p>;
+  if (!runs.source && !runs.items.length) return <Skeleton lines={3} label="Loading recent runs" />;
+  if (!runs.items.length) return <p className="muted">No runs yet. They appear here when a robot finishes a task.</p>;
+  const items = limit ? runs.items.slice(0, limit) : runs.items;
+  return (
+    <ul className="rrows pf-recent" onClick={onPick}>
+      {items.map((e: any) => (
+        <li key={e.episodeId}>
+          <RunRow
+            href={to.proof(e.episodeId)}
+            selected={selected === e.episodeId}
+            time={e.ts ? shortWhen(e.ts) : "—"}
+            outcome={outcomeWord(e.outcome, e.kind === "incident")}
+            tone={OUTCOME_TONE[e.outcome] ?? "neutral"}
+            note={e.ts ? dayOf(e.ts) : undefined}
+            claimable={e.kind === "incident"}
+            title={`Check this run`}
+          />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function SearchBar({ runId, runs }: { runId?: string; runs: any }) {
+  const [input, setInput] = useState(runId ?? "");
+  const [err, setErr] = useState("");
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  const toggle = useRef<HTMLButtonElement>(null);
+  const errId = useId();
+  const popId = useId();
+  useEffect(() => {
+    setInput(runId ?? "");
+    setErr("");
+    setOpen(false);
+  }, [runId]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        toggle.current?.focus();
+      }
+    };
+    const onDown = (e: PointerEvent) => {
+      if (!wrap.current?.contains(e.target as Node)) setOpen(false);
+    };
+    addEventListener("keydown", onKey);
+    addEventListener("pointerdown", onDown);
+    wrap.current?.querySelector<HTMLElement>(".pf-pop .rrow")?.focus();
+    return () => {
+      removeEventListener("keydown", onKey);
+      removeEventListener("pointerdown", onDown);
+    };
+  }, [open]);
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const raw = input.trim();
+    const id = raw.match(/ep_[A-Za-z0-9_-]+/)?.[0] ?? raw; // a pasted link to #/proof/<id> works too
+    if (!raw) return setErr("Paste a run id, or pick a recent run.");
+    if (!ID_RE.test(id)) return setErr("That doesn't look like a run id. A run id looks like ep_20261106061500_ab12.");
+    setErr("");
+    go("proof", id);
+  };
+  return (
+    <div className="pf-search" ref={wrap}>
+      <form onSubmit={submit} role="search" aria-label="Check a run" noValidate>
+        <div className="pf-search-row">
+          <label htmlFor="pf-run-id" className="sr-only">Run id</label>
+          <div className="pf-input">
+            <Icon name="search" />
+            <input id="pf-run-id" className="mono" value={input} onChange={(e) => { setInput(e.target.value); if (err) setErr(""); }}
+              placeholder="Paste a run id, or pick a recent one" spellCheck={false} autoComplete="off"
+              aria-invalid={!!err} aria-describedby={err ? errId : undefined} />
+            <button ref={toggle} type="button" className="btn ghost pf-recent-btn" aria-expanded={open} aria-controls={popId} onClick={() => setOpen((o) => !o)}>
+              Recent<Icon name="down" size={14} />
+            </button>
+          </div>
+          <button type="submit" className="btn primary">Check</button>
+        </div>
+        {err && <p className="pf-field-err" id={errId} role="alert"><Icon name="alert" size={13} /> {err}</p>}
+      </form>
+      {open && (
+        <div className="pf-pop" id={popId} role="region" aria-label="Recent runs">
+          <div className="pf-pop-head"><span className="h4">Recent runs</span>{runs.source === "arkiv" && <span className="muted small">from Arkiv</span>}</div>
+          <RecentRuns runs={runs} selected={runId} onPick={() => setOpen(false)} limit={8} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function Proof({ tick, runId }: { tick: number; runId?: string }) {
+  const runs = useRuns(tick);
+  const cfg = useConfig();
+  const [v, setV] = useState<any>(null);
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [again, setAgain] = useState(0);
+  const lastId = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (!runId) {
+      setV(null);
+      setErr("");
+      return;
+    }
+    let live = true;
+    // a new run clears the result; a refresh of the same run keeps showing the old one until the new one lands
+    if (lastId.current !== runId) setV(null);
+    lastId.current = runId;
+    setErr("");
+    setLoading(true);
+    get(`/api/verify/${encodeURIComponent(runId)}`)
+      .then((x) => live && setV(x))
+      .catch((e) => live && setErr(e.message))
+      .finally(() => live && setLoading(false));
+    return () => {
+      live = false;
+    };
+  }, [runId, tick, again]);
+
+  const n = v ? normalise(v) : null;
+  const listed = runId ? runs.items.find((e: any) => e.episodeId === runId) : null;
+  const recorded = v?.anchor ? new Date(v.anchor.anchoredAt * 1000) : null;
+  const addr = (a?: string | null) => (a && cfg.explorer ? `${cfg.explorer}/address/${a}` : null);
+
+  return (
+    <div className="page proof">
+      <header className="pagehead pf-head">
+        <div className="pagehead-text">
+          <h1 className="pagehead-title">Is this record untouched?</h1>
+          <p className="pagehead-desc">Check any robot run against what the robot signed and recorded on 0G. No sign-in needed, and the run's contents stay locked.</p>
+        </div>
+      </header>
+      <SearchBar runId={runId} runs={runs} />
+
+      {!runId && (
+        <div className="pf-grid">
+          <Section title="Pick a recent run" description="Or paste a run id above." actions={runs.source === "arkiv" ? <span className="muted small">Listed on Arkiv<InfoTip text={TIP.arkiv} /></span> : undefined} boxed>
+            <RecentRuns runs={runs} limit={6} />
+          </Section>
+          <div className="pf-side">
+            <EmptyState title="The answer shows here" icon="shield"
+              action={runs.items[0] ? <a className="btn primary" href={to.proof(runs.items[0].episodeId)}>Check the latest run</a> : undefined}>
+              One clear word: <b>Untouched</b>, <b>Not verified</b> or <b>Tampered</b>. Then try changing a single byte and watch the check catch it.
+            </EmptyState>
+          </div>
+        </div>
+      )}
+
+      {runId && err && !v && (
+        <ErrorState title="Couldn't check this run" onRetry={() => setAgain((a) => a + 1)}>
+          The check service didn't answer ({err}). The record itself is unaffected.
+        </ErrorState>
+      )}
+
+      {runId && !err && !v && (
+        <div className="pf-grid">
+          <div className="pf-card"><Verdict kind={null} pending /><Skeleton lines={3} /></div>
+          <div className="pf-card"><Skeleton lines={4} /></div>
+        </div>
+      )}
+
+      {runId && v && n && (
+        <div className="pf-grid">
+          <section className="pf-card pf-result" aria-label="Result">
+            <Verdict kind={n.kind} label={verdictLine(n.kind, n.notFound, n.checks, v)} />
+            {v.sealed && (
+              <p className="pf-runline">
+                <span>Run finished <time dateTime={v.sealed.endedAt}>{fullWhen(v.sealed.endedAt)}</time></span>
+                <span aria-hidden>·</span>
+                <span className={`dotlabel tone-${OUTCOME_TONE[v.sealed.outcome] ?? "neutral"}`}><i aria-hidden />{outcomeWord(v.sealed.outcome, v.sealed.incident)}</span>
+                {loading && <Spinner label="Re-checking" />}
+              </p>
+            )}
+            {!n.notFound && <PlainChecks checks={n.checks} />}
+            <div className="pf-result-foot">
+              <span className="muted small"><Icon name="lock" size={12} /> Contents stay locked: this check reads fingerprints only.</span>
+              {v.sealed && <a className="pf-story" href={to.run(runId)}>Your robot? Open the full run story <Icon name="arrow" size={14} /></a>}
+            </div>
+            <TechDetails>
+              <div className="stack">
+                <div className="chips">
+                  <Chip label="Run id" value={runId} display={runId} />
+                  <Chip label="Robot" value={v.device} href={addr(v.device)} />
+                  <Chip label="Run fingerprint" value={v.sealed?.headHash ?? v.anchor?.headHash ?? null} />
+                  <Chip label="0G Storage file" value={v.rootHash} href={v.rootHash && cfg.storageIndexer ? `${cfg.storageIndexer}/file?root=${v.rootHash}` : null} />
+                  <Chip label="Record contract" value={v.anchor?.address ?? null} href={addr(v.anchor?.address)} />
+                  {listed?.anchorTx && <Chip label="Recording tx" value={listed.anchorTx} href={cfg.explorer ? `${cfg.explorer}/tx/${listed.anchorTx}` : null} />}
+                </div>
+                <p className="muted small">
+                  {recorded ? <>Recorded on 0G Chain <time dateTime={recorded.toISOString()} title={recorded.toISOString()}>{fullWhen(recorded.getTime())}</time></> : "Not recorded on 0G Chain."}
+                  {v.source && <> · stored copy read from {v.source === "robot" ? "the robot" : "0G Storage"}</>}
+                </p>
+                <h4 className="h4">The 5 public checks</h4>
+                <TechChecks checks={n.checks} />
+              </div>
+            </TechDetails>
+          </section>
+          <div className="pf-side">
+            {v.sealed ? <TryIt runId={runId} v={v} kind={n.kind} /> : (
+              <section className="pf-try">
+                <span className="eyebrow">Try it</span>
+                <p className="muted">The one-byte demo needs a run whose locked file can be read. Pick a recent run to try it.</p>
+              </section>
+            )}
+            {!n.notFound && <ClaimsHere runId={runId} tick={tick} />}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
