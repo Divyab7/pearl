@@ -21,6 +21,19 @@ export interface EpisodeMeta {
   /** Present only for episodes started by a zerobot command: the receipt that closes that command on 0G Chain. */
   zerobot?: ModuleStatus<{ robotId: string; nonce: number; receiptTx: string; link: string }>;
   frames?: { idx: number; rootHash: string; status: "ok" | "failed" | "not_configured"; txHash?: string; error?: string }[];
+  /**
+   * Offline relay (relay spec): the robot had no internet, so it packed this run into a sealed bundle of its own
+   * pre-signed txs. via "laptop" = submitted by the laptop relay ("sent via relay"), "self" = by the robot once back online.
+   */
+  relay?: {
+    bundleId: string;
+    state: "queued" | "sent" | "submitting" | "done" | "failed" | "stale";
+    via: "laptop" | "self" | null;
+    relayUrl?: string;
+    steps?: { purpose: string; txHash: string; status: string; error?: string; txSeq?: number; entityKey?: string }[];
+    error?: string;
+    updatedAt: string;
+  };
 }
 
 const path = (id: string, dir = episodesDir()) => resolve(dir, `${id}.meta.json`);

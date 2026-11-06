@@ -110,6 +110,14 @@ export interface AnchorInput {
   incident: boolean;
 }
 
+/** The exact anchor() calldata for an episode (the relay bundle pre-signs it offline). */
+export function anchorCalldata(a: AnchorInput): string {
+  return new ethers.Interface(ANCHOR_ABI).encodeFunctionData("anchor", [
+    episodeKey(a.episodeId), b32(a.headHash), b32(a.rootHash), requestIdsHash(a.requestIds),
+    OUTCOME_CODE[a.outcome], a.severity, a.incident,
+  ]);
+}
+
 export async function anchorEpisode(c: AnchorConfig, a: AnchorInput): Promise<{ txHash: string; address: string; device: string }> {
   const wallet = chainWallet(c.privateKey, c.rpcUrl);
   const contract = new ethers.Contract(c.address, ANCHOR_ABI, wallet);

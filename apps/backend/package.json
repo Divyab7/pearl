@@ -22,6 +22,7 @@
     "@arkiv-network/sdk": "1.0.1",
     "@serialport/parser-readline": "^13.0.0",
     "@worldcoin/idkit-core": "4.6.0",
+    "bonjour-service": "^1.4.4",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "ethers": "6.13.1",
