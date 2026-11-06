@@ -27,6 +27,7 @@ export function routerConfigFromEnv(overrides: Partial<RouterConfig> = {}): Rout
     model: process.env.OG_MODEL ?? "",
     fallbackModels: parseFallbacks(process.env.OG_MODEL_FALLBACKS),
     trustMode: trust,
+    allowStandardFallback: envFlag("OG_ALLOW_STANDARD_FALLBACK", "on"),
     timeoutMs: Number(process.env.OG_TIMEOUT_MS ?? 30000),
     verifyTee: envFlag("OG_VERIFY_TEE", "on"),
     maxTokens: Number(process.env.OG_MAX_TOKENS ?? 1000),

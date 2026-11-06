@@ -33,6 +33,11 @@ export interface RouterConfig {
    */
   fallbackModels?: string[];
   trustMode: TrustMode;
+  /**
+   * Last resort (owner decision 7 Nov 2026): when trustMode is "verified" and every model failed on the provider side,
+   * ask the same models again with trust mode "standard" (not hardware-verified), inside the same budget.
+   */
+  allowStandardFallback?: boolean;
   timeoutMs: number;
   verifyTee: boolean;
   maxTokens: number;

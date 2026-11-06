@@ -287,24 +287,43 @@ std::vector<std::string> modelsOf(const RouterConfig& cfg) {
   return out;
 }
 
-Decision decide(const RouterConfig& cfg, const std::string& cp, const std::string& cid, const CallFn& call, const std::function<uint32_t()>& nowMs) {
+std::vector<Call> callsOf(const RouterConfig& cfg) {
+  std::vector<Call> calls;
   std::vector<std::string> models = modelsOf(cfg);
-  if (models.size() == 1) return interpret(cp, cid, call(models[0], cfg.timeoutMs), cfg.timeoutMs);
+  for (const std::string& m : models) calls.push_back({m, cfg.trustMode});
+  if (cfg.trustMode == "verified" && cfg.allowStandardFallback)
+    for (const std::string& m : models) calls.push_back({m, "standard"});
+  return calls;
+}
+
+Decision decide(const RouterConfig& cfg, const std::string& cp, const std::string& cid, const CallFn& call, const std::function<uint32_t()>& nowMs) {
+  std::vector<Call> calls = callsOf(cfg);
+  if (calls.size() == 1) {
+    Decision d = interpret(cp, cid, call(calls[0].model, calls[0].trustMode, cfg.timeoutMs), cfg.timeoutMs);
+    if (cfg.trustMode != "verified") {
+      d.trustMode = cfg.trustMode;
+      d.hasTrustMode = true;
+    }
+    return d;
+  }
+  bool perCall = calls.size() > modelsOf(cfg).size();
+  auto unit = [&](size_t k) { return std::string(perCall ? (k == 1 ? "call" : "calls") : (k == 1 ? "model" : "models")); };
   uint32_t started = nowMs();
   std::vector<Attempt> attempts;
   Decision last;
   bool budgetLeft = true, providerFail = false;
-  for (const std::string& model : models) {
+  for (const Call& c : calls) {
     uint32_t used = nowMs() - started;
     if (used >= cfg.timeoutMs) {
       budgetLeft = false;
       break;
     }
     uint32_t left = cfg.timeoutMs - used;
-    HttpResult r = call(model, left);
+    HttpResult r = call(c.model, c.trustMode, left);
     last = interpret(cp, cid, r, left);
     Attempt a;
-    a.model = model;
+    a.model = c.model;
+    a.trustMode = c.trustMode;
     a.status = r.status;
     a.requestId = last.requestId;
     a.hasRequestId = last.hasRequestId;
@@ -320,12 +339,17 @@ Decision decide(const RouterConfig& cfg, const std::string& cp, const std::strin
   }
   last.latencyMs = nowMs() - started;
   size_t n = attempts.size();
+  const Attempt& la = attempts.back();
   if (!last.fromZeroG && (n > 1 || !budgetLeft)) {
-    std::string why = !budgetLeft ? "time budget of " + std::to_string(cfg.timeoutMs) + " ms used up after " + std::to_string(n) + (n == 1 ? " model" : " models")
-                      : providerFail ? "all " + std::to_string(n) + " models failed"
-                                     : "model " + std::to_string(n) + " of " + std::to_string(models.size()) + " refused the request";
-    last.error = why + "; last (" + attempts.back().model + "): " + last.error;
+    std::string why = !budgetLeft ? "time budget of " + std::to_string(cfg.timeoutMs) + " ms used up after " + std::to_string(n) + " " + unit(n)
+                      : providerFail ? "all " + std::to_string(n) + " " + unit(n) + " failed"
+                                     : unit(1) + " " + std::to_string(n) + " of " + std::to_string(calls.size()) + " refused the request";
+    last.error = why + "; last (" + la.model + (la.trustMode == "verified" ? "" : ", " + la.trustMode) + "): " + last.error;
     last.hasError = true;
+  }
+  if (n > 1 || la.trustMode != "verified") {
+    last.trustMode = la.trustMode;
+    last.hasTrustMode = true;
   }
   if (n > 1) last.attempts = attempts;
   return last;
@@ -595,11 +619,13 @@ std::string Recorder::addDecision(const Decision& d, const std::string& ts, cons
   JsonArray cmds = r["commandsSent"].to<JsonArray>();
   for (const std::string& c : commandsOf(p.steps)) cmds.add(c);
   r["latencyMs"] = d.latencyMs;
+  if (d.hasTrustMode) r["trustMode"] = d.trustMode;
   if (!d.attempts.empty()) {
     JsonArray at = r["attempts"].to<JsonArray>();
     for (const Attempt& a : d.attempts) {
       JsonObject o = at.add<JsonObject>();
       o["model"] = a.model;
+      o["trustMode"] = a.trustMode;
       if (a.status) o["status"] = a.status;
       else o["status"] = nullptr;
       nullable(o, "requestId", a.hasRequestId, a.requestId);

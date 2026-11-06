@@ -305,14 +305,17 @@ run::PolicyResult Orchestrator::checkpoint(const std::string& cp, const std::fun
     std::string image = haveFrame ? "data:image/jpeg;base64," + base64(jpeg) : "";
     std::string base = cut0g ? blackholeUrl : router.baseUrl;
     while (!base.empty() && base.back() == '/') base.pop_back();
-    Headers h = {{"Authorization", "Bearer " + router.apiKey},
-                 {"Content-Type", "application/json"},
-                 {"X-Client-Request-Id", clientRequestId},
-                 {"X-0G-Provider-Trust-Mode", router.trustMode}};
     run::RouterConfig rc = router;
-    if (cut0g) rc.fallbackModels.clear();  // Cut 0G: one call to the blackhole, as the TypeScript program does
-    const bool keepImage = run::modelsOf(rc).size() > 1;  // a fallback resends the same image
-    run::CallFn call = [&](const std::string& model, uint32_t timeoutMs) {
+    if (cut0g) {
+      rc.fallbackModels.clear();
+      rc.allowStandardFallback = false;
+    }  // Cut 0G: one call to the blackhole, as the TypeScript program does
+    const bool keepImage = run::callsOf(rc).size() > 1;  // a fallback resends the same image
+    run::CallFn call = [&](const std::string& model, const std::string& trustMode, uint32_t timeoutMs) {
+      Headers h = {{"Authorization", "Bearer " + router.apiKey},
+                   {"Content-Type", "application/json"},
+                   {"X-Client-Request-Id", clientRequestId},
+                   {"X-0G-Provider-Trust-Mode", trustMode}};
       run::RouterConfig one = rc;
       one.model = model;
       std::string body = run::routerBody(one, cp, prompts_.text[ci], ctx.as<JsonObjectConst>(), image);

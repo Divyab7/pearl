@@ -45,7 +45,7 @@ function router(replies: Record<string, Reply>) {
     const body = JSON.parse(String(init?.body));
     const h = new Headers(init?.headers);
     seen.push({ model: body.model, trust: h.get("x-0g-provider-trust-mode"), image: body.messages[1].content[1], system: body.messages[0].content });
-    const r = replies[body.model] ?? { status: 500, body: { error: { message: "no reply set", code: "x" } } };
+    const r = replies[`${body.model}@${h.get("x-0g-provider-trust-mode")}`] ?? replies[body.model] ?? { status: 500, body: { error: { message: "no reply set", code: "x" } } };
     if (r === "down") throw new TypeError("fetch failed", { cause: new Error("connect ECONNREFUSED") });
     if (r === "hang") {
       return new Promise((_res, rej) => init?.signal?.addEventListener("abort", () => rej(new DOMException("aborted", "AbortError"))));
@@ -233,6 +233,97 @@ describe("a fallback decision in the signed log", () => {
     const ids = requestIdsOfLog(log);
     expect(ids).toEqual(["rid-fb", "rid-q"]);
     const cs = contentChecks(log, { headerHead: log.headHash, anchoredRequestIdsHash: requestIdsHashOf(ids), arm });
+    expect(cs.map((c) => [c.id, c.status])).toEqual([[6, "PASS"], [7, "PASS"], [8, "PASS"], [9, "PASS"]]);
+  });
+});
+
+describe("last resort: trust mode standard", () => {
+  const scfg: RouterConfig = { ...cfg, allowStandardFallback: true };
+  const allVerified503 = { "0gm-1.0-35b-a3b@verified": E503, "qwen2.5-vl-72b-instruct@verified": E503, "gemini-2.5-flash-lite@verified": E503 };
+
+  it("verified chain all 503 no_provider → the primary answers in standard mode, recorded as standard", async () => {
+    const { f, seen } = router({ ...allVerified503, "0gm-1.0-35b-a3b@standard": answer("0gm-1.0-35b-a3b", "rid-std") });
+    const d = await decide(scfg, req, f);
+    expect(d.source).toBe("0g");
+    expect(d.model).toBe("0gm-1.0-35b-a3b");
+    expect(d.requestId).toBe("rid-std");
+    expect(d.trustMode).toBe("standard");
+    expect(seen.map((s) => `${s.model}@${s.trust}`)).toEqual([
+      "0gm-1.0-35b-a3b@verified", "qwen2.5-vl-72b-instruct@verified", "gemini-2.5-flash-lite@verified", "0gm-1.0-35b-a3b@standard",
+    ]);
+    expect(d.attempts!.map((a) => a.trustMode)).toEqual(["verified", "verified", "verified", "standard"]);
+    expect(new Set(seen.map((s) => JSON.stringify([s.image, s.system]))).size).toBe(1);
+  });
+
+  it("a verified fallback answering never reaches standard; the decision says verified", async () => {
+    const { f, seen } = router({ "0gm-1.0-35b-a3b@verified": E502, "qwen2.5-vl-72b-instruct@verified": answer("qwen2.5-vl-72b-instruct", "rid-fb") });
+    const d = await decide(scfg, req, f);
+    expect(d.trustMode).toBe("verified");
+    expect(seen).toHaveLength(2);
+  });
+
+  it("flag off → FAILSAFE as before, no standard call", async () => {
+    const { f, seen } = router({ ...allVerified503, "0gm-1.0-35b-a3b@standard": answer("0gm-1.0-35b-a3b", "rid-std") });
+    const d = await decide({ ...scfg, allowStandardFallback: false }, req, f);
+    expectFailsafe(d);
+    expect(seen.every((s) => s.trust === "verified")).toBe(true);
+    expect(d.error).toMatch(/^all 3 models failed/);
+  });
+
+  it("a bad answer or our 4xx in the verified chain never goes on to standard", async () => {
+    const bad = router({ "0gm-1.0-35b-a3b@verified": answer("0gm-1.0-35b-a3b", "rid-p", "nope"), "0gm-1.0-35b-a3b@standard": answer("0gm-1.0-35b-a3b", "rid-std") });
+    expectFailsafe(await decide(scfg, req, bad.f));
+    expect(bad.seen).toHaveLength(1);
+    const c400 = router({ "0gm-1.0-35b-a3b@verified": E502, "qwen2.5-vl-72b-instruct@verified": err(400, "invalid_request", "bad"), "0gm-1.0-35b-a3b@standard": answer("0gm-1.0-35b-a3b", "rid-std") });
+    const d = await decide(scfg, req, c400.f);
+    expectFailsafe(d);
+    expect(c400.seen).toHaveLength(2);
+    expect(d.error).toMatch(/^call 2 of 6 refused the request/);
+  });
+
+  it("every call fails in both modes → FAILSAFE with 6 attempts", async () => {
+    const { f } = router({ ...allVerified503 }); // standard: no reply set → 500
+    const d = await decide(scfg, req, f);
+    expectFailsafe(d);
+    expect(d.attempts).toHaveLength(6);
+    expect(d.trustMode).toBe("standard");
+    expect(d.error).toMatch(/^all 6 calls failed; last \(gemini-2.5-flash-lite, standard\)/);
+  });
+
+  it("budget respected: a hanging verified primary leaves no time for standard", async () => {
+    const { f, seen } = router({ "0gm-1.0-35b-a3b@verified": "hang", "0gm-1.0-35b-a3b@standard": answer("0gm-1.0-35b-a3b", "rid-std") });
+    const t0 = performance.now();
+    const d = await decide({ ...scfg, timeoutMs: 60 }, req, f);
+    expect(performance.now() - t0).toBeLessThan(160);
+    expectFailsafe(d);
+    expect(seen).toHaveLength(1);
+    expect(d.error).toMatch(/^time budget of 60 ms used up after 1 call/);
+  });
+
+  it("single verified call keeps the old record shape (no trustMode, no attempts)", async () => {
+    const { f } = router({ "0gm-1.0-35b-a3b": answer("0gm-1.0-35b-a3b", "rid-1") });
+    const d = await decide({ ...cfg, fallbackModels: [] }, req, f);
+    expect(d).not.toHaveProperty("trustMode");
+    expect(d).not.toHaveProperty("attempts");
+  });
+
+  it("a standard-mode decision in the signed log: content checks 6–9 pass", async () => {
+    const arm = loadArmConfig();
+    const task = { task: "pick" as const, color: "red", from: "A2" as const, to: "BIN" as const };
+    const { f } = router({ ...allVerified503, "0gm-1.0-35b-a3b@standard": answer("0gm-1.0-35b-a3b", "rid-std") });
+    const rec = new EpisodeRecorder("ep_std_1", "sim", "arm-1", task);
+    rec.addEvent({ ts: "2026-11-07T00:00:00.000Z", ev: "episode_start", data: { armConfigHash: hashCanonical(arm) } });
+    const d = await decide(scfg, req, f);
+    const p = policyPlan(d, task, new Poses(arm));
+    rec.addDecision({
+      ...d, ts: "2026-11-07T00:00:01.000Z", promptHash: "a".repeat(64), frameHash: null, frameRoot: null,
+      telemetry: { state: "WAITING", joints: [90, 90, 90, 10], tofMm: 600, accG: 1 },
+      policy: p.policy, override: p.override, commandsSent: commandsOf(p.steps),
+    });
+    const log = rec.close("ABORTED");
+    expect((log.records[1] as unknown as DecisionCore).trustMode).toBe("standard");
+    const ids = requestIdsOfLog(log);
+    const cs = contentChecks(JSON.parse(JSON.stringify(log)), { headerHead: log.headHash, anchoredRequestIdsHash: requestIdsHashOf(ids), arm });
     expect(cs.map((c) => [c.id, c.status])).toEqual([[6, "PASS"], [7, "PASS"], [8, "PASS"], [9, "PASS"]]);
   });
 });

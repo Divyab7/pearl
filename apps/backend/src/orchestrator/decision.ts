@@ -8,9 +8,11 @@
  *    make the record less honest, not more.
  * There is no cache and no default answer. The only retry is the model fallback in decide(): when a model fails on
  * the provider side (no response, 5xx, 429, no provider for the trust mode), the next model in cfg.fallbackModels is
- * asked the same thing, inside the same timeoutMs budget, and every call is kept in `attempts`.
+ * asked the same thing, inside the same timeoutMs budget, and every call is kept in `attempts`. As a last resort (when
+ * allowed) the same models are asked again in trust mode "standard"; `trustMode` then says the answer is not
+ * hardware-verified.
  */
-import { callRouter, isProviderFailure, type DecisionRequest, type RouterConfig, type RouterResult } from "../og/router.js";
+import { callRouter, isProviderFailure, type DecisionRequest, type RouterConfig, type RouterResult, type TrustMode } from "../og/router.js";
 import { CheckpointOutputSchemas, formatIssues } from "../shared/schemas.js";
 import type { Checkpoint, DecisionRecord, ModelAttempt } from "../shared/types.js";
 
@@ -34,6 +36,7 @@ export type DecisionCore = Pick<
   | "error"
   | "latencyMs"
   | "attempts"
+  | "trustMode"
 >;
 
 /** Remove one surrounding ```json … ``` fence, the only repair allowed (prompt §8.3). */
@@ -114,43 +117,62 @@ export function modelsOf(cfg: RouterConfig): string[] {
   return out.length ? out : [cfg.model];
 }
 
+/**
+ * Every call to make, in order: each model in trust mode cfg.trustMode, then, only when cfg.trustMode is "verified" and
+ * cfg.allowStandardFallback is on (owner decision 7 Nov 2026, last resort), the same models again in "standard" mode
+ * (answered by a provider that is not hardware-verified; recorded as such).
+ */
+export function callsOf(cfg: RouterConfig): { model: string; trustMode: TrustMode }[] {
+  const models = modelsOf(cfg);
+  const calls = models.map((model) => ({ model, trustMode: cfg.trustMode }));
+  if (cfg.trustMode === "verified" && cfg.allowStandardFallback) {
+    for (const model of models) calls.push({ model, trustMode: "standard" });
+  }
+  return calls;
+}
+
 export async function decide(
   cfg: RouterConfig,
   req: DecisionRequest,
   fetchImpl?: typeof fetch,
 ): Promise<DecisionCore> {
-  const models = modelsOf(cfg);
-  if (models.length === 1) {
+  const calls = callsOf(cfg);
+  if (calls.length === 1) {
     const r = await callRouter(cfg, req, fetchImpl);
-    return interpret(req.checkpoint, req.clientRequestId, r);
+    const d = interpret(req.checkpoint, req.clientRequestId, r);
+    return cfg.trustMode === "verified" ? d : { ...d, trustMode: cfg.trustMode };
   }
   // Fallbacks: one time budget (cfg.timeoutMs) shared by every call, so the arm never waits longer than with one model.
   const started = performance.now();
   const attempts: ModelAttempt[] = [];
   let last: RouterResult | null = null;
   let budgetLeft = true;
-  for (const model of models) {
+  for (const { model, trustMode } of calls) {
     const left = Math.floor(cfg.timeoutMs - (performance.now() - started));
     if (left <= 0) {
       budgetLeft = false;
       break;
     }
-    const r = await callRouter({ ...cfg, model, timeoutMs: left }, req, fetchImpl);
-    attempts.push({ model, status: r.status, requestId: r.requestId, error: r.ok ? null : r.error, latencyMs: r.latencyMs });
+    const r = await callRouter({ ...cfg, model, trustMode, timeoutMs: left }, req, fetchImpl);
+    attempts.push({ model, trustMode, status: r.status, requestId: r.requestId, error: r.ok ? null : r.error, latencyMs: r.latencyMs });
     last = r;
     if (!isProviderFailure(r)) break; // an answer (good or bad) or a fault in our request: never ask another model
   }
   const total = Math.round(performance.now() - started);
   let r: RouterResult = last!;
   const n = attempts.length;
+  const lastAttempt = attempts.at(-1)!;
+  const unit = (k: number) => (calls.length > modelsOf(cfg).length ? (k === 1 ? "call" : "calls") : k === 1 ? "model" : "models");
   if (!r.ok && (n > 1 || !budgetLeft)) {
     const why = !budgetLeft
-      ? `time budget of ${cfg.timeoutMs} ms used up after ${n} ${n === 1 ? "model" : "models"}`
+      ? `time budget of ${cfg.timeoutMs} ms used up after ${n} ${unit(n)}`
       : isProviderFailure(r)
-        ? `all ${n} models failed`
-        : `model ${n} of ${models.length} refused the request`;
-    r = { ...r, error: `${why}; last (${attempts.at(-1)!.model}): ${r.error}` };
+        ? `all ${n} ${unit(n)} failed`
+        : `${unit(1)} ${n} of ${calls.length} refused the request`;
+    const mode = lastAttempt.trustMode === "verified" ? "" : `, ${lastAttempt.trustMode}`;
+    r = { ...r, error: `${why}; last (${lastAttempt.model}${mode}): ${r.error}` };
   }
   const d = interpret(req.checkpoint, req.clientRequestId, { ...r, latencyMs: total });
-  return attempts.length > 1 ? { ...d, attempts } : d;
+  if (n > 1) return { ...d, trustMode: lastAttempt.trustMode, attempts };
+  return lastAttempt.trustMode === "verified" ? d : { ...d, trustMode: lastAttempt.trustMode };
 }

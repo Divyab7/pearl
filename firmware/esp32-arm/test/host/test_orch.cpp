@@ -131,6 +131,7 @@ struct SimPlatform : orch::Platform {
   std::map<std::string, std::deque<std::string>> answers;
   bool down = false;
   std::vector<std::string> deadModels;  // these answer 502 (their provider is down)
+  bool deadOnlyVerified = false;        // dead models answer in trust mode "standard"
   std::vector<std::string> modelsAsked;
   int n = 0;
   long long t0 = 1762405800000;  // 2026-11-06T05:10:00Z
@@ -161,8 +162,11 @@ struct SimPlatform : orch::Platform {
     deserializeJson(b, body);
     std::string model = b["model"] | "";
     modelsAsked.push_back(model);
+    std::string trust;
+    for (auto& kv : h)
+      if (kv.first == "X-0G-Provider-Trust-Mode") trust = kv.second;
     for (const std::string& m : deadModels)
-      if (m == model) {
+      if (m == model && !(deadOnlyVerified && trust == "standard")) {
         r.status = 502;
         r.body = R"({"error":{"message":"fetch provider quote: EOF","type":"server_error","code":"provider_error"},"request_id":"rid-dead-)" + std::to_string(++n) + "\"}";
         return r;
@@ -219,7 +223,7 @@ static orch::Prompts prompts() {
   return p;
 }
 
-static void runOne(const char* name, SimPlatform& plat, SimArm& arm, const char* expectOutcome, std::vector<std::string> fallbacks = {}) {
+static void runOne(const char* name, SimPlatform& plat, SimArm& arm, const char* expectOutcome, std::vector<std::string> fallbacks = {}, bool standard = false) {
   run::ArmCfg cfg;
   CHECK(run::parseArmConfig(readFile(repo() + "/config/arm.json"), cfg));
   orch::Prompts pr = prompts();
@@ -234,6 +238,7 @@ static void runOne(const char* name, SimPlatform& plat, SimArm& arm, const char*
   o.router.baseUrl = "https://router-api.0g.ai/v1";
   o.router.model = "glm-5.3-flash";
   o.router.fallbackModels = fallbacks;
+  o.router.allowStandardFallback = standard;
   std::string why;
   o.monitor().pump(0);
   CHECK(o.canStart(why));
@@ -337,4 +342,16 @@ TEST(run_every_model_down_is_a_failsafe_stop) {
   p.answers["PLAN"] = {PICK};  // would be a good answer, but no model is reachable to give it
   runOne("allmodelsdown", p, a, "FAILSAFE", {"qwen2.5-vl-72b-instruct", "gemini-2.5-flash-lite"});
   CHECK_EQ(p.modelsAsked.size(), (size_t)3);
+}
+
+TEST(run_no_verified_provider_standard_answers) {
+  SimPlatform p;
+  SimArm a;
+  p.deadModels = {"glm-5.3-flash", "qwen2.5-vl-72b-instruct"};
+  p.deadOnlyVerified = true;
+  p.answers["PLAN"] = {PICK};
+  p.answers["VERIFY_GRASP"] = {HELD};
+  p.answers["VERIFY_PLACE"] = {IN_BIN};
+  runOne("standardmode", p, a, "DONE", {"qwen2.5-vl-72b-instruct"}, true);
+  CHECK_EQ(p.modelsAsked.size(), (size_t)9);  // per checkpoint: 2 verified, then the primary in standard
 }
