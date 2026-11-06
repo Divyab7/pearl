@@ -10,8 +10,9 @@ import { PAGE, ROBOT_LINK } from "./lib/words";
 import { Home } from "./pages/Home";
 import { Insurer } from "./pages/Insurer";
 import { MyRobot } from "./pages/MyRobot";
-import { Verify } from "./pages/Verify";
 import { Offline } from "./pages/Offline";
+import { Proof } from "./pages/Proof";
+import { Account } from "./pages/Account";
 import { Kit } from "./pages/Kit";
 import "./styles.css";
 
@@ -112,18 +113,13 @@ function Page({ route, live }: { route: Route; live: ReturnType<typeof useLive> 
     case "robot":
       return route.runId || route.runs ? <MyRobot live={live} sub="runs" runId={route.runId} /> : <MyRobot live={live} sub="live" />;
     case "proof":
-      return <Verify tick={live.tick} runId={route.runId} />;
+      return <Proof tick={live.tick} runId={route.runId} />;
     case "insurance":
       return <InsuranceInterim live={live} side={route.side} claimId={route.claimId} />;
     case "offline":
       return <Offline section={route.section} />;
     case "account":
-      return (
-        <div className="page">
-          <PageHeader title={PAGE.account} description="Sign in as the robot's owner, keep your unlock key, link your robot and choose where insurance payouts go." />
-          <MyRobot live={live} sub="setup" bare />
-        </div>
-      );
+      return <Account live={live} />;
     case "kit":
       return <Kit />;
     default:

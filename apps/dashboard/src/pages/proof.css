@@ -1,0 +1,104 @@
+/* Proof page (#/proof): search, big verdict with three plain checks, and the one-byte tamper demo beside it.
+   Tokens only (see styles.css). Everything is scoped under .proof / .pf-*. */
+.page.proof { padding-top: var(--s6); gap: var(--s5); }
+.pf-head .pagehead-desc { font-size: var(--fs-ui); }
+
+/* search + recent picker */
+.pf-search { position: relative; max-width: 760px; }
+.pf-search-row { display: flex; gap: var(--s2); }
+.pf-input { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s2); padding: 0 4px 0 var(--s3); border: 1px solid var(--line-input); border-radius: var(--r2); background: var(--input-bg, var(--card)); color: var(--text-2); transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
+.pf-input:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.pf-input input { flex: 1; min-width: 0; border: 0; background: transparent; outline: none; padding: 10px 0; color: var(--text); font-size: 14px; box-shadow: none; }
+.pf-input input[aria-invalid="true"] { color: var(--text); }
+.pf-input:has(input[aria-invalid="true"]) { border-color: var(--bad); }
+.pf-recent-btn { min-height: 32px; padding: 4px 8px; font-size: 14px; gap: 4px; }
+.pf-field-err { margin-top: 6px; display: flex; gap: 6px; align-items: center; color: var(--bad); font-size: 14px; }
+.pf-pop { position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; right: 0; max-height: min(460px, 60vh); overflow: auto; background: var(--panel); border: 1px solid var(--border-strong); border-radius: var(--r3); box-shadow: var(--shadow-pop); padding: var(--s3) var(--s4); }
+.pf-pop-head { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: var(--s2); }
+.pf-pop .rrow { padding-top: 8px; padding-bottom: 8px; }
+.pf-result .chips { grid-template-columns: minmax(0, 1fr); }
+.pf-recent .rrow-note { font-size: var(--fs-small); color: var(--text-3); }
+
+/* two columns: result | try it + claims */
+.pf-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: var(--s5); align-items: start; }
+.pf-side { display: grid; gap: var(--s5); min-width: 0; }
+.pf-card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--r4); padding: var(--s5); display: grid; gap: var(--s4); box-shadow: var(--shadow); min-width: 0; }
+.pf-result .verdict { padding: var(--s4) var(--s5); }
+.pf-runline { display: flex; flex-wrap: wrap; gap: 6px var(--s2); align-items: center; color: var(--text-2); font-size: 14px; }
+
+/* the three plain checks */
+.pf-checks { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s3); }
+.pf-check { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: var(--s3); align-items: start; }
+.pf-check-mark { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; margin-top: 1px; }
+.pf-check.st-ok .pf-check-mark { color: var(--ok); background: var(--ok-soft); }
+.pf-check.st-warn .pf-check-mark { color: var(--warn); background: var(--warn-soft); }
+.pf-check.st-bad .pf-check-mark { color: var(--bad); background: var(--bad-soft); }
+.pf-check.st-skip .pf-check-mark { color: var(--text-3); background: var(--raise); }
+.pf-check-text { display: grid; gap: 1px; min-width: 0; }
+.pf-check-text b { font-weight: 620; font-size: var(--fs-ui); display: inline-flex; align-items: center; gap: 2px; }
+.pf-check-text > span { color: var(--text-2); font-size: 14px; }
+.pf-check.st-bad .pf-check-text b { color: var(--bad); }
+.pf-check.st-warn .pf-check-text b { color: var(--warn); }
+.pf-result-foot { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); justify-content: space-between; align-items: center; }
+.pf-result-foot .muted { display: inline-flex; gap: 6px; align-items: center; }
+.pf-story { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 560; }
+.pf-techchecks .check-tech { margin-left: var(--s2); }
+.pf-result .tech { margin-top: calc(var(--s1) * -1); }
+
+/* try it: the hero demo */
+.pf-try { position: relative; display: grid; gap: var(--s4); padding: var(--s5); border-radius: var(--r4); border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border)); background: linear-gradient(180deg, var(--accent-soft), transparent 70%), var(--panel); box-shadow: var(--shadow); min-width: 0; }
+.pf-try.done { border-color: var(--bad-line); background: linear-gradient(180deg, var(--bad-soft), transparent 70%), var(--panel); }
+.pf-try-head { display: grid; gap: 4px; }
+.pf-try-head .eyebrow { color: var(--accent); margin: 0; }
+.pf-try.done .pf-try-head .eyebrow { color: var(--bad); }
+.pf-try-pair { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: var(--s2); align-items: stretch; }
+.pf-try-pair > * { min-width: 0; }
+.pf-try-pair .verdict { height: 100%; align-items: flex-start; }
+.pf-try-pair .verdict-word { font-size: 18px; }
+.pf-try-vs { display: grid; place-items: center; color: var(--text-3); }
+.pf-try-ghost { border-style: dashed; color: var(--text-3); background: transparent; }
+.pf-try-ghost .verdict-sub { color: var(--text-3); }
+.pf-err { display: flex; gap: 6px; align-items: center; color: var(--bad); font-size: 14px; }
+
+/* fingerprint diff */
+.pf-diff { margin: 0; display: grid; gap: var(--s3); padding: var(--s3) var(--s4); border: 1px solid var(--border); border-radius: var(--r3); background: var(--card); }
+.pf-diff-row { display: grid; gap: 2px; }
+.pf-diff-label { display: inline-flex; gap: 6px; align-items: center; font-size: var(--fs-small); color: var(--text-2); font-weight: 560; }
+.pf-diff-row:first-child .pf-diff-label { color: var(--ok); }
+.pf-diff-row.edited .pf-diff-label { color: var(--bad); }
+.pf-diff code { font-size: 14px; letter-spacing: .03em; line-height: 1.5; color: var(--text-2); overflow-wrap: anywhere; word-break: break-all; }
+.pf-diff-row.edited code > span { color: var(--text-3); }
+.pf-diff mark { background: var(--bad-soft); color: var(--bad); font-weight: 700; border-radius: 2px; }
+.pf-diff figcaption { font-size: 14px; color: var(--text); }
+.pf-diff-count { color: var(--bad); }
+
+/* motion (only when the person allows it; the global reduced-motion rule also switches these off) */
+@media (prefers-reduced-motion: no-preference) {
+  .pf-try-edited { animation: pf-pop 520ms var(--ease-out) both; }
+  .pf-try-edited .verdict { animation: pf-flash 1100ms var(--ease-out) 1; }
+  .pf-diff { animation: appear var(--t-slow) var(--ease-out) both; }
+  .pf-diff mark { animation: pf-char 380ms var(--ease-out) both; animation-delay: calc(240ms + var(--i, 0) * 14ms); }
+  .pf-diff figcaption { animation: appear var(--t-slow) var(--ease-out) 1.1s both; }
+}
+@keyframes pf-pop { 0% { opacity: 0; transform: scale(.94); } 60% { opacity: 1; transform: scale(1.02); } 100% { transform: none; } }
+@keyframes pf-flash { 0% { box-shadow: 0 0 0 0 var(--bad-line); } 40% { box-shadow: 0 0 0 6px var(--bad-line); } 100% { box-shadow: 0 0 0 0 transparent; } }
+@keyframes pf-char { from { opacity: 0; transform: translateY(-6px); background: var(--bad); color: #fff; } to { opacity: 1; transform: none; } }
+
+/* claims */
+.pf-claims .sect-title { font-size: 17px; }
+.pf-claimlist { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s2); }
+.pf-claimlist li { display: flex; flex-wrap: wrap; gap: var(--s3); align-items: center; padding: var(--s2) 0; border-top: 1px solid var(--border); }
+.pf-claimlist li:first-child { border-top: 0; }
+
+@media (max-width: 1080px) {
+  .pf-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  .page.proof { padding-top: var(--s5); }
+  .pf-card, .pf-try { padding: var(--s4); }
+  .pf-search-row { flex-direction: column; }
+  .pf-search-row > .btn { width: 100%; }
+  .pf-try-pair { grid-template-columns: minmax(0, 1fr); }
+  .pf-try-vs { transform: rotate(90deg); }
+  .pf-try .btn.lg { width: 100%; }
+}

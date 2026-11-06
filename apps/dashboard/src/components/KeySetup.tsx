@@ -3,7 +3,11 @@ import { useRef, useState } from "react";
 import { createKey, downloadBackup, loadKey, publicOf, restoreFromFile, type KeyRecord, type Role } from "../lib/keys";
 import { Badge, Callout, Icon, Spinner } from "./ui";
 
-export function KeySetup({ role, who, registeredKid, register, afterReplace, embedded = false }: {
+export function KeySetup({ role, who, registeredKid, register, afterReplace, embedded = false, quiet = false, onKeyChange }: {
+  /** Hide the key fingerprint and the "kept in this browser" note (the host page shows them elsewhere). */
+  quiet?: boolean;
+  /** Called after the key on this browser changes (created, restored, backed up). */
+  onKeyChange?: () => void;
   /** Inside a titled section: no own heading. */
   embedded?: boolean;
   role: Role;
@@ -32,6 +36,7 @@ export function KeySetup({ role, who, registeredKid, register, afterReplace, emb
       setRec(r);
       setSaved(null);
       setConfirmReplace(false);
+      onKeyChange?.();
       setMsg({ tone: replacing ? "warn" : "ok", text: replacing && afterReplace ? `New key ready. ${afterReplace}` : "Key ready. Download the backup now." });
     } catch (e: any) {
       setMsg({ tone: "bad", text: e.message });
@@ -50,6 +55,7 @@ export function KeySetup({ role, who, registeredKid, register, afterReplace, emb
         setMsg({ tone: "ok", text: "Key restored on this browser." });
       }
       setRec(r);
+      onKeyChange?.();
     } catch (e: any) {
       setMsg({ tone: "bad", text: e.message });
     }
@@ -60,20 +66,20 @@ export function KeySetup({ role, who, registeredKid, register, afterReplace, emb
       <div className="row">
         {!embedded && <><Icon name="key" /><b>{role === "owner" ? "Unlock key" : "Receiving key"}</b></>}
         {matches ? <Badge tone="ok">Ready on this browser</Badge> : registeredKid ? <Badge tone="warn">Not on this browser</Badge> : <Badge tone="neutral">Not set up</Badge>}
-        {registeredKid && <span className="muted small">Fingerprint <code className="mono">{registeredKid}</code></span>}
+        {registeredKid && !quiet && <span className="muted small">Fingerprint <code className="mono">{registeredKid}</code></span>}
       </div>
-      <p className="muted small">
+      {!quiet && <p className="muted small">
         {role === "owner"
           ? "Your robot locks every run for this key. It is created and kept in this browser; the server only ever gets the public half."
           : "Owners lock each claimed incident for this key. It is created and kept in this browser; the server only ever gets the public half."}
-      </p>
+      </p>}
       {!registeredKid && (
         <button type="button" className="btn primary" onClick={create} disabled={busy}>{busy ? <><Spinner /> Creating…</> : "Create my unlock key"}</button>
       )}
       {matches && (
         <div className="row">
           {saved && <span className="small"><Icon name="check" size={12} /> Backup downloaded {new Date(saved).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</span>}
-          <button type="button" className={`btn ${saved ? "small-btn" : "primary"}`} onClick={() => { downloadBackup(rec!); const now = new Date().toISOString(); localStorage.setItem(`pearl.backup.${rec!.kid}`, now); setSaved(now); }}>
+          <button type="button" className={`btn ${saved ? "small-btn" : "primary"}`} onClick={() => { downloadBackup(rec!); const now = new Date().toISOString(); localStorage.setItem(`pearl.backup.${rec!.kid}`, now); setSaved(now); onKeyChange?.(); }}>
             <Icon name="download" /> {saved ? "Download again" : "Download backup file"}
           </button>
           {!saved && <span className="muted small">Without a backup, clearing this browser loses access to {who_}.</span>}
