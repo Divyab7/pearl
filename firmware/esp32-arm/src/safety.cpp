@@ -13,6 +13,9 @@ static VL53L0X tof;
 static Adafruit_MPU6050 mpu;
 static int tofTimeouts = 0;
 static uint32_t lastImuMs = 0;
+// a sensor that failed to start is never read (reading an absent MPU6050 crashed the board): the device stays in a
+// safe sensor-fault state instead, and the I2C scan still works so the wiring can be checked
+static bool tofOk = false, mpuOk = false;
 
 static void tripTo(TripReason r) {
   dev.pendingId[0] = 0;
@@ -26,24 +29,22 @@ bool begin(const char** failed) {
   delay(5);  // setup() only: sensor power-up
   tof.setBus(&Wire);
   tof.setTimeout(30);
-  if (!tof.init()) {
-    *failed = "tof";
-    return false;
-  }
-  tof.startContinuous(0);  // back-to-back ranging
-  if (!mpu.begin(0x68, &Wire)) {
-    *failed = "mpu";
-    return false;
-  }
-  mpu.setAccelerometerRange(MPU6050_RANGE_4_G);
-  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
   pinMode(PIN_RESET_BTN, INPUT_PULLUP);
-  return true;
+  tofOk = tof.init();
+  if (tofOk) tof.startContinuous(0);  // back-to-back ranging
+  mpuOk = mpu.begin(0x68, &Wire);
+  if (mpuOk) {
+    mpu.setAccelerometerRange(MPU6050_RANGE_4_G);
+    mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+  }
+  if (!tofOk) *failed = mpuOk ? "tof" : "tof+mpu";
+  else if (!mpuOk) *failed = "mpu";
+  return tofOk && mpuOk;
 }
 
 static void readSensors(uint32_t now) {
   // ToF: read only when a measurement is ready, so the loop never blocks (~33 ms per measurement otherwise)
-  if (tof.readReg(VL53L0X::RESULT_INTERRUPT_STATUS) & 0x07) {
+  if (tofOk && (tof.readReg(VL53L0X::RESULT_INTERRUPT_STATUS) & 0x07)) {
     uint16_t mm = tof.readRangeContinuousMillimeters();
     if (tof.timeoutOccurred() || mm == 65535) tofTimeouts++;
     else {
@@ -51,7 +52,7 @@ static void readSensors(uint32_t now) {
       dev.tofMm = mm;
     }
   }
-  if (now - lastImuMs >= 10) {  // 100 Hz
+  if (mpuOk && now - lastImuMs >= 10) {  // 100 Hz
     lastImuMs = now;
     sensors_event_t a, g, t;
     if (mpu.getEvent(&a, &g, &t)) {
