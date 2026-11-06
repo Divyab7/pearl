@@ -378,7 +378,7 @@ function LiveRunStory({
 
   return (
     <article className={`rs ${incident ? "has-incident" : ""}`} aria-labelledby={`rs-t-${episodeId}`}>
-      <header className="rs-head record">
+      <header className={`rs-head record ${mode === "insurer" ? "quiet" : ""}`}>
         <RecordStrip serial={serialOf(s?.headHash, pub?.rootHash)} seal={kind === "ok" ? "ok" : kind === "bad" ? "bad" : "warn"} />
         <div className="rs-head-text">
           <div className="eyebrow">Run{s?.origin ? " · started remotely" : ""}</div>

@@ -21,7 +21,7 @@ export function RecordStrip({ serial, label = "Sealed record", seal = "ok" }: { 
       <span className="record-label">{label}</span>
       {serial && (
         <span className="record-serial" title="The start of this record's fingerprint">
-          <span aria-hidden>№ </span><span className="sr-only">fingerprint </span>{serial}
+          <span aria-hidden>S/N </span><span className="sr-only">fingerprint </span>{serial}
         </span>
       )}
       {seal && <Seal tone={seal} />}

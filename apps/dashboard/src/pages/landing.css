@@ -75,7 +75,8 @@
 @keyframes lp-scan { 0% { transform: translateY(-100%); opacity: 0; } 4% { opacity: 1; } 26% { transform: translateY(260%); opacity: 1; } 30%, 100% { transform: translateY(260%); opacity: 0; } }
 
 /* seal card over the photo */
-.lp-seal { --rec-pad: var(--s4); --rec-behind: var(--ink); position: absolute; left: var(--s4); right: var(--s4); bottom: var(--s4); background: var(--panel); border: 1px solid var(--border); border-radius: var(--r4); padding: var(--s4); display: grid; gap: var(--s3); box-shadow: 0 20px 40px -16px rgba(0, 0, 0, .6); z-index: 2; }
+/* the card hangs off the panel's bottom-right corner: its tear line's left notch sits on the ink panel, the right one on the page */
+.lp-seal.record { --rec-pad: var(--s4); --rec-behind-l: var(--ink); --rec-behind-r: var(--bg); position: absolute; right: calc(var(--s7) * -1); bottom: calc(var(--s6) * -1); width: min(380px, 86%); background: var(--panel); border: 1px solid var(--border); border-radius: var(--r4); padding: var(--s4); display: grid; gap: var(--s3); box-shadow: 0 20px 40px -16px rgba(0, 0, 0, .6); z-index: 2; }
 .lp-seal .record-strip::before, .lp-seal .record-strip::after { box-shadow: none; }
 .lp-seal-head { display: flex; gap: var(--s3); align-items: center; }
 .lp-seal-ok { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; background: var(--ok-soft); border: 1px solid var(--ok-line); color: var(--ok); font-weight: 680; font-size: 15px; }
@@ -285,7 +286,9 @@
   .lp-hero { padding: var(--s6) 0 var(--s8); }
   .lp-hero-copy, .lp-hero-visual { grid-column: 1 / -1; }
   .lp-hero-visual { margin-top: var(--s5); }
-  .lp-photo { max-width: 520px; margin: 0 auto; }
+  .lp-photo { max-width: 520px; margin: 0 auto; aspect-ratio: auto; padding-bottom: var(--s3); }
+  .lp-photo img { height: auto; aspect-ratio: 1 / 1; }
+  .lp-seal.record { --rec-behind-r: var(--ink); position: relative; right: auto; bottom: auto; width: auto; max-width: 488px; margin: calc(var(--s8) * -1) auto 0; }
   .lp-sec { padding: var(--s8) 0; }
   .lp-sec-head { margin-bottom: var(--s6); }
   /* story: the stage sticks under the bar, the steps scroll beneath it */
@@ -315,9 +318,7 @@
   .lp-ctas .btn.lg { flex: 1 1 100%; }
   .lp-sec-cta { flex-direction: column; align-items: stretch; text-align: center; }
   .lp-owners-copy .lp-sec-cta { align-items: stretch; }
-  .lp-photo { aspect-ratio: auto; padding-bottom: var(--s3); }
-  .lp-photo img { height: auto; aspect-ratio: 1 / 1; }
-  .lp-seal { position: relative; left: auto; right: auto; bottom: auto; margin: calc(var(--s8) * -1) var(--s3) 0; }
+  .lp-seal.record { margin: calc(var(--s8) * -1) var(--s3) 0; }
   .lp-hud { font-size: 11px; }
   .lp-bubble { right: var(--s3); bottom: var(--s3); padding: var(--s3); }
   .lp-bubble b { font-size: 15px; }
@@ -341,3 +342,8 @@
 .lp-panel.on .lp-net-rows::before { transform: scaleY(1); }
 
 @media (max-width: 640px) { .lp-net-rows { gap: var(--s2); } .lp-net-row > div { min-width: 0; } .lp-net-row b { font-size: 14px; } .lp-net-row span { font-size: 12.5px; line-height: 1.35; } .lp-chip { white-space: normal; text-align: center; } .lp-net-rows::before { top: 26px; bottom: 26px; } }
+
+/* hero card: keep its overhang inside the gutter on narrower desktops */
+@media (min-width: 901px) and (max-width: 1260px) { .lp-seal.record { right: calc(var(--s4) * -1); } }
+.lp-seal.record { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 640px) { .lp-seal-steps li { white-space: normal; align-items: flex-start; } .lp-seal-steps { font-size: 12.5px; } }

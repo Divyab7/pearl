@@ -182,8 +182,8 @@ function Hero() {
             <span className="lp-scan" aria-hidden />
             <span className="lp-corners" aria-hidden />
             <span className="lp-hud" aria-hidden><span className="lp-rec" /> PEARL-ARM-01 · REC</span>
-            <SealCard />
           </figure>
+          <SealCard />
         </div>
       </div>
     </section>
