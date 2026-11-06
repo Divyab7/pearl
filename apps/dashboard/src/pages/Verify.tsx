@@ -55,7 +55,7 @@ export function Verify({ tick, runId }: { tick: number; runId?: string }) {
       setErr("A run id looks like ep_20261106061500_ab12.");
       return;
     }
-    go("verify", id);
+    go("proof", id);
   };
   const edit = () => {
     if (!runId) return;
@@ -80,7 +80,7 @@ export function Verify({ tick, runId }: { tick: number; runId?: string }) {
       {err && <Callout tone="bad">{err}</Callout>}
       <div className="split">
         <Card title="Recent runs" actions={<IndexBadge runs={runs} />}>
-          <RunList items={runs.items} selected={runId} onSelect={(id) => go("verify", id)} source={runs.source} />
+          <RunList items={runs.items} selected={runId} onSelect={(id) => go("proof", id)} source={runs.source} />
         </Card>
         <div className="stack" ref={resultRef}>
           {!runId && <Card><Empty title="Pick or paste a run">The result shows here, with every fingerprint you can follow on 0G Chain yourself.</Empty></Card>}

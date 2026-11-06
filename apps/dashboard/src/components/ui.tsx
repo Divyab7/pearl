@@ -1,5 +1,8 @@
-// Shared building blocks: one look for every page (tokens in styles.css).
+// Shared primitives: one look for every page (tokens in styles.css). Page-level building blocks (PageHeader, Section,
+// StatusPill, StepStrip, RoleCard, RunRow, TechDetails, InfoTip, EmptyState, ErrorState, Skeleton, Stat) live in
+// ./blocks.tsx. Words come from ../lib/words.ts.
 import { useState, type ReactNode } from "react";
+import { VERDICT_WORDS } from "../lib/words";
 
 const PATHS: Record<string, string> = {
   check: "M3.5 8.5l3 3 6-7",
@@ -22,6 +25,15 @@ const PATHS: Record<string, string> = {
   sun: "M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M3.4 12.6l1-1M11.6 4.4l1-1",
   db: "M3 4c0-1.1 2.2-2 5-2s5 .9 5 2-2.2 2-5 2-5-.9-5-2zM3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2",
   moon: "M13 9.5A5.5 5.5 0 0 1 6.5 3a5.5 5.5 0 1 0 6.5 6.5z",
+  chevron: "M6 4l4 4-4 4",
+  down: "M4 6l4 4 4-4",
+  user: "M8 8a2.75 2.75 0 1 0 0-5.5A2.75 2.75 0 0 0 8 8zM2.5 14c.6-2.6 2.8-4 5.5-4s4.9 1.4 5.5 4",
+  offline: "M2 6.5a9 9 0 0 1 12 0M4.3 9a5.5 5.5 0 0 1 7.4 0M6.6 11.4a2 2 0 0 1 2.8 0M8 13.5h.01M2.5 2.5l11 11",
+  signal: "M2 6.5a9 9 0 0 1 12 0M4.3 9a5.5 5.5 0 0 1 7.4 0M6.6 11.4a2 2 0 0 1 2.8 0M8 13.5h.01",
+  search: "M7 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM10.6 10.6L14 14",
+  spark: "M8 2v3M8 11v3M2 8h3M11 8h3M4 4l2 2M10 10l2 2M4 12l2-2M10 6l2-2",
+  logout: "M6 3H3v10h3M10 5l3 3-3 3M13 8H6",
+  doc: "M4 2h5l3 3v9H4zM9 2v3h3M6 8h4M6 10.5h4",
 };
 
 export function Icon({ name, size = 16, label }: { name: keyof typeof PATHS | string; size?: number; label?: string }) {
@@ -141,10 +153,10 @@ export function Chip({ label, value, href, display, tone }: { label: string; val
 }
 
 export type VerdictKind = "ok" | "incomplete" | "bad";
-const VERDICT: Record<VerdictKind, { word: string; tone: Tone; icon: string }> = {
-  ok: { word: "UNTOUCHED", tone: "ok", icon: "shield" },
-  incomplete: { word: "NOT VERIFIED", tone: "warn", icon: "alert" },
-  bad: { word: "TAMPERED", tone: "bad", icon: "alert" },
+const VERDICT: Record<VerdictKind, { word: string; explain: string; tone: Tone; icon: string }> = {
+  ok: { ...VERDICT_WORDS.ok, tone: "ok", icon: "shield" },
+  incomplete: { ...VERDICT_WORDS.incomplete, tone: "warn", icon: "alert" },
+  bad: { ...VERDICT_WORDS.bad, tone: "bad", icon: "x" },
 };
 
 /** VALID → untouched; REJECTED only because something is missing → not verified; any real mismatch → tampered. */
@@ -154,16 +166,34 @@ export function verdictOf(v: { result: "VALID" | "REJECTED"; checks: { status: s
   return fails.length && fails.every((c) => c.missing) ? "incomplete" : "bad";
 }
 
-export function Verdict({ kind, label, title, compact = false }: { kind: VerdictKind | null; label?: ReactNode; title?: string; compact?: boolean }) {
-  if (!kind) return null;
+/**
+ * Verdict: the big, plain answer to "has this been changed?". Words come from lib/words.ts VERDICT_WORDS:
+ * ok → "Untouched", incomplete → "Not verified", bad → "Tampered", each with a default one-line explanation.
+ * Props: kind (null renders nothing; pass `pending` to show a "Checking…" placeholder instead), label (replaces the
+ * default explanation), title (small caption above the word, e.g. "Edited copy"), compact (smaller, for side-by-side).
+ */
+export function Verdict({ kind, label, title, compact = false, pending = false }: { kind: VerdictKind | null; label?: ReactNode; title?: string; compact?: boolean; pending?: boolean }) {
+  if (!kind) {
+    if (!pending) return null;
+    return (
+      <div className={`verdict pending ${compact ? "compact" : ""}`} role="status" aria-busy="true">
+        <span className="verdict-icon"><Spinner label="Checking" /></span>
+        <div>
+          {title && <div className="verdict-title">{title}</div>}
+          <div className="verdict-word">Checking…</div>
+          <div className="verdict-sub">Recomputing the fingerprint and comparing it with 0G Chain.</div>
+        </div>
+      </div>
+    );
+  }
   const d = VERDICT[kind];
   return (
     <div className={`verdict tone-${d.tone} ${compact ? "compact" : ""}`} role="status">
-      <Icon name={d.icon} size={compact ? 20 : 28} />
+      <span className="verdict-icon" aria-hidden><Icon name={d.icon} size={compact ? 18 : 28} /></span>
       <div>
         {title && <div className="verdict-title">{title}</div>}
         <div className="verdict-word">{d.word}</div>
-        {label && <div className="verdict-sub">{label}</div>}
+        <div className="verdict-sub">{label ?? d.explain}</div>
       </div>
     </div>
   );

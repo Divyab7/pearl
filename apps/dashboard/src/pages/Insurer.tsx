@@ -6,6 +6,7 @@ import { KeySetup } from "../components/KeySetup";
 import { RunDetail, Severity } from "../components/run";
 import { Amount, Badge, Callout, Card, Chip, CopyButton, Dl, DotLabel, Empty, Field, Icon, Spinner, Tabs } from "../components/ui";
 import { loadKey } from "../lib/keys";
+import { accountChanged } from "../lib/account";
 import { unwrapWith, type FullCheck } from "../lib/fullcheck";
 import { RunRef } from "./MyRobot";
 import { ArkivRecord, ClaimBadge } from "../components/claims";
@@ -19,7 +20,7 @@ declare global {
 export function Insurer({ tick, claimId }: { tick: number; claimId?: string }) {
   const [info, setInfo] = useState<any>(null);
   const [err, setErr] = useState("");
-  const load = () => get("/api/insurer").then(setInfo).catch((e) => setErr(e.message));
+  const load = () => get("/api/insurer").then((i) => { setInfo(i); if (i?.signedIn !== info?.signedIn) accountChanged(); }).catch((e) => setErr(e.message));
   useEffect(() => {
     void load();
   }, [tick]);
@@ -137,7 +138,7 @@ function Signed({ info, reload, tick, claimId }: { info: any; reload: () => void
                   {(qtab === "waiting" ? waiting : done).map((c) => (
                     <tr key={c.claimId} className={sel?.claimId === c.claimId ? "sel" : ""}>
                       <td>
-                        <button type="button" className="row-link cell-stack" onClick={() => go("insurer", c.claimId)} title={c.episodeId} aria-current={sel?.claimId === c.claimId ? "true" : undefined}>
+                        <button type="button" className="row-link cell-stack" onClick={() => go("insurance", "insurer", c.claimId)} title={c.episodeId} aria-current={sel?.claimId === c.claimId ? "true" : undefined}>
                           <span className="row"><span>Incident · {incidentTime(c.episodeId)}</span><Severity value={c.severity} incident /></span>
                           {qtab === "decided" && <InsurerStatus status={c.status} />}
                         </button>
