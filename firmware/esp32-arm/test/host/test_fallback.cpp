@@ -37,13 +37,14 @@ static run::HttpResult down() {
 
 struct Fake {
   std::map<std::string, run::HttpResult> replies;
-  std::vector<std::pair<std::string, uint32_t>> asked;  // model, timeout given
+  std::vector<std::pair<std::string, uint32_t>> asked;  // model@trust (or model when verified), timeout given
   uint32_t clock = 1000, costMs = 10;                    // each call advances the clock
   run::CallFn call() {
-    return [this](const std::string& m, uint32_t t) {
-      asked.push_back({m, t});
+    return [this](const std::string& m, const std::string& trust, uint32_t t) {
+      std::string key = trust == "verified" ? m : m + "@" + trust;
+      asked.push_back({key, t});
       clock += costMs;
-      auto it = replies.find(m);
+      auto it = replies.find(key);
       return it == replies.end() ? down() : it->second;
     };
   }
@@ -166,4 +167,61 @@ TEST(fallback_none_configured_is_one_call) {
   CHECK_EQ(f.asked.size(), (size_t)1);
   CHECK(d.attempts.empty());
   CHECK_EQ(d.error, std::string("HTTP 502 provider_error: m"));
+}
+
+TEST(standard_last_resort_after_verified_chain_503) {
+  Fake f;
+  f.replies["0gm-1.0-35b-a3b"] = err(503, "no_provider_for_trust_mode");
+  f.replies["qwen2.5-vl-72b-instruct"] = err(503, "no_provider_for_trust_mode");
+  f.replies["gemini-2.5-flash-lite"] = err(503, "no_provider_for_trust_mode");
+  f.replies["0gm-1.0-35b-a3b@standard"] = answer("0gm-1.0-35b-a3b", "rid-std");
+  run::RouterConfig c = cfg();
+  c.allowStandardFallback = true;
+  run::Decision d = run::decide(c, "PLAN", "c", f.call(), f.now());
+  CHECK(d.fromZeroG);
+  CHECK_EQ(d.requestId, std::string("rid-std"));
+  CHECK(d.hasTrustMode);
+  CHECK_EQ(d.trustMode, std::string("standard"));
+  CHECK_EQ(f.asked.size(), (size_t)4);
+  CHECK_EQ(f.asked[3].first, std::string("0gm-1.0-35b-a3b@standard"));
+  CHECK_EQ(d.attempts.size(), (size_t)4);
+  CHECK_EQ(d.attempts[0].trustMode, std::string("verified"));
+  CHECK_EQ(d.attempts[3].trustMode, std::string("standard"));
+}
+
+TEST(standard_flag_off_is_failsafe_as_before) {
+  Fake f;
+  f.replies["0gm-1.0-35b-a3b"] = err(503, "no_provider_for_trust_mode");
+  f.replies["qwen2.5-vl-72b-instruct"] = err(503, "no_provider_for_trust_mode");
+  f.replies["gemini-2.5-flash-lite"] = err(503, "no_provider_for_trust_mode");
+  f.replies["0gm-1.0-35b-a3b@standard"] = answer("0gm-1.0-35b-a3b", "rid-std");
+  run::Decision d = run::decide(cfg(), "PLAN", "c", f.call(), f.now());
+  expectFailsafe(d);
+  CHECK_EQ(f.asked.size(), (size_t)3);
+  CHECK_EQ(d.error.rfind("all 3 models failed", 0), (size_t)0);
+}
+
+TEST(standard_never_after_bad_answer_and_budget_holds) {
+  {
+    Fake f;
+    f.replies["0gm-1.0-35b-a3b"] = answer("0gm-1.0-35b-a3b", "rid-p", "nope");
+    f.replies["0gm-1.0-35b-a3b@standard"] = answer("0gm-1.0-35b-a3b", "rid-std");
+    run::RouterConfig c = cfg();
+    c.allowStandardFallback = true;
+    run::Decision d = run::decide(c, "PLAN", "c", f.call(), f.now());
+    expectFailsafe(d);
+    CHECK_EQ(f.asked.size(), (size_t)1);
+  }
+  {
+    Fake f;
+    f.costMs = 400;  // three verified calls use 1200 ms > the 1000 ms budget
+    f.replies["0gm-1.0-35b-a3b@standard"] = answer("0gm-1.0-35b-a3b", "rid-std");
+    run::RouterConfig c = cfg();
+    c.allowStandardFallback = true;
+    run::Decision d = run::decide(c, "PLAN", "c", f.call(), f.now());
+    expectFailsafe(d);
+    CHECK_EQ(f.asked.size(), (size_t)3);
+    CHECK_EQ(f.asked[2].second, (uint32_t)200);
+    CHECK_EQ(d.error.rfind("time budget of 1000 ms used up after 3 calls", 0), (size_t)0);
+  }
 }

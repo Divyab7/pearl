@@ -13,6 +13,9 @@
 // other 0G models tried in order when OG_MODEL's provider is down (5xx, 429, no response, no provider for the trust mode),
 // inside the same time budget; "" = none. Leave out for the default list below.
 #define OG_MODEL_FALLBACKS "qwen2.5-vl-72b-instruct,gemini-2.5-flash-lite"
+// 1 = last resort: when every verified call failed on the provider side, the same models again in trust mode "standard"
+// (not hardware-verified; recorded as trustMode "standard"). 0 = never leave verified mode.
+#define OG_ALLOW_STANDARD_FALLBACK 1
 #define OG_BASE_URL "https://router-api.0g.ai/v1"
 #define OG_ANCHOR_ADDRESS ""                       // EpisodeAnchor on Galileo (pnpm anchor:deploy)
 #define ARKIV_ACCESS_KEY ""                        // hub.arkiv.network/access-keys ("" = public, rate-limited)

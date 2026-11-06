@@ -45,7 +45,7 @@ async function main() {
   for (const model of models) {
     for (let i = 0; i < runs; i++) {
       const d = await decide(
-        { ...base, model, fallbackModels: [] }, // one model per row: no fallback here
+        { ...base, model, fallbackModels: [], allowStandardFallback: false }, // one model per row: no fallback here
         {
           checkpoint: "PLAN",
           systemPrompt: sp.text,

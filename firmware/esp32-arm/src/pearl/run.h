@@ -39,7 +39,7 @@ std::vector<Step> place(const ArmCfg& c);
 // ---------------------------------------------------------------- one decision (DecisionCore)
 /** One call to one 0G model inside a decision (shared/types.ts ModelAttempt). */
 struct Attempt {
-  std::string model, requestId, error;
+  std::string model, requestId, error, trustMode = "verified";  // trustMode: the X-0G-Provider-Trust-Mode sent
   bool hasRequestId = false, hasError = false;  // no error = this call returned an answer (checked afterwards)
   int status = 0;                               // 0 = no response (recorded as null)
   uint32_t latencyMs = 0;
@@ -56,6 +56,10 @@ struct Decision {
   JsonDocument parsed;             // null for failsafe
   uint32_t latencyMs = 0;
   std::vector<Attempt> attempts;  // only when more than one model was asked; recorded as `attempts`
+  // the trust mode of the call that gave this decision (or the last call); recorded only when hasTrustMode, which is
+  // set when attempts are recorded or the mode is not "verified" ("standard" = not hardware-verified)
+  std::string trustMode;
+  bool hasTrustMode = false;
 };
 Decision failsafe(const std::string& checkpoint, const std::string& clientRequestId, const std::string& error);
 
@@ -64,6 +68,9 @@ struct RouterConfig {
   std::string baseUrl, apiKey, model, trustMode = "verified";
   // tried in order after `model` fails on the provider side, same prompt/image/trust mode, inside timeoutMs in total
   std::vector<std::string> fallbackModels;
+  // last resort (owner decision 7 Nov 2026): after the verified chain fails on the provider side, the same models again
+  // in trust mode "standard" (not hardware-verified), inside the same timeoutMs
+  bool allowStandardFallback = false;
   uint32_t timeoutMs = 30000;
   bool verifyTee = true;
   int maxTokens = 1000;
@@ -85,8 +92,13 @@ std::string stripFence(const std::string& s);
 bool isProviderFailure(const HttpResult& r);
 /** The primary then the fallbacks, without blanks or repeats (decision.ts modelsOf). */
 std::vector<std::string> modelsOf(const RouterConfig& cfg);
-/** One HTTP call for `model` with at most `timeoutMs`. */
-using CallFn = std::function<HttpResult(const std::string& model, uint32_t timeoutMs)>;
+/** One HTTP call for `model` in `trustMode` with at most `timeoutMs`. */
+using CallFn = std::function<HttpResult(const std::string& model, const std::string& trustMode, uint32_t timeoutMs)>;
+struct Call {
+  std::string model, trustMode;
+};
+/** Every call in order: the models in cfg.trustMode, then (verified + allowStandardFallback) the same in "standard". */
+std::vector<Call> callsOf(const RouterConfig& cfg);
 /**
  * decision.ts decide(): asks the models in order, moving on only after a provider-side failure, all inside
  * cfg.timeoutMs; a failure of our request (4xx) or any answer the model gave (even an invalid one) stops there.

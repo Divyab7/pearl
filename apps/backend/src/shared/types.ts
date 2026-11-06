@@ -61,11 +61,18 @@ export interface DecisionRecord {
    * so those keep exactly the shape and hash they had before fallbacks existed.
    */
   attempts?: ModelAttempt[];
+  /**
+   * The trust mode of the call that gave this decision (or of the last call, for a failsafe). Absent = "verified"
+   * (single-call records keep their old shape). "standard" = answered by a provider that is NOT hardware-verified
+   * (the last-resort fallback).
+   */
+  trustMode?: "verified" | "standard" | "private";
 }
 
 /** One call to one 0G model inside a decision. */
 export interface ModelAttempt {
   model: string; // the model we asked for
+  trustMode: "verified" | "standard" | "private"; // the X-0G-Provider-Trust-Mode header sent
   status: number | null; // HTTP status, null = no response
   requestId: string | null;
   error: string | null; // null = this call returned an answer (which the decision then checked)
