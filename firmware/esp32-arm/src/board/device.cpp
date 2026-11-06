@@ -194,6 +194,13 @@ static void worker(void*) {
     Bytes runKey = randomBytes(32);
     store::saveRunKey(id, runKey);  // kept so the robot can lock this run for its owner (now or after a re-link)
     statefeed::task(req.color, req.from);
+    {
+      // the owner linked now gets a copy of this run's key inside the sealed file
+      std::string ownerJson;
+      JsonDocument o;
+      orchestrator->hasOwner = store::loadOwner(ownerJson) && !deserializeJson(o, ownerJson) && o["x"].is<const char*>() && o["y"].is<const char*>();
+      if (orchestrator->hasOwner) orchestrator->owner = {o["x"].as<const char*>(), o["y"].as<const char*>()};
+    }
     orch::Result r = orchestrator->run({req.color, req.from}, id, runKey);
     statefeed::outcome(r.outcome);
     store::writeFile("/runs/" + id + ".json", r.logCanonical);  // the robot's own memory

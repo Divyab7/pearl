@@ -431,6 +431,11 @@ Result Orchestrator::closeWith(const std::string& outcome) {
   h["incident"] = r.incident;
   h["severity"] = r.severity;
   h["origin"] = nullptr;
+  if (hasOwner) {
+    // bound into the header (the AAD), so the copy cannot be swapped for another key without breaking the file
+    JsonObject w = h["keys"].to<JsonArray>().add<JsonObject>();
+    if (!seal::wrapRunKey(runKey_, owner, seal::runContext(key_.address, r.episodeId), w)) h.remove("keys");
+  }
   if (seal::sealEpisode(runKey_, r.logCanonical, h)) r.sealedCanonical = canonical(s.as<JsonVariantConst>());
   setPhase(outcome == "DONE" ? "DONE" : outcome == "FAILSAFE" ? "FAILSAFE_STOPPED" : outcome);
   return r;

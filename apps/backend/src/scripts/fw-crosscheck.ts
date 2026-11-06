@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { REPO_ROOT } from "../shared/env.js";
-import { openEpisode, parseSealed, unb64, unlockFrame, unwrapRunKey, type PrivateJwk } from "../shared/seal.js";
+import { openEpisode, parseSealed, runContext, unb64, unlockFrame, unwrapRunKey, type PrivateJwk } from "../shared/seal.js";
 import { canonicalize } from "../shared/canonical.js";
 
 const v = JSON.parse(readFileSync(resolve(REPO_ROOT, "firmware/esp32-arm/test/host/vectors.json"), "utf8"));
@@ -46,6 +46,12 @@ for (const f of readdirSync(dir).filter((x) => /^ep_.*\.json$/.test(x) && !x.end
   const inc = incidentOf(log);
   check(sealedRun.incident === inc.incident && sealedRun.severity === inc.severity && sealedRun.headHash === log.headHash, `${id}: sealed header matches the log (incident ${inc.incident}, severity ${inc.severity})`);
   check(canonicalize(await openEpisode(sealedRun, unb64(v.seal.runKey))) === canonicalize(log), `${id}: TS opens the board's sealed run`);
+  const ownerCopy = sealedRun.keys?.[0];
+  check(!!ownerCopy && ownerCopy.kid === v.seal.recipient.kid, `${id}: the board put the owner's key copy in the sealed file`);
+  if (ownerCopy) {
+    const k = await unwrapRunKey(ownerCopy, priv, runContext(log.device!.address, id));
+    check(Buffer.from(k).equals(Buffer.from(unb64(v.seal.runKey))), `${id}: TS unlocks the owner's copy from the board's file`);
+  }
   for (const fr of framesOf(log)) {
     const locked = new Uint8Array(readFileSync(resolve(dir, `${id}.frame-${fr.idx}.locked`)));
     check((await localRoot(locked)) === fr.root, `${id}: frame #${fr.idx} root matches the 0G Storage SDK`);

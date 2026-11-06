@@ -13,6 +13,7 @@
 #include "bytes.h"
 #include "eth.h"
 #include "run.h"
+#include "seal.h"
 
 namespace pearl::orch {
 
@@ -92,6 +93,10 @@ class Orchestrator {
   run::RouterConfig router;
   std::string blackholeUrl = "http://10.255.255.1";
   std::atomic<bool> cut0g{false};
+  /** The linked owner's P-256 key: when set, the run key is also locked for it INSIDE the sealed file ("keys"),
+   *  so the owner can open the run from 0G Storage while the robot is offline (as orchestrator/episode.ts). */
+  bool hasOwner = false;
+  seal::PublicJwk owner;
   Monitor& monitor() { return mon_; }
   /** Refused (false + why) when the arm is TRIPPED or FROZEN_HAND. */
   bool canStart(std::string& why);

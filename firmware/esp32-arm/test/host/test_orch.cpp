@@ -218,6 +218,9 @@ static void runOne(const char* name, SimPlatform& plat, SimArm& arm, const char*
   eth::Key key;
   eth::keyFromPrivate(pk.data(), key);
   orch::Orchestrator o(plat, arm, cfg, pr, key, "esp32-s3-01", "arm-1");
+  JsonObjectConst rj = vectors()["seal"]["recipient"]["publicJwk"];
+  o.hasOwner = true;
+  o.owner = {rj["x"].as<const char*>(), rj["y"].as<const char*>()};
   o.router.baseUrl = "https://router-api.0g.ai/v1";
   o.router.model = "glm-5.3-flash";
   std::string why;
@@ -240,6 +243,12 @@ static void runOne(const char* name, SimPlatform& plat, SimArm& arm, const char*
   std::string back;
   CHECK(seal::openEpisode(runKey, s.as<JsonObjectConst>(), back));
   CHECK_EQ(back, r.logCanonical);
+  // the owner's copy of the run key travels inside the file and opens with the owner's private key
+  JsonArrayConst ks = s["keys"].as<JsonArrayConst>();
+  CHECK_EQ(ks.size(), (size_t)1);
+  Bytes fromFile;
+  CHECK(seal::unwrapRunKey(ks[0].as<JsonObjectConst>(), o.owner, vectors()["seal"]["recipient"]["d"].as<const char*>(), seal::runContext(key.address, id), fromFile));
+  CHECK(fromFile == runKey);
 }
 
 TEST(run_normal_pick_to_bin) {
