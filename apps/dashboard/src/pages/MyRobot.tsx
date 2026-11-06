@@ -192,6 +192,9 @@ function LiveTab({ live }: { live: any }) {
       .finally(() => setBusy(""));
   };
   const sim = state?.deviceKind === "sim" || state?.deviceKind === "mujoco";
+  const [netPick, setNetOff] = useState<boolean | null>(null);
+  const netOff = netPick ?? state?.net === "offline";
+  useEffect(() => setNetOff(null), [state?.net]);
   const hasCam = !!state?.cameraKind && state.cameraKind !== "none";
   const [access, setAccess] = useState<any>(null);
   useEffect(() => {
@@ -251,6 +254,7 @@ function LiveTab({ live }: { live: any }) {
             <legend>Fault drills{sim ? " · simulation" : ""}</legend>
             <div className="row">
               <button type="button" className={`btn drill-n ${cut0g ? "on" : ""}`} aria-pressed={cut0g} title="Simulate losing the connection to the 0G AI: the robot must stop safely" onClick={() => act(cut0g ? "Restore 0G" : "Cut 0G", "/api/control/cut0g", { on: !cut0g })}>{cut0g ? "0G cut · restore" : "Cut 0G"}</button>
+              <button type="button" className={`btn drill-n ${netOff ? "on" : ""}`} aria-pressed={netOff} title="Simulate the robot losing its internet: it keeps its records and hands them to the laptop or a nearby phone" onClick={() => post("/api/sim/net", { online: netOff }).then(() => { setNetOff(!netOff); setMsg({ tone: "ok", text: netOff ? "Internet restored: the robot sends what it kept." : "Internet cut: the robot keeps its records and hands them to the laptop or a nearby phone." }); }).catch((e) => setMsg({ tone: "bad", text: `${netOff ? "Restore internet" : "Cut internet"}: ${e.message}` }))}>{netOff ? "Internet cut · restore" : "Cut internet"}</button>
               {sim && <>
                 <button type="button" className="btn" onClick={() => act("Hand", "/api/sim/inject", { kind: "hand", ms: 2500 })}>Hand in zone</button>
                 <button type="button" className="btn" onClick={() => act("Bump", "/api/sim/inject", { kind: "bump" })}>Bump</button>

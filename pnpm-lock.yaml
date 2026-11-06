@@ -241,6 +241,9 @@ importers:
       three:
         specifier: ^0.187.0
         version: 0.187.0
+      viem:
+        specifier: 2.57.14
+        version: 2.57.14(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.6.7)
     devDependencies:
       '@types/three':
         specifier: ^0.187.0

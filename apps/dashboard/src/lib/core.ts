@@ -3,3 +3,4 @@
 export * from "../../../backend/src/shared/seal.js";
 export { contentChecks, framesOf, tamperedCopy } from "../../../backend/src/verify/content.js";
 export { sha256HexPure } from "../../../backend/src/shared/sha256.js";
+export { canonicalize } from "../../../backend/src/shared/canonical.js";

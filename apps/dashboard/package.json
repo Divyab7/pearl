@@ -13,7 +13,8 @@
     "@worldcoin/idkit-core": "4.6.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "three": "^0.187.0"
+    "three": "^0.187.0",
+    "viem": "2.57.14"
   },
   "devDependencies": {
     "@types/three": "^0.187.0",
