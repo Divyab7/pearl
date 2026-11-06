@@ -34,6 +34,17 @@ describe("relay submit (spec §2)", async () => {
     expect(net.nonceOf("0g-galileo", w.address)).toBe(3);
   });
 
+  it("keeps polling when the node answers a receipt lookup with an error (0G RPC quirk seen live)", async () => {
+    const net = new FakeNet();
+    let flaky = 3;
+    const rpc: SubmitDeps["rpc"] = async (url, method, params) => {
+      if (method === "eth_getTransactionReceipt" && flaky-- > 0) throw new Error("no matching receipts found: this may indicate potential data corruption");
+      return net.rpc(url, method, params);
+    };
+    const r = await submitBundle(bundle, depsOf(net, { rpc }));
+    expect(r.state).toBe("done");
+  });
+
   it("resumes from recorded steps without re-sending finished txs", async () => {
     const net = new FakeNet();
     const first = await submitBundle(bundle, depsOf(net));

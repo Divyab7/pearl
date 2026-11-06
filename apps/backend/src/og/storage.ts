@@ -10,7 +10,7 @@
  * was down on 4 Nov). upload() waits for finality in an unbounded poll loop, so we wrap it in our own deadline and run
  * it after the episode closes, never on the control path.
  */
-import { Indexer, MemData } from "@0gfoundation/0g-storage-ts-sdk";
+import { Indexer, MemData, StorageNode } from "@0gfoundation/0g-storage-ts-sdk";
 import { loadEnv } from "../shared/env.js";
 import { chainWallet, galileoRpc } from "./config.js";
 import { isPrivateKey } from "../shared/util.js";
@@ -102,6 +102,51 @@ export async function uploadWithRetry(c: StorageConfig, bytes: Uint8Array): Prom
 export async function downloadBytes(c: StorageConfig, rootHash: string): Promise<Uint8Array> {
   const indexer = new Indexer(c.indexerUrl);
   const [blob, err] = await withDeadline(indexer.downloadToBlob(rootHash, { proof: true }), c.deadlineMs, "0G Storage download");
-  if (err) throw new Error(`0G Storage download: ${err.message}`);
-  return new Uint8Array(await blob.arrayBuffer());
+  if (!err) return new Uint8Array(await blob.arrayBuffer());
+  // The indexer's location lookup can lag minutes behind the nodes (seen live for files whose segments were pushed
+  // straight to the nodes by a relay). Ask the indexer's trusted nodes directly which ones hold the file finalized,
+  // and download from those, still with Merkle proofs.
+  try {
+    return await downloadFromNodes(indexer, rootHash, c.deadlineMs);
+  } catch (e) {
+    throw new Error(`0G Storage download: ${err.message}; direct from nodes: ${(e as Error).message}`);
+  }
+}
+
+async function downloadFromNodes(indexer: Indexer, rootHash: string, deadlineMs: number): Promise<Uint8Array> {
+  const sharded = await indexer.getShardedNodes();
+  const urls = [...(sharded.trusted ?? []), ...(sharded.discovered ?? [])].map((n) => n.url);
+  type Info = { finalized?: boolean; tx: { seq: number; size: number } };
+  const holders: { node: StorageNode; info: Info }[] = [];
+  await Promise.all(urls.map(async (u) => {
+    const node = new StorageNode(u);
+    const info = (await withDeadline(node.getFileInfo(rootHash, true), 8000, "file info").catch(() => null)) as Info | null;
+    if (info?.finalized) holders.push({ node, info });
+  }));
+  if (!holders.length) throw new Error("no storage node holds this file finalized yet");
+  const { seq, size } = holders[0]!.info.tx;
+  const CHUNK = 256, SEG = 1024;
+  const numChunks = Math.ceil(size / CHUNK);
+  const parts: Uint8Array[] = [];
+  const until = Date.now() + deadlineMs;
+  for (let start = 0; start < numChunks; start += SEG) {
+    const end = Math.min(start + SEG, numChunks);
+    let got: Uint8Array | null = null;
+    for (const h of holders) {
+      if (Date.now() > until) throw new Error("timed out");
+      const b64 = await h.node.downloadSegmentByTxSeq(seq, start, end).catch(() => null);
+      if (b64) {
+        got = Uint8Array.from(Buffer.from(b64, "base64"));
+        break;
+      }
+    }
+    if (!got) throw new Error(`no node returned chunks ${start}–${end}`);
+    parts.push(got);
+  }
+  const all = Buffer.concat(parts).subarray(0, size);
+  const bytes = new Uint8Array(all);
+  // no per-segment proofs on this path: the whole file must hash to the requested root instead
+  const root = await localRoot(bytes);
+  if (root.toLowerCase() !== rootHash.toLowerCase()) throw new Error(`downloaded bytes have root ${root}, not ${rootHash}`);
+  return bytes;
 }

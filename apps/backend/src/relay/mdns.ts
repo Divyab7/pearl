@@ -5,6 +5,13 @@
  * RELAY_URL (e.g. http://192.168.1.20:8080/api/relay) overrides discovery on the robot.
  */
 import { Bonjour, type Service } from "bonjour-service";
+
+// mDNS is optional: a network that blocks multicast (EHOSTUNREACH, EADDRINUSE…) must never crash the server or robot
+let warned = false;
+const mdnsError = (e: unknown) => {
+  if (!warned) console.warn(`mDNS unavailable (${(e as Error)?.message ?? e}); set RELAY_URL to point robots at this relay`);
+  warned = true;
+};
 import { hostname } from "node:os";
 
 export const RELAY_SERVICE_TYPE = "pearl-relay"; // → _pearl-relay._tcp
@@ -12,7 +19,7 @@ export const RELAY_PATH = "/api/relay";
 
 /** Starts advertising; returns a stop function. */
 export function advertiseRelay(port: number): () => void {
-  const b = new Bonjour();
+  const b = new Bonjour({}, mdnsError);
   b.publish({ name: `Pearl relay ${hostname()}`.slice(0, 63), type: RELAY_SERVICE_TYPE, protocol: "tcp", port, txt: { path: RELAY_PATH, v: "1" } });
   return () => {
     b.unpublishAll(() => b.destroy());
@@ -32,7 +39,7 @@ export async function discoverRelay(timeoutMs = 3000): Promise<string | null> {
   const env = process.env.RELAY_URL?.trim();
   if (env) return env.replace(/\/$/, "");
   return new Promise((resolveUrl) => {
-    const b = new Bonjour();
+    const b = new Bonjour({}, mdnsError);
     let done = false;
     const finish = (url: string | null) => {
       if (done) return;

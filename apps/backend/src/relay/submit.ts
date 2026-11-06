@@ -45,7 +45,7 @@ export const initialSteps = (b: Bundle): Step[] => b.txs.map((t) => ({ purpose: 
 
 const ALREADY_KNOWN = /already known|known transaction|already imported|already exists|already in (the )?(tx )?pool|alreadyknown/i;
 const NONCE_USED = /nonce too low|nonce has already been used|invalid nonce|nonce.*(lower|already)|replacement transaction underpriced|could not replace/i;
-const SEGMENT_DONE = /already uploaded|already finalized|finalized/i;
+const SEGMENT_DONE = /already (been )?uploaded|being uploaded|already finali[sz]ed/i;
 
 const ENTITY_CREATED = (() => {
   const ev = (ENTITY_EVENTS_ABI as readonly { type: string; name?: string }[]).find((e) => e.type === "event" && e.name === "EntityCreated");
@@ -136,8 +136,19 @@ async function sendAndWait(
     }
   }
   const until = Date.now() + o.timeoutMs;
+  let lastErr = "";
   for (;;) {
-    const r = (await rpc(u, "eth_getTransactionReceipt", [hash])) as Receipt | null;
+    // 0G's RPC sometimes answers a just-sent tx with an error ("no matching receipts found") instead of null:
+    // treat any lookup error as "not yet" and keep polling until the deadline
+    let r: Receipt | null = null;
+    try {
+      r = (await rpc(u, "eth_getTransactionReceipt", [hash])) as Receipt | null;
+    } catch (e) {
+      lastErr = errMsg(e);
+      if (Date.now() >= until) throw new Error(`no receipt for ${hash} within ${Math.round(o.timeoutMs / 1000)} s (last error: ${lastErr})`);
+      await o.sleep(o.pollMs);
+      continue;
+    }
     if (r) {
       if (qtyBig(r.status) !== 1n) throw new Error(`tx ${hash} reverted`);
       return { ...r, logs: r.logs ?? [] };
@@ -164,40 +175,42 @@ async function uploadSegments(
       return null;
     }
   };
-  // wait until a node has seen the submission (it follows the chain a few seconds behind)
+  // Only the nodes whose shard holds a segment count for it. (A node of another shard reports the file "finalized"
+  // because it has nothing to store for it — seen live — so a file-level "finalized" from any node proves nothing.)
+  const first = Number(startPos / SEGMENT_CHUNKS);
+  const segs = await segmentsOf(bytes);
+  const targetsOf = (g: number) => nodes.filter((n) => n.numShard > 0 && g % n.numShard === n.shardId);
+  for (const seg of segs) if (!targetsOf(first + seg.index).length) throw new Error(`no storage node holds the shard of segment ${first + seg.index}`);
+  const responsible = [...new Set(segs.flatMap((seg) => targetsOf(first + seg.index)))];
+  // wait until the responsible nodes have seen the submission (they follow the chain a few seconds behind)
   for (;;) {
-    const known = await Promise.all(nodes.map(info));
-    if (known.some((k) => k?.finalized)) return; // already stored (same bytes, same root)
+    const known = await Promise.all(responsible.map(info));
     if (known.some((k) => k)) break;
     if (Date.now() >= until) throw new Error(`storage nodes did not see tx seq ${txSeq} within ${Math.round(o.timeoutMs / 1000)} s`);
     await o.sleep(o.pollMs);
   }
-  const first = Number(startPos / SEGMENT_CHUNKS);
-  const used = new Set<StorageNodeInfo>();
-  for (const seg of await segmentsOf(bytes)) {
-    const g = first + seg.index;
-    const targets = nodes.filter((n) => n.numShard > 0 && g % n.numShard === n.shardId);
-    if (!targets.length) throw new Error(`no storage node holds shard of segment ${g}`);
+  // every segment to EVERY node of its shard (replication: one node going down must not hide the file)
+  const holders = new Map<number, StorageNodeInfo[]>();
+  for (const seg of segs) {
     let lastErr = "";
-    let sent = false;
-    for (const n of targets) {
+    const ok: StorageNodeInfo[] = [];
+    for (const n of targetsOf(first + seg.index)) {
       try {
         await rpc(n.url, "zgs_uploadSegmentsByTxSeq", [[seg], txSeq]);
-        sent = true;
+        ok.push(n);
       } catch (e) {
         lastErr = errMsg(e);
-        sent = SEGMENT_DONE.test(lastErr);
-      }
-      if (sent) {
-        used.add(n);
-        break;
+        if (SEGMENT_DONE.test(lastErr)) ok.push(n);
       }
     }
-    if (!sent) throw new Error(`segment ${seg.index} upload failed: ${lastErr}`);
+    if (!ok.length) throw new Error(`segment ${seg.index} upload failed on every node of its shard: ${lastErr}`);
+    holders.set(seg.index, ok);
   }
+  // done when, for every segment, at least one node that took it reports the file finalized
   for (;;) {
-    const states = await Promise.all([...used].map(info));
-    if (states.length && states.every((s) => s?.finalized)) return;
+    const fin = new Map<StorageNodeInfo, boolean>();
+    for (const n of new Set([...holders.values()].flat())) fin.set(n, !!(await info(n))?.finalized);
+    if ([...holders.values()].every((ns) => ns.some((n) => fin.get(n)))) return;
     if (Date.now() >= until) throw new Error(`uploaded, but not finalized within ${Math.round(o.timeoutMs / 1000)} s`);
     await o.sleep(o.pollMs);
   }
