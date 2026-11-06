@@ -20,9 +20,9 @@ export function Outcome({ outcome, incident }: { outcome?: string; incident?: bo
 export const SEVERITY_WORD = ["none", "low", "minor", "serious"];
 
 /** Severity pill for incidents only (0–3, from the 0G model). */
-export function Severity({ value, incident }: { value?: number; incident?: boolean }) {
+export function Severity({ value, incident, short = false }: { value?: number; incident?: boolean; short?: boolean }) {
   if (!incident) return null;
-  return <span className={`badge sev sev-${value ?? 0}`} title="Incident severity given by the 0G model: 1 low, 2 minor, 3 serious"><i aria-hidden />S{value ?? 0} · {SEVERITY_WORD[value ?? 0] ?? ""}</span>;
+  return <span className={`badge sev sev-${value ?? 0}`} title="How serious the AI judged the incident: 1 low, 2 minor, 3 serious"><i aria-hidden />{short ? "S" : "Severity "}{value ?? 0} · {SEVERITY_WORD[value ?? 0] ?? ""}</span>;
 }
 
 /** "11:26" today, "6 Nov, 11:26" otherwise. */

@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { to } from "../router";
 import { PageHeader, Section, StepStrip } from "../components/blocks";
 import { Icon } from "../components/ui";
-import { PAGE, TIP } from "../lib/words";
+import { TIP } from "../lib/words";
 import { Courier } from "./Courier";
 import { Mesh } from "./Mesh";
 import "./offline.css";
@@ -31,15 +31,15 @@ export function Offline({ section }: { section?: "courier" | "mesh" }) {
   return (
     <div className="page offline">
       <PageHeader
-        title={PAGE.offline}
-        description="No signal? The proof still gets out. Nearby phones and robots carry it until one of them is online."
-        actions={(
-          <nav className="offline-jump" aria-label="On this page">
-            <a className="btn" href={to.offline("mesh")}>Robot mesh</a>
-            <a className="btn" href={to.offline("courier")}>Carry by phone or laptop</a>
-          </nav>
-        )}
+        title="Works without internet"
+        description={<>No signal? The proof still gets out. Nearby phones and robots carry it until one of them is online. They can't read it or change it.</>}
       />
+      <nav className="offline-jump small" aria-label="On this page">
+        <span className="muted">On this page:</span>
+        <a href={to.offline("mesh")}>Robot mesh</a>
+        <span aria-hidden className="muted">·</span>
+        <a href={to.offline("courier")}>Carry by phone or laptop</a>
+      </nav>
 
       <StepStrip steps={HOW} label="How records get out without internet" />
 

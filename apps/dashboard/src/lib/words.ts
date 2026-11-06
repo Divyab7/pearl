@@ -5,6 +5,37 @@
 /** The product in one sentence: the first thing anyone reads. */
 export const PRODUCT_LINE = "A tamper-proof black box for robots: an AI decides every move, every moment is sealed as proof, and that proof gets out even without internet.";
 export const PRODUCT_SHORT = "A tamper-proof black box for robots.";
+/** Home hero subline: the problem, then how Pearl answers it. */
+export const PRODUCT_WHY = "When a robot has an accident, who can prove what happened?";
+export const PRODUCT_HOW = "Pearl's AI runs the robot and seals every decision and camera frame as proof on 0G. After an accident the owner, proven human with World ID, claims an insurance payout.";
+/** The sponsors Pearl is built on, each with its role in one line. */
+export const BUILT_ON = [
+  { name: "0G", role: "0G runs the AI that decides each move, stores the sealed records (0G Storage) and fingerprints every run on a public ledger (0G Chain)." },
+  { name: "Arkiv", role: "Arkiv holds public, searchable labels for each run and claim (time, outcome, incident), never the contents." },
+  { name: "World ID", role: "World ID proves a claim comes from the real owner and a unique human, without revealing who they are." },
+] as const;
+
+/** Verdict badge words (short, for pills). */
+export const VERDICT_BADGE = { ok: "Verified · not altered", incomplete: "Not verified", bad: "Altered" } as const;
+
+/**
+ * A raw error message → something a person can read. Plain sentences from our own server pass through; anything that
+ * looks technical (hex, RPC, stack-ish text, codes) is replaced by `fallback`. Show the raw text under TechDetails.
+ */
+export function plainError(raw: unknown, fallback: string): string {
+  const m = String((raw as any)?.message ?? raw ?? "").trim();
+  if (!m) return fallback;
+  const techy = /0x[0-9a-f]{4,}|\bhex\b|rpc|json|econn|etimedout|enotfound|http \d|status code|revert|nonce|\bgas\b|undefined|null|typeerror|failed to fetch|networkerror|signing key|invalid|abi|exception|stack|[{}[\]<>]|_[a-z]+_|::|\b[a-z]+[A-Z][a-zA-Z]+\b|preview:/i;
+  if (techy.test(m) || m.length > 180 || !/^[A-Z]/.test(m)) return fallback;
+  return /[.!?]$/.test(m) ? m : `${m}.`;
+}
+/** True when plainError would hide the raw text (so it's worth showing under TechDetails). */
+export const isTechy = (raw: unknown) => plainError(raw, "\u0000") === "\u0000" && !!String((raw as any)?.message ?? raw ?? "").trim();
+
+/** The robot's friendly display name from its kind; the technical id stays in a title / TechDetails. */
+export const ROBOT_KIND: Record<string, string> = { mujoco: "Pearl arm · physics simulation", sim: "Pearl arm · simulator" };
+export const robotName = (kind?: string | null) => (kind ? ROBOT_KIND[kind] ?? "Pearl arm" : "Pearl arm");
+
 export const PRODUCT_TAIL = "An AI decides every move, every moment is sealed as proof, and that proof gets out even without internet.";
 
 /** Technical term → the word users see. */
@@ -36,7 +67,7 @@ export const WORD = {
 export const OUTCOME: Record<string, string> = {
   DONE: "Completed",
   ABORTED: "Stopped early",
-  FAILSAFE: "Stopped safely (AI unreachable)",
+  FAILSAFE: "Stopped safely · AI offline",
   TRIPPED: "Safety trip",
 };
 export const outcomeWord = (outcome?: string | null, incident?: boolean) =>
@@ -56,9 +87,9 @@ export const ROBOT_STATE: Record<string, string> = {
 
 /** Proof verdicts: the big word and its one-line explanation. */
 export const VERDICT_WORDS = {
-  ok: { word: "Untouched", explain: "Matches exactly what the robot signed and recorded. Nobody has changed it." },
+  ok: { word: "Verified", explain: "Matches exactly what the robot signed and recorded. Nobody has altered it." },
   incomplete: { word: "Not verified", explain: "Part of the proof is missing, so we can't confirm it yet. Nothing shows it was changed." },
-  bad: { word: "Tampered", explain: "This doesn't match what the robot signed. Someone changed it after the fact." },
+  bad: { word: "Altered", explain: "This doesn't match what the robot signed. Someone changed it after the fact." },
 } as const;
 
 /** Claim status (backend `status`) in words + tone. Same words as components/claims.tsx ClaimBadge. */
@@ -101,6 +132,7 @@ export const TIP = {
   sealedPackage: "A run's locked record plus its signature, packed so anyone can carry it but nobody can read or change it.",
   claimable: "This run had an incident, so its owner can claim insurance for it.",
   pool: "Money set aside on 0G Chain that pays approved claims automatically.",
+  failsafe: "The AI couldn't be reached, so the robot's safety rule stopped the arm instead of guessing. That's the safety feature working.",
   untouched: "We recomputed the fingerprint and it matches the one the robot recorded on 0G Chain.",
 } as const;
 
@@ -110,14 +142,14 @@ export const PAGE = {
   robot: "Robot",
   proof: "Proof",
   insurance: "Insurance",
-  offline: "Works without internet",
+  offline: "Offline",
   account: "Account",
 } as const;
 
 // ---------------------------------------------------------------- Insurance page (additive, pages/Insurance.tsx)
 /** The owner's claim, in five plain steps (StepStrip input on #/insurance/owner). */
 export const CLAIM_STEPS = [
-  { title: "Pick an incident", body: "Any incident of severity 2 or more. The amount is fixed by severity." },
+  { title: "Pick an incident", body: "Any incident of severity 2 (minor) or more. The payout is fixed by severity." },
   { title: "Prove it's you", body: "A fresh World ID check, so someone with your laptop can't claim for you." },
   { title: "Prove you're one person", body: "One person, one claim: no fake accounts. Nobody learns who you are." },
   { title: "Insurer reviews", body: "A person at the insurer opens this one incident and decides." },

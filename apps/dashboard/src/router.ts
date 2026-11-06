@@ -6,7 +6,8 @@ import { useEffect, useState } from "react";
  *   #/                                  home
  *   #/robot                             robot: live view + runs list
  *   #/robot/run/<id>                    robot: one run's story (#/robot/run with no id and old #/robot/runs → #/robot)
- *   #/proof        #/proof/<id>         proof: check any run
+ *   #/proof        #/proof/<id>[/tamper] proof: check any run (/tamper starts the one-byte demo once)
+ *   #/robot/run/example                the built-in example run (sample data, labelled as such)
  *   #/insurance                         insurance (owner side by default)
  *   #/insurance/owner                   insurance: owner side (claim)
  *   #/insurance/insurer[/<claimId>]     insurance: insurer side (review), optionally one claim selected
@@ -19,7 +20,7 @@ import { useEffect, useState } from "react";
 export type Route =
   | { page: "home" }
   | { page: "robot"; runId?: string; runs?: boolean }
-  | { page: "proof"; runId?: string }
+  | { page: "proof"; runId?: string; tamper?: boolean }
   | { page: "insurance"; side: "owner" | "insurer"; claimId?: string }
   | { page: "offline"; section?: "courier" | "mesh" }
   | { page: "account" }
@@ -37,7 +38,9 @@ export const to = {
   robot: () => href("robot"),
   runs: () => href("robot"), // the runs list lives on the Robot page
   run: (id: string) => href("robot", "run", id),
-  proof: (id?: string | null) => href("proof", id),
+  proof: (id?: string | null, opts?: { tamper?: boolean }) => href("proof", id, id && opts?.tamper ? "tamper" : null),
+  /** the built-in example run (sample data, clearly labelled) */
+  exampleRun: () => href("robot", "run", "example"),
   insurance: (side?: "owner" | "insurer", claimId?: string | null) => href("insurance", side, side === "insurer" ? claimId : null),
   offline: (section?: "courier" | "mesh") => href("offline", section),
   account: () => href("account"),
@@ -66,7 +69,7 @@ export function parseRoute(p: string[]): Route {
   switch (a ?? "") {
     case "": return { page: "home" };
     case "robot": return b === "run" ? (c ? { page: "robot", runId: c } : { page: "robot", runs: true }) : { page: "robot" };
-    case "proof": return { page: "proof", runId: b };
+    case "proof": return { page: "proof", runId: b, tamper: c === "tamper" };
     case "insurance": return { page: "insurance", side: b === "insurer" ? "insurer" : "owner", claimId: b === "insurer" ? c : undefined };
     case "offline": return { page: "offline", section: b === "courier" || b === "mesh" ? b : undefined };
     case "account": return { page: "account" };

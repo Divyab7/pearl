@@ -3,18 +3,28 @@
 
 .home-hero { display: grid; gap: var(--s2); }
 .home-title { font-size: var(--fs-display); letter-spacing: -.025em; line-height: 1.1; font-weight: 700; }
-.home-tagline { font-size: var(--fs-lg); color: var(--text-2); line-height: 1.5; display: flex; flex-wrap: wrap; gap: 0 var(--s2); }
+.home-tagline { font-size: var(--fs-lg); color: var(--text-2); line-height: 1.5; max-width: 980px; }
+.home-why { color: var(--text); font-weight: 650; }
 .home-dot { color: var(--text-3); }
+.home-built { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--s2); font-size: var(--fs-ui); color: var(--text-2); }
+.home-built-label { font-size: var(--fs-small); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); margin-right: 2px; }
+.home-built-item { display: inline-flex; align-items: center; gap: var(--s2); }
+.home-built-item b { color: var(--text); font-weight: 650; margin-right: -4px; }
+.home-live-name { font-size: var(--fs-ui); color: var(--text-2); }
+.linkish { background: none; border: 0; padding: 4px 2px; color: var(--accent); font: inherit; font-weight: 560; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.linkish:hover { text-decoration-color: currentColor; }
 
 /* roles */
 .home-roles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s4); }
 .home-roles .rolecard { padding: var(--s4) var(--s5); align-items: center; }
 .home-new { display: inline-block; margin-left: var(--s2); padding: 1px 8px; border-radius: var(--r-pill); background: var(--accent); color: var(--accent-ink); font-size: var(--fs-small); font-weight: 700; vertical-align: 2px; }
+.home-roles .rolecard:focus-visible { border-color: var(--accent); }
 .home-check { grid-template-columns: auto minmax(0, 1fr); cursor: default; }
-.home-check:hover { transform: none; border-color: var(--border); }
+.home-check:hover { transform: translateY(-1px); border-color: var(--accent); }
 .home-check:focus-within { border-color: var(--accent); }
 .home-check-main { display: grid; gap: 6px; min-width: 0; }
-.home-check-row { display: flex; gap: var(--s2); }
+.home-check-row { display: flex; gap: var(--s2); align-items: center; flex-wrap: wrap; }
+.home-check-row form, form.home-check-row { flex-wrap: nowrap; }
 .home-check-row input { min-height: 36px; padding: 6px 10px; font-size: 14px; }
 .home-check-row .btn { min-height: 36px; padding: 6px 14px; }
 .home-check-err { color: var(--bad); }

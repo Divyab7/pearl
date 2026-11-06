@@ -2,8 +2,11 @@
 .rb-page { gap: var(--s6); }
 .rb-name { color: var(--text-2); font-weight: 560; margin-left: 6px; }
 .rb-sub { display: inline-flex; align-items: center; gap: var(--s2) var(--s3); flex-wrap: wrap; font-size: var(--fs-ui); }
-.btn.rb-stop { background: #c62828; border-color: #c62828; color: #fff; font-weight: 650; min-height: 44px; }
-.btn.rb-stop:hover:not(:disabled) { background: #a91f1f; border-color: #a91f1f; }
+/* idle: outlined danger ("Emergency stop"); solid red only while a run is active */
+.btn.rb-stop { background: transparent; border-color: color-mix(in srgb, var(--bad) 55%, transparent); color: var(--bad); font-weight: 650; min-height: 44px; }
+.btn.rb-stop:hover:not(:disabled) { background: var(--bad-soft); border-color: var(--bad); }
+.btn.rb-stop.armed { background: #c62828; border-color: #c62828; color: #fff; }
+.btn.rb-stop.armed:hover:not(:disabled) { background: #a91f1f; border-color: #a91f1f; }
 .rb-back { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 560; justify-self: start; align-self: flex-start; margin-bottom: calc(var(--s4) * -1); }
 .rb-back .icon { transform: scaleX(-1); }
 
@@ -25,6 +28,8 @@
 
 .rb-answer { display: flex; gap: var(--s3); align-items: flex-start; padding: var(--s3); border-radius: var(--r3); background: var(--card); border: 1px solid var(--border); }
 .rb-answer.tone-bad { background: var(--bad-soft); border-color: var(--bad-line); }
+.rb-answer.tone-warn { background: var(--warn-soft); border-color: var(--warn-line); }
+.rb-answer.tone-warn .eyebrow { color: var(--warn); }
 .rb-snap { width: 104px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--r2); border: 1px solid var(--border); flex: none; }
 .rb-answer-text { display: grid; gap: 4px; min-width: 0; }
 .rb-answer-head { display: flex; align-items: center; gap: 2px; }
@@ -74,5 +79,6 @@
   .rb-sel select { width: 100%; }
   .btn.rb-stop { width: 100%; }
 }
-.rb-remote { display: inline-flex; align-items: center; }
+.rb-remote { display: flex; align-items: center; padding-top: var(--s3); }
+.rb-remote .btn { white-space: normal; text-align: left; }
 @media (max-width: 520px) { .rb-drills > summary .muted { display: none; } }

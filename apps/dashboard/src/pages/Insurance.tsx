@@ -5,7 +5,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { IDKit, proofOfHuman } from "@worldcoin/idkit-core";
 import { ago, get, post, useConfig, when } from "../api";
 import { to } from "../router";
-import { EmptyState, ErrorState, InfoTip, PageHeader, Section, Skeleton, Stat, StatusPill, StepStrip, TechDetails } from "../components/blocks";
+import { EmptyState, ErrorState, InfoTip, PageHeader, PlainError, Section, Skeleton, Stat, StatusPill, StepStrip, TechDetails } from "../components/blocks";
 import { Amount, Callout, Chip, CopyButton, Dl, DotLabel, Field, Icon, Spinner, Stepper, Tabs, type Step, type Tone } from "../components/ui";
 import { KeySetup, WorldPrompt } from "../components/KeySetup";
 import { Severity, shortWhen } from "../components/run";
@@ -16,7 +16,7 @@ import { loadKey } from "../lib/keys";
 import { runContext, wrapRunKey } from "../lib/core";
 import { unwrapWith, type FullCheck } from "../lib/fullcheck";
 import { useOwnerUnlock } from "../lib/ownerUnlock";
-import { CLAIM_STATE, CLAIM_STEPS, INS_TIP, PAGE, TIP, outcomeWord } from "../lib/words";
+import { CLAIM_STATE, CLAIM_STEPS, INS_TIP, PAGE, TIP, outcomeWord, plainError } from "../lib/words";
 import "./insurance.css";
 
 declare global {
@@ -33,7 +33,7 @@ export function Insurance({ live, side, claimId }: { live: any; side: Side; clai
     <div className="page ins">
       <PageHeader
         title={PAGE.insurance}
-        description="After an incident the robot's owner claims a reward. World ID proves it's really them, and one person. The insurer checks the incident and the pool pays."
+        description="After an incident the robot's owner claims an insurance payout. World ID proves it's really them, and one unique human. The insurer checks the incident and the pool pays out."
         actions={<PoolPill pool={pool.data} />}
       />
       <SideSwitch side={side} />
@@ -86,7 +86,7 @@ function PoolCard({ pool }: { pool: any }) {
   const cfg = useConfig();
   if (!pool) return <Section boxed title="Insurance pool"><Skeleton lines={2} /></Section>;
   if (!pool.configured) return <Callout tone="neutral" title="Insurance pool not set up">Approved claims can't be paid until the pool is deployed on 0G Chain.</Callout>;
-  if (pool.error) return <Callout tone="warn" title="Couldn't read the pool">{pool.error}</Callout>;
+  if (pool.error) return <PlainError tone="warn" title="Couldn't read the pool" raw={pool.error} fallback="The insurance pool on 0G Chain didn't answer right now." />;
   return (
     <Section boxed title="Insurance pool" info={TIP.pool} className="ins-poolcard">
       <div className="ins-poolstats">
@@ -122,7 +122,7 @@ function PublicRecord({ arkiv }: { arkiv: any }) {
       {arkiv.entityKey ? <>Public record · {arkiv.writes.length} update{arkiv.writes.length === 1 ? "" : "s"}</> : "Public record pending"}
       <InfoTip text={INS_TIP.publicRecord} label="What is the public record?" />
       {arkiv.entityKey && <a href={`${ARKIV_EXPLORER}/entity/${arkiv.entityKey}`} target="_blank" rel="noreferrer">View<span className="sr-only"> the public record (opens a new tab)</span></a>}
-      {arkiv.error && <span className="warn-text"><Icon name="alert" size={12} /> {arkiv.error}</span>}
+      {arkiv.error && <span className="warn-text" title={arkiv.error}><Icon name="alert" size={12} /> {plainError(arkiv.error, "The latest update hasn't reached Arkiv yet; it retries by itself.")}</span>}
     </span>
   );
 }
@@ -163,9 +163,20 @@ function OwnerSide({ live }: { live: any }) {
   const active = !account ? undefined : open ? ({ AGENT_PASS: 1, IDKIT: 2, INSURER_REVIEW: 3, PAYING: 4 } as Record<string, number>)[open.status] : 0;
   return (
     <>
-      <Section title="How a claim works" className="ins-how">
-        <StepStrip steps={CLAIM_STEPS} active={active} label="How a claim works" />
-      </Section>
+      {account && claims && claims.length > 0 ? (
+        // signed in with claims: the explainer folds to one line (it's known by now); opens on click
+        <details className="ins-how-fold">
+          <summary>
+            <Icon name="chevron" size={14} /> <b>How a claim works:</b>
+            <span className="muted">{CLAIM_STEPS.map((s) => s.title).join(" → ")}</span>
+          </summary>
+          <StepStrip steps={CLAIM_STEPS} active={active} label="How a claim works" />
+        </details>
+      ) : (
+        <Section title="How a claim works" className="ins-how">
+          <StepStrip steps={CLAIM_STEPS} active={active} label="How a claim works" />
+        </Section>
+      )}
       {account === undefined ? (
         <Skeleton lines={4} label="Loading your account" />
       ) : !account ? (
@@ -241,7 +252,7 @@ function OwnerClaims({ live, account, linked, claims, setClaims }: { live: any; 
   const cancel = (id: string) => post(`/api/claims/${id}/cancel`).then(load).catch((e) => setMsg({ tone: "bad", text: e.message }));
   const openSet = new Set((claims ?? []).filter((c) => !["FAILED", "DENIED"].includes(c.status)).map((c) => c.episodeId));
   const outcomeOf = new Map<string, any>((claimable?.items ?? []).map((i: any) => [i.episodeId, i]));
-  const blockers = [!unlock ? reason : "", !account.wallet ? "Add a payout wallet, where the reward is paid." : ""].filter(Boolean);
+  const blockers = [!unlock ? reason : "", !account.wallet ? "Add a payout wallet, where the payout is sent." : ""].filter(Boolean);
   const showClaim = (episodeId: string) => {
     const el = document.getElementById(`claim-${episodeId}`);
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -254,8 +265,8 @@ function OwnerClaims({ live, account, linked, claims, setClaims }: { live: any; 
 
   return (
     <>
-      {loadErr && <ErrorState title="Couldn't load your claims" onRetry={load}>{loadErr}</ErrorState>}
-      <Section title="Incidents you can claim" info={INS_TIP.shareOne} description="From robots linked to your account. The reward is fixed by severity.">
+      {loadErr && <PlainError title="Couldn't load your claims" raw={loadErr} fallback="The claims service didn't answer. Your claims are safe." onRetry={load} />}
+      <Section title="Incidents you can claim" info={INS_TIP.shareOne} description="From robots linked to your account. The payout is fixed by severity.">
         {blockers.length > 0 && (
           <Callout tone="warn" title="Before you can claim">
             <ul className="ins-blockers">{blockers.map((b) => <li key={b}>{b}</li>)}</ul>
@@ -263,7 +274,7 @@ function OwnerClaims({ live, account, linked, claims, setClaims }: { live: any; 
           </Callout>
         )}
         {!linked && account.robots?.length === 0 && <p className="muted small">No robot is linked to your account yet.</p>}
-        {msg && <Callout tone={msg.tone} title="Couldn't start the claim">{msg.text}</Callout>}
+        {msg && <PlainError title="Couldn't start the claim" raw={msg.text} fallback="Something went wrong while preparing the claim. Try again." />}
         {!claimable ? <Skeleton lines={2} label="Loading incidents" /> : items.length === 0 ? (
           <EmptyState plain title="No incidents" icon="shield">When the robot records an incident of severity 2 or more, it appears here.</EmptyState>
         ) : (
@@ -358,7 +369,7 @@ function ClaimCard({ claim: c, incident, onChange, cancel }: { claim: any; incid
         {c.status === "DENIED" && (
           <Callout tone="bad" title="Declined by the insurer">{c.review?.reason ? <>“{c.review.reason}”</> : "No reason given."}</Callout>
         )}
-        {c.status === "FAILED" && <Callout tone="bad" title="Not paid">{c.failure}</Callout>}
+        {c.status === "FAILED" && <PlainError title="Not paid" raw={c.failure} fallback="This claim couldn't be completed. You can claim this incident again." />}
       </div>
 
       <footer className="ins-claim-foot">
@@ -390,16 +401,19 @@ function IdkitStep({ claim, onDone }: { claim: any; onDone: () => void }) {
   const [uri, setUri] = useState("");
   const [err, setErr] = useState("");
   const [stopped, setStopped] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const abort = useRef<AbortController | null>(null);
   useEffect(() => {
     let live = true;
     setStopped(false);
+    setErr("");
+    setUri("");
     (async () => {
       try {
         const cfg = await get(`/api/claims/${claim.claimId}/idkit`);
         const request = await IDKit.request({
           app_id: cfg.app_id, action: cfg.action, rp_context: cfg.rp_context, allow_legacy_proofs: false, environment: cfg.environment,
-          action_description: `Claim the reward for incident ${claim.episodeId}`,
+          action_description: `Claim the insurance payout for incident ${claim.episodeId}`,
         }).preset(proofOfHuman({ signal: cfg.signal }));
         if (!live) return;
         setUri(request.connectorURI);
@@ -415,11 +429,11 @@ function IdkitStep({ claim, onDone }: { claim: any; onDone: () => void }) {
       live = false;
       abort.current?.abort();
     };
-  }, [claim.claimId]);
+  }, [claim.claimId, attempt]);
   return (
     <div className="world-prompt ins-idkit" role="status">
-      {err ? <Callout tone="bad" title="World ID check didn't finish">{err}</Callout> : stopped ? (
-        <p className="muted">Stopped waiting. Reload the page to try again.</p>
+      {err ? <PlainError title="World ID check couldn't finish" raw={err} fallback="World ID check couldn't finish. Try again." onRetry={() => setAttempt((n) => n + 1)} /> : stopped ? (
+        <p className="muted">Stopped waiting. <button type="button" className="linkish" onClick={() => setAttempt((n) => n + 1)}>Try again</button></p>
       ) : uri ? (
         <>
           <div className="row"><a className="btn primary" href={uri} target="_blank" rel="noreferrer"><Icon name="shield" /> Open World App<span className="sr-only"> (opens a new tab)</span></a><span className="muted small"><Spinner label="Waiting for World App" /> Waiting for your approval…</span></div>
@@ -440,7 +454,7 @@ function InsurerSide({ tick, claimId, pool, reloadPool }: { tick: number; claimI
     void load();
   }, [tick]);
 
-  if (err) return <ErrorState title="Couldn't open the insurer desk" onRetry={load}>{err}</ErrorState>;
+  if (err) return <PlainError title="Couldn't open the insurer desk" raw={err} fallback="The insurer desk didn't answer." onRetry={load} />;
   if (!info) return <Skeleton lines={4} label="Loading the insurer desk" />;
   if (!info.configured) return <EmptyState title="No insurer is set up here" icon="wallet">Whoever runs this dashboard needs to name the insurer's wallet before claims can be reviewed.</EmptyState>;
   if (!info.signedIn) return <SignIn address={info.address} onDone={load} />;
@@ -477,7 +491,7 @@ function SignIn({ address, onDone }: { address: string; onDone: () => void }) {
         <span className="muted small">Robot owner? Use <a href={to.insurance("owner")}>I'm the owner</a>.</span>
       </div>
       {!hasWallet && <div id="ins-no-wallet"><Callout tone="warn" title="No wallet in this browser">Open this page in a browser with MetaMask (or another wallet) holding the insurer account, then reload.</Callout></div>}
-      {msg && <Callout tone="bad">{msg}</Callout>}
+      {msg && <PlainError raw={msg} fallback="Sign-in didn't finish. Try again." />}
       <TechDetails>
         <Chip label="Expected insurer wallet" value={address} href={cfg.explorer ? `${cfg.explorer}/address/${address}` : null} />
       </TechDetails>
@@ -537,7 +551,7 @@ function Desk({ info, reload, tick, claimId, pool, reloadPool }: { info: any; re
         <aside className="ins-desk-side">
           <Section boxed title="Claims" className="ins-queue">
             <Tabs label="Claim queue" active={qtab} onChange={(t) => setQtab(t as any)} tabs={[{ id: "waiting", label: "Waiting", count: waiting.length }, { id: "decided", label: "Decided", count: done.length }]} />
-            {err && <ErrorState title="Couldn't load claims" onRetry={loadClaims}>{err}</ErrorState>}
+            {err && <PlainError title="Couldn't load claims" raw={err} fallback="The claims list didn't load." onRetry={loadClaims} />}
             {!claims && !err ? <Skeleton lines={3} label="Loading claims" /> : rows.length === 0 ? (
               <EmptyState plain icon={qtab === "waiting" ? "check" : "doc"} title={qtab === "waiting" ? "Nothing waiting" : "No decisions yet"}>
                 {qtab === "waiting" ? "New claims appear here after the owner passes both World ID checks." : "Claims you approve or decline appear here."}
@@ -550,7 +564,7 @@ function Desk({ info, reload, tick, claimId, pool, reloadPool }: { info: any; re
                     <li key={c.claimId}>
                       <a className={`ins-q-row ${on ? "sel" : ""}`} href={to.insurance("insurer", c.claimId)} aria-current={on ? "true" : undefined}>
                         <span className="ins-q-main">
-                          <span className="ins-q-title">Incident · {incidentTime(c.episodeId)} <Severity value={c.severity} incident /></span>
+                          <span className="ins-q-title">Incident · {incidentTime(c.episodeId)} <Severity value={c.severity} incident short /></span>
                           <span className="ins-q-sub">{qtab === "decided" ? <InsurerStatus status={c.status} /> : <>Submitted {ago(c.createdAt)}</>}</span>
                         </span>
                         <Amount wei={c.payout?.amountWei ?? c.amountWei} paid={c.status === "PAID"} />
@@ -716,7 +730,7 @@ function DecisionPanel({ claim, fc, canUnlock, onUnlock, onDecided }: { claim: a
           </div>
         </div>
       )}
-      {msg && <Callout tone="bad" title="Couldn't send the decision">{msg}</Callout>}
+      {msg && <PlainError title="Couldn't send the decision" raw={msg} fallback="The decision didn't go through. Nothing was paid. Try again." />}
     </div>
   );
 }
@@ -725,6 +739,6 @@ function Decided({ claim }: { claim: any }) {
   if (claim.status === "PAID") return <PaidMoment claim={claim} who="insurer" />;
   if (claim.status === "PAYING") return <div className="ins-wait" role="status"><Spinner label="Paying" /><div><b>Approved. Paying from the pool on 0G Chain…</b>{claim.review?.reason && <p className="muted">“{claim.review.reason}”</p>}</div></div>;
   if (claim.status === "DENIED") return <Callout tone="bad" title={`Declined${claim.review?.at ? ` · ${when(claim.review.at)}` : ""}`}>{claim.review?.reason ? <>“{claim.review.reason}”</> : null}</Callout>;
-  if (claim.status === "FAILED") return <Callout tone="bad" title="Not paid">{claim.failure}{claim.review?.reason && <p className="muted">Your reason: “{claim.review.reason}”</p>}</Callout>;
+  if (claim.status === "FAILED") return <div className="stack-tight"><PlainError title="Not paid" raw={claim.failure} fallback="The payout couldn't be sent from the pool." />{claim.review?.reason && <p className="muted">Your reason: “{claim.review.reason}”</p>}</div>;
   return null;
 }

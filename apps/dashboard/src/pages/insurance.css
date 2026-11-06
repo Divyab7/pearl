@@ -13,7 +13,13 @@
 .ins-pool.muted, .ins-pool.warn-text { padding-right: 14px; }
 
 /* how a claim works */
-.ins-how .steps-body { font-size: 14px; }
+.ins-how .steps-body { font-size: var(--fs-ui); }
+.ins-how-fold { border: 1px solid var(--border); border-radius: var(--r3); padding: var(--s2) var(--s4); background: var(--panel); }
+.ins-how-fold > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--fs-ui); padding: 4px 0; }
+.ins-how-fold > summary::-webkit-details-marker { display: none; }
+.ins-how-fold > summary .icon { color: var(--text-2); transition: transform var(--t-fast) var(--ease); }
+.ins-how-fold[open] > summary .icon { transform: rotate(90deg); }
+.ins-how-fold > .steps { padding: var(--s3) 0 var(--s2); }
 
 /* claimable incidents */
 .ins-rows { list-style: none; margin: 0; padding: 0; display: grid; border: 1px solid var(--border); border-radius: var(--r3); background: var(--panel); }

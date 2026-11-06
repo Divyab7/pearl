@@ -6,7 +6,7 @@ import { to, useRouteInfo, type Route } from "./router";
 import { Icon } from "./components/ui";
 import { EmptyState, PageHeader, StatusPill } from "./components/blocks";
 import { useAccount, useInsurerSession } from "./lib/account";
-import { PAGE, ROBOT_LINK } from "./lib/words";
+import { PAGE, ROBOT_LINK, robotName } from "./lib/words";
 import { Home } from "./pages/Home";
 import { Insurance } from "./pages/Insurance";
 import { Robot } from "./pages/Robot";
@@ -36,6 +36,7 @@ const NAV: { page: Route["page"]; label: string; href: string }[] = [
   { page: "robot", label: PAGE.robot, href: to.robot() },
   { page: "proof", label: PAGE.proof, href: to.proof() },
   { page: "insurance", label: PAGE.insurance, href: to.insurance() },
+  { page: "offline", label: PAGE.offline, href: to.offline() },
 ];
 
 export function App() {
@@ -45,7 +46,7 @@ export function App() {
   const mods = live.state?.modules ?? {};
   // show services only when one is degraded; "off" means switched off on purpose and is not shown
   const degraded = Object.entries(mods).filter(([, v]) => v === "not_configured" || v === "failed");
-  const robotName: string | undefined = live.state?.deviceId;
+  const robotLabel = live.state ? robotName(live.state.deviceKind) : undefined;
 
   useEffect(() => {
     const name = route.page === "home" || route.page === "notfound" || route.page === "kit" ? "" : PAGE[route.page];
@@ -71,8 +72,8 @@ export function App() {
             href={to.robot()}
             tone={live.connected ? "ok" : live.connected === false ? "bad" : "neutral"}
             pulse={!!live.connected}
-            sub={robotName}
-            title={live.state?.deviceAddress ? `Robot ${live.state.deviceAddress}` : "Robot status"}
+            sub={robotLabel}
+            title={live.state?.deviceId ? `Robot ${live.state.deviceId}${live.state.deviceAddress ? ` · ${live.state.deviceAddress}` : ""}` : "Robot status"}
           >
             {live.connected ? ROBOT_LINK.online : live.connected === false ? ROBOT_LINK.offline : ROBOT_LINK.connecting}
           </StatusPill>
@@ -113,7 +114,7 @@ function Page({ route, live }: { route: Route; live: ReturnType<typeof useLive> 
     case "robot":
       return <Robot live={live} runId={route.runId} />;
     case "proof":
-      return <Proof tick={live.tick} runId={route.runId} />;
+      return <Proof tick={live.tick} runId={route.runId} tamper={route.tamper} />;
     case "insurance":
       return <Insurance live={live} side={route.side} claimId={route.claimId} />;
     case "offline":
@@ -163,8 +164,10 @@ function AccountMenu({ tick, routeKey }: { tick: number; routeKey: string }) {
 
   const owner = !!account;
   const asInsurer = !!insurer?.signedIn;
-  const name = owner ? "Owner" : asInsurer ? "Insurer" : "Sign in";
-  const detail = owner ? `Verified human · ${short(account.accountId, 4)}` : asInsurer ? short(insurer.address) : "Owners sign in with World ID, insurers with their wallet.";
+  // the ACTIVE identity, the same words the pages use ("Signed in as the insurer")
+  const name = owner && asInsurer ? "Owner + Insurer" : owner ? "Owner" : asInsurer ? "Insurer" : "Sign in";
+  const detail = owner && asInsurer ? `Owner: verified human · ${short(account.accountId, 4)} · Insurer: ${short(insurer.address)}`
+    : owner ? `Verified human · ${short(account.accountId, 4)}` : asInsurer ? short(insurer.address) : "Owners sign in with World ID, insurers with their wallet.";
   return (
     <div className="menu" ref={ref}>
       <button ref={btn} type="button" className="menu-btn" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} aria-label={`Account menu: ${owner || asInsurer ? `signed in as ${name}` : "not signed in"}`}>
@@ -175,13 +178,13 @@ function AccountMenu({ tick, routeKey }: { tick: number; routeKey: string }) {
       {open && (
         <div className="menu-pop" role="menu" aria-label="Account">
           <div className="menu-head">
-            <b>{owner && asInsurer ? "Owner and insurer" : owner || asInsurer ? `Signed in as ${name.toLowerCase()}` : "Not signed in"}</b>
+            <b>{owner && asInsurer ? "Signed in as the owner and the insurer" : owner ? "Signed in as the owner" : asInsurer ? "Signed in as the insurer" : "Not signed in"}</b>
             <span>{detail}</span>
           </div>
           <a role="menuitem" className="menu-item" href={to.account()}><Icon name="user" />{owner ? "Account and keys" : "Owner sign-in"}<small>World ID</small></a>
           <a role="menuitem" className="menu-item" href={to.insurance("insurer")}><Icon name="wallet" />{asInsurer ? "Review claims" : "Insurer sign-in"}<small>Wallet</small></a>
           <div className="menu-sep" role="separator" />
-          <a role="menuitem" className="menu-item" href={to.offline()}><Icon name="offline" />{PAGE.offline}</a>
+          <a role="menuitem" className="menu-item" href={to.offline()}><Icon name="offline" />Works without internet</a>
           {owner && (
             <>
               <div className="menu-sep" role="separator" />

@@ -6,7 +6,7 @@ import { get, post } from "../api";
 import { to } from "../router";
 import { KeySetup, WorldPrompt } from "../components/KeySetup";
 import { Chip, Field, Icon, Spinner } from "../components/ui";
-import { InfoTip, PageHeader, Skeleton, StatusPill, TechDetails } from "../components/blocks";
+import { InfoTip, PageHeader, PlainError, Skeleton, StatusPill, TechDetails } from "../components/blocks";
 import { useAccount } from "../lib/account";
 import { loadKey } from "../lib/keys";
 import { fullWhen } from "../components/run";
@@ -219,7 +219,7 @@ export function Account({ live }: { live: any }) {
               )}
             </Step>
           </ol>
-          {msg && <p className="ac-msg" role="alert"><Icon name="alert" size={14} /> {msg}</p>}
+          {msg && <PlainError inline raw={msg} fallback="That didn't go through (World ID or the robot didn't answer as expected). Try again." />}
           {doneN === 4 && (
             <div className="ac-done">
               <Icon name="check" size={16} />

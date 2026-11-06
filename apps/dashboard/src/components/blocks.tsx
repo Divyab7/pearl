@@ -4,7 +4,7 @@
 // <TechDetails> · cards only where grouping matters (prefer <Section>).
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Icon, type Tone, type VerdictKind } from "./ui";
-import { VERDICT_WORDS } from "../lib/words";
+import { plainError, VERDICT_WORDS } from "../lib/words";
 
 /**
  * PageHeader: the page's title, one plain sentence under it, and actions aligned to the title (right; wraps below
@@ -196,6 +196,33 @@ export function ErrorState({ title = "Something went wrong", children, onRetry, 
       <div className="state-title">{title}</div>
       {children && <div className="state-body">{children}</div>}
       {(onRetry || action) && <div className="state-action row center">{onRetry && <button type="button" className="btn" onClick={onRetry}>Try again</button>}{action}</div>}
+    </div>
+  );
+}
+
+/**
+ * PlainError: a failure told in plain words. `fallback` is what we say when the raw message is technical; the raw text
+ * (if any) sits under "Technical details". `onRetry` adds "Try again". `inline` renders a small line instead of a box.
+ */
+export function PlainError({ title, raw, fallback, onRetry, inline = false, tone = "bad" }: {
+  title?: ReactNode; raw?: unknown; fallback: string; onRetry?: () => void; inline?: boolean; tone?: "bad" | "warn";
+}) {
+  const text = plainError(raw, fallback);
+  const rawText = String((raw as any)?.message ?? raw ?? "").trim();
+  const showRaw = !!rawText && rawText !== text && `${rawText}.` !== text;
+  return (
+    <div className={`perr tone-${tone} ${inline ? "inline" : ""}`} role="alert">
+      <Icon name="alert" size={inline ? 14 : 16} />
+      <div className="perr-main">
+        {title && <b className="perr-title">{title}</b>}
+        <span className="perr-text">{text}</span>
+        {(onRetry || showRaw) && (
+          <div className="perr-foot">
+            {onRetry && <button type="button" className="btn sm" onClick={onRetry}>Try again</button>}
+            {showRaw && <TechDetails boxless><code className="mono small perr-raw">{rawText}</code></TechDetails>}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { endOf, FAKE_MESH, fetchMesh, SCENARIOS, stateAt, type MeshEvent, type M
 
 const PALETTE = ["#8fa8ff", "#3dd68c", "#f2b544", "#c792ea", "#5cc8ff", "#ff9f6b"];
 const W = 820;
-const H = 470;
+const H = 500;
 const CHAIN = { x: 735, y: 235 };
 const FX = 1; // seconds of sim time a hop or refusal stays on screen
 const REAL_SECONDS = 24; // a whole scenario plays in about this long
@@ -97,7 +97,8 @@ function Player({ sim, t, setT, playing, setPlaying, end, reduce, blurb }: {
   const s = useMemo(() => stateAt(sim, t), [sim, t]);
   const recent = sim.events.filter((e) => e.t <= t && t < e.t + FX);
   const valid = sim.result.total || sim.bundles.filter((b) => b.valid).length;
-  const name = (id?: string) => nodeById.get(id ?? "")?.label ?? id ?? "?";
+  // never print "?" or a raw id: unknown ids read as a plain phrase
+  const name = (id?: string) => nodeById.get(id ?? "")?.label ?? (id === "chain" ? "the internet" : "a robot nearby");
   const ownerOfOrigin = (e: MeshEvent) => nodeById.get(e.origin ?? bundleById.get(e.bundleId ?? "")?.origin ?? "")?.owner;
   const lerp = (a: { x: number; y: number }, b: { x: number; y: number }, k: number) => ({ x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k });
   const prog = (e: MeshEvent) => (reduce ? 1 : Math.min(1, (t - e.t) / FX));
@@ -142,7 +143,8 @@ function Player({ sim, t, setT, playing, setPlaying, end, reduce, blurb }: {
                 {!alive && <path d={`M${p.x - 14} ${p.y - 14}L${p.x + 14} ${p.y + 14}M${p.x + 14} ${p.y - 14}L${p.x - 14} ${p.y + 14}`} className="mesh-x" />}
                 {held.map((id, i) => {
                   const b = bundleById.get(id);
-                  const a = -Math.PI / 2 + (i - (held.length - 1) / 2) * 0.42;
+                  // fan the held records over the top half only, so they never cover the name below the circle
+                  const a = -Math.PI / 2 + (i - (held.length - 1) / 2) * Math.min(0.42, Math.PI / Math.max(1, held.length));
                   const bx = p.x + Math.cos(a) * 42;
                   const by = p.y + Math.sin(a) * 42;
                   return (
@@ -203,7 +205,7 @@ function Player({ sim, t, setT, playing, setPlaying, end, reduce, blurb }: {
         <Card title="What just happened">
           {log.length === 0 ? <Empty title="Nothing yet">Press Play.</Empty> : (
             <ol className="mesh-log">
-              {log.map((e, i) => <li key={`${e.t}-${i}`} className={e.type === "refused" ? "bad" : e.type === "delivered" ? "ok" : ""}><span className="tabular muted">{Math.floor(e.t)} s</span> {describe(e, name, bundleById)}</li>)}
+              {log.map((e, i) => <li key={`${e.t}-${i}`} className={e.type === "refused" ? "bad" : e.type === "delivered" ? "ok" : ""}><span className="tabular muted">{Math.floor(e.t)} s</span> {cap(describe(e, name, bundleById))}</li>)}
             </ol>
           )}
         </Card>
@@ -212,13 +214,14 @@ function Player({ sim, t, setT, playing, setPlaying, end, reduce, blurb }: {
   );
 }
 
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 function describe(e: MeshEvent, name: (id?: string) => string, bundles: Map<string, { origin: string; severity: number; valid: boolean }>) {
   const b = bundles.get(e.bundleId ?? "");
   const whose = b ? `${b.valid ? "" : "a forged copy of "}${name(e.origin ?? b.origin)}'s ${b.severity > 0 ? "incident record" : "record"}` : "a record";
   switch (e.type) {
     case "link-up": return `${name(e.from)} and ${name(e.to)} are in Bluetooth range`;
     case "link-down": return `${name(e.from)} and ${name(e.to)} moved apart`;
-    case "ping": return `${name(e.from)} told ${e.to ? name(e.to) : "everyone nearby"} about its latest run`;
+    case "ping": { const who = e.to ? name(e.to) : ""; return `${name(e.from)} told ${who && who !== "a robot nearby" ? who : "everyone nearby"} about its latest run`; }
     case "pull": return `${name(e.to)} picked up ${whose} from ${name(e.from)}`;
     case "refused": return `${name(e.to)} refused ${b && !b.valid ? whose : "a forged record"} offered by ${name(e.from)}: the signature doesn't match`;
     case "submit": return `${name(e.from)} has internet and sends ${whose}`;
@@ -227,7 +230,7 @@ function describe(e: MeshEvent, name: (id?: string) => string, bundles: Map<stri
     case "internet-up": return `${name(e.from)} got internet`;
     case "internet-down": return `${name(e.from)} lost internet`;
     case "node-dead": return `${name(e.from)} stopped working`;
-    default: return e.type;
+    default: return "Something happened nearby";
   }
 }
 
