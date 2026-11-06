@@ -29,7 +29,7 @@ import { ethers } from "ethers";
 import { signRequest } from "@worldcoin/idkit-core/signing";
 import { hashSignal } from "@worldcoin/idkit-core/hashing";
 import { AccountStore, Sessions, cookieValue, type Account } from "./accounts.js";
-import { RewardDesk, type IdkitConfig, type RewardDeps } from "./rewards.js";
+import { RewardDesk, RewardStore, type IdkitConfig, type RewardDeps } from "./rewards.js";
 import { WorldIdGate, worldIdConfigFromEnv, worldIdConfigured } from "../human/worldid.js";
 import type { HumanCheckResult, HumanGate } from "../human/gate.js";
 import { payReward, poolConfigFromEnv, poolConfigured, readPool } from "../og/anchor.js";
@@ -67,6 +67,18 @@ export interface DashboardOptions {
   relaySubmit?: BundleSubmitter;
   /** Where relayed bundles are kept (default data/relay-bundles, or RELAY_BUNDLES_DIR). */
   relayBundlesDir?: string;
+  /** Where storage-backup (relay) records are kept (default RELAY_DIR or data/relay). */
+  relayDir?: string;
+  /** Data files (defaults: ACCOUNTS_FILE, REWARD_CLAIMS_FILE, INSURER_KEY_FILE or their data/ paths). The demo workspace sets its own. */
+  accountsFile?: string;
+  claimsFile?: string;
+  insurerKeyFile?: string;
+  /** The insurer wallet (default INSURER_ADDRESS, else the RewardPool operator wallet). */
+  insurerAddress?: string;
+  /** Overrides parts of the Arkiv claim-record config (e.g. the desk wallet the reader filters on). */
+  claimArkiv?: Partial<ReturnType<typeof claimArkivConfigFromEnv>>;
+  /** Session cookies: names and path (defaults pearl_session / pearl_insurer, Path=/). */
+  cookies?: { owner?: string; insurer?: string; path?: string };
 }
 
 export function createDashboard(opts: DashboardOptions = {}) {
@@ -86,6 +98,7 @@ export function createDashboard(opts: DashboardOptions = {}) {
   // Registered before the global 64 kB JSON parser: bundles carry the locked files, so this one route takes 2 MB.
   const relaySubmit: BundleSubmitter = opts.relaySubmit ?? ((b, steps, onStep) => submitBundle(b, { rpc: httpJsonRpc(f) }, { steps, onStep }));
   const relayQueue = new RelayQueue(relaySubmit, opts.relayBundlesDir);
+  const relayDirOf = opts.relayDir; // undefined → relay.ts default (RELAY_DIR / data/relay)
   const bundleParser = express.json({ limit: "2mb" });
   app.post(
     "/api/relay/bundle",
@@ -252,7 +265,7 @@ export function createDashboard(opts: DashboardOptions = {}) {
       poolAddress: process.env.OG_REWARD_POOL_ADDRESS ?? null,
       arkivSchema: SCHEMA_NAME,
       claimSchema: CLAIM_SCHEMA,
-      claimWriter: claimArkivConfigFromEnv().writer || null,
+      claimWriter: claimCfg.writer || null,
     });
   });
 
@@ -345,7 +358,7 @@ export function createDashboard(opts: DashboardOptions = {}) {
     const own = meta?.storage?.status === "ok" ? meta.storage.rootHash : null;
     return {
       device: dev ?? (await robotAddress()),
-      fallbackRoot: own ?? readRelay(id)?.rootHash ?? null,
+      fallbackRoot: own ?? readRelay(id, relayDirOf)?.rootHash ?? null,
       robotCopy: robotCopy(id),
       downloadStorage: fromStorage,
       ...(zbChain ? { readZerobotReceipt: (n: number) => zbChain.receipt(n) } : {}),
@@ -447,7 +460,7 @@ export function createDashboard(opts: DashboardOptions = {}) {
     const meta = await device<EpisodeMeta>(`/api/episodes/${encodeURIComponent(episodeId)}/meta`);
     if (meta.storage?.status === "ok") return { status: "not needed: the device uploaded it", rootHash: meta.storage.rootHash };
     const sealed = await robotCopy(episodeId)();
-    const rec = await relayEpisode(sealed, await deviceAddress(), relayUpload);
+    const rec = await relayEpisode(sealed, await deviceAddress(), relayUpload, relayDirOf);
     return { status: "relayed", ...rec };
   };
   app.post("/api/episodes/:id/relay", gate, async (req, res) => {
@@ -458,15 +471,16 @@ export function createDashboard(opts: DashboardOptions = {}) {
     }
   });
   app.get("/api/episodes/:id/relay", (req, res) => {
-    res.json(readRelay(String(req.params.id)) ?? { status: "none" });
+    res.json(readRelay(String(req.params.id), relayDirOf) ?? { status: "none" });
   });
 
   // ---------------------------------------------------------------- accounts: Sign in with World ID (Agent Pass)
-  const accounts = new AccountStore();
+  const accounts = new AccountStore(opts.accountsFile);
   const sessions = new Sessions();
+  const cookiePath = opts.cookies?.path ?? "/";
   const widCfg = worldIdConfigFromEnv();
   const agentPass: HumanGate | null = opts.agentPass !== undefined ? opts.agentPass : worldIdConfigured(widCfg) ? new WorldIdGate(widCfg) : null;
-  const COOKIE = "pearl_session";
+  const COOKIE = opts.cookies?.owner ?? "pearl_session";
   const accountOf = (req: Request): Account | null => {
     const id = sessions.get(cookieValue(req.headers.cookie, COOKIE));
     return id ? (accounts.get(id) ?? null) : null;
@@ -522,7 +536,7 @@ export function createDashboard(opts: DashboardOptions = {}) {
     signIns.delete(String(req.params.attemptId)); // one session per validated token
     const account = accounts.upsertFromIdentity(r.issuer, r.subject);
     const token = sessions.create(account.accountId);
-    res.cookie(COOKIE, token, { httpOnly: true, sameSite: "lax", maxAge: 12 * 3600_000 });
+    res.cookie(COOKIE, token, { httpOnly: true, sameSite: "lax", maxAge: 12 * 3600_000, path: cookiePath });
     res.json({ status: "ok", account });
   });
   app.post("/api/auth/cancel/:attemptId", (req, res) => {
@@ -530,7 +544,7 @@ export function createDashboard(opts: DashboardOptions = {}) {
   });
   app.post("/api/auth/logout", (req, res) => {
     sessions.end(cookieValue(req.headers.cookie, COOKIE));
-    res.clearCookie(COOKIE);
+    res.clearCookie(COOKIE, { path: cookiePath });
     res.json({ ok: true });
   });
   app.get("/api/account", (req, res) => {
@@ -638,7 +652,7 @@ export function createDashboard(opts: DashboardOptions = {}) {
   // The insurance company's wallet (INSURER_ADDRESS, default: the RewardPool operator wallet) signs in by signing a
   // one-time message; it moves no money. Its receiving key (public half) is what owners lock incident keys for.
   const insurerAddress = (() => {
-    const env = process.env.INSURER_ADDRESS ?? "";
+    const env = opts.insurerAddress ?? process.env.INSURER_ADDRESS ?? "";
     if (ethers.isAddress(env)) return ethers.getAddress(env);
     try {
       return poolCfg.operatorKey ? new ethers.Wallet(poolCfg.operatorKey).address : "";
@@ -646,11 +660,11 @@ export function createDashboard(opts: DashboardOptions = {}) {
       return "";
     }
   })();
-  const insurerKeyPath = process.env.INSURER_KEY_FILE ?? resolve(REPO_ROOT, "data", "insurer-key.json");
+  const insurerKeyPath = opts.insurerKeyFile ?? process.env.INSURER_KEY_FILE ?? resolve(REPO_ROOT, "data", "insurer-key.json");
   type InsurerKey = { publicJwk: PublicJwk; kid: string; setAt: string; by: string };
   const insurerKey = () => readJson<InsurerKey | null>(insurerKeyPath, null);
   const insurerSessions = new Sessions(8 * 3600_000);
-  const INSURER_COOKIE = "pearl_insurer";
+  const INSURER_COOKIE = opts.cookies?.insurer ?? "pearl_insurer";
   const challenges = new Map<string, { message: string; expires: number }>();
   const insurerOf = (req: Request): string | null => (insurerSessions.get(cookieValue(req.headers.cookie, INSURER_COOKIE)) ? insurerAddress : null);
   const requireInsurer = (req: Request, res: Response): string | null => {
@@ -696,12 +710,12 @@ export function createDashboard(opts: DashboardOptions = {}) {
       res.status(403).json({ error: `signed by ${who ?? "an invalid signature"}, not the insurer wallet ${insurerAddress}` });
       return;
     }
-    res.cookie(INSURER_COOKIE, insurerSessions.create(insurerAddress), { httpOnly: true, sameSite: "lax", maxAge: 8 * 3600_000 });
+    res.cookie(INSURER_COOKIE, insurerSessions.create(insurerAddress), { httpOnly: true, sameSite: "lax", maxAge: 8 * 3600_000, path: cookiePath });
     res.json({ ok: true, address: insurerAddress });
   });
   app.post("/api/insurer/logout", (req, res) => {
     insurerSessions.end(cookieValue(req.headers.cookie, INSURER_COOKIE));
-    res.clearCookie(INSURER_COOKIE);
+    res.clearCookie(INSURER_COOKIE, { path: cookiePath });
     res.json({ ok: true });
   });
   app.post("/api/insurer/key", (req, res) => {
@@ -720,7 +734,7 @@ export function createDashboard(opts: DashboardOptions = {}) {
 
   // ---------------------------------------------------------------- reward claims
   const anchorCfg = anchorConfigFromEnv();
-  const claimCfg = claimArkivConfigFromEnv();
+  const claimCfg = { ...claimArkivConfigFromEnv(), ...opts.claimArkiv };
   const ledger = new ClaimLedger(
     opts.claimWriter !== undefined
       ? opts.claimWriter
@@ -729,6 +743,7 @@ export function createDashboard(opts: DashboardOptions = {}) {
         : null,
     opts.claimLedgerFile,
   );
+  const { onChange: extraOnChange, ...rewardOverrides } = opts.rewardDeps ?? {};
   const rewardDeps: RewardDeps = {
     verify: async (episodeId, dev) => {
       const v = await verifyPublic(episodeId, await publicDeps(episodeId, dev));
@@ -762,10 +777,13 @@ export function createDashboard(opts: DashboardOptions = {}) {
     },
     amountWeiFor: (sev) => (perSeverity * BigInt(sev) > maxReward ? maxReward : perSeverity * BigInt(sev)),
     requireValid: envFlag("CLAIMS_REQUIRE_VALID", "on"),
-    onChange: (c) => void ledger.record(c),
-    ...opts.rewardDeps,
+    onChange: (c) => {
+      void ledger.record(c);
+      extraOnChange?.(c);
+    },
+    ...rewardOverrides,
   };
-  const desk = new RewardDesk(rewardDeps);
+  const desk = new RewardDesk(rewardDeps, new RewardStore(opts.claimsFile));
   const withArkiv = <T extends { claimId: string }>(c: T) => ({ ...c, arkiv: ledger.get(c.claimId) });
 
   // every claim's public facts are mirrored to Arkiv; anyone can read a run's claim history from there
@@ -986,5 +1004,15 @@ export function createDashboard(opts: DashboardOptions = {}) {
     return () => ac.abort();
   }
 
-  return { app, deviceUrl, watchForRelays, relayQueue };
+  /** Direct session handles (the demo workspace signs its sample people in without the World ID / wallet round trip). */
+  const auth = {
+    cookies: { owner: COOKIE, insurer: INSURER_COOKIE, path: cookiePath },
+    ownerSession: (accountId: string) => sessions.create(accountId),
+    insurerSession: () => (insurerAddress ? insurerSessions.create(insurerAddress) : null),
+    end: (cookieHeader: string | undefined) => {
+      sessions.end(cookieValue(cookieHeader, COOKIE));
+      insurerSessions.end(cookieValue(cookieHeader, INSURER_COOKIE));
+    },
+  };
+  return { app, deviceUrl, watchForRelays, relayQueue, auth, desk, insurerAddress };
 }
