@@ -4,6 +4,7 @@
 // through here and have the real TypeScript verifier check it.
 #pragma once
 #include <ArduinoJson.h>
+#include <functional>
 #include <string>
 #include <vector>
 #include "bytes.h"
@@ -36,6 +37,13 @@ std::vector<Step> regrasp(const ArmCfg& c, int slot);
 std::vector<Step> place(const ArmCfg& c);
 
 // ---------------------------------------------------------------- one decision (DecisionCore)
+/** One call to one 0G model inside a decision (shared/types.ts ModelAttempt). */
+struct Attempt {
+  std::string model, requestId, error;
+  bool hasRequestId = false, hasError = false;  // no error = this call returned an answer (checked afterwards)
+  int status = 0;                               // 0 = no response (recorded as null)
+  uint32_t latencyMs = 0;
+};
 struct Decision {
   std::string checkpoint;
   bool fromZeroG = false;  // source "0g" vs "failsafe"
@@ -47,12 +55,15 @@ struct Decision {
   int teeVerified = -1;            // -1 null, 0 false, 1 true
   JsonDocument parsed;             // null for failsafe
   uint32_t latencyMs = 0;
+  std::vector<Attempt> attempts;  // only when more than one model was asked; recorded as `attempts`
 };
 Decision failsafe(const std::string& checkpoint, const std::string& clientRequestId, const std::string& error);
 
 // ---------------------------------------------------------------- 0G Router
 struct RouterConfig {
   std::string baseUrl, apiKey, model, trustMode = "verified";
+  // tried in order after `model` fails on the provider side, same prompt/image/trust mode, inside timeoutMs in total
+  std::vector<std::string> fallbackModels;
   uint32_t timeoutMs = 30000;
   bool verifyTee = true;
   int maxTokens = 1000;
@@ -70,6 +81,19 @@ struct HttpResult {
 /** callRouter + interpret: a decision from the HTTP result (failsafe on any problem, never a default answer). */
 Decision interpret(const std::string& checkpoint, const std::string& clientRequestId, const HttpResult& r, uint32_t timeoutMs);
 std::string stripFence(const std::string& s);
+/** No response, HTTP 5xx, 429, or error code no_provider_for_trust_mode / no_available_provider (og/router.ts). */
+bool isProviderFailure(const HttpResult& r);
+/** The primary then the fallbacks, without blanks or repeats (decision.ts modelsOf). */
+std::vector<std::string> modelsOf(const RouterConfig& cfg);
+/** One HTTP call for `model` with at most `timeoutMs`. */
+using CallFn = std::function<HttpResult(const std::string& model, uint32_t timeoutMs)>;
+/**
+ * decision.ts decide(): asks the models in order, moving on only after a provider-side failure, all inside
+ * cfg.timeoutMs; a failure of our request (4xx) or any answer the model gave (even an invalid one) stops there.
+ * Every model failing gives a failsafe decision, never a made-up one.
+ */
+Decision decide(const RouterConfig& cfg, const std::string& checkpoint, const std::string& clientRequestId, const CallFn& call,
+                const std::function<uint32_t()>& nowMs);
 
 // ---------------------------------------------------------------- policy
 struct Task {

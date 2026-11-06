@@ -303,16 +303,27 @@ run::PolicyResult Orchestrator::checkpoint(const std::string& cp, const std::fun
     te["accG"] = tel.accG;
     for (JsonPairConst kv : extra) ctx[kv.key()] = kv.value();
     std::string image = haveFrame ? "data:image/jpeg;base64," + base64(jpeg) : "";
-    std::string body = run::routerBody(router, cp, prompts_.text[ci], ctx.as<JsonObjectConst>(), image);
-    image.clear();
     std::string base = cut0g ? blackholeUrl : router.baseUrl;
     while (!base.empty() && base.back() == '/') base.pop_back();
     Headers h = {{"Authorization", "Bearer " + router.apiKey},
                  {"Content-Type", "application/json"},
                  {"X-Client-Request-Id", clientRequestId},
                  {"X-0G-Provider-Trust-Mode", router.trustMode}};
-    run::HttpResult r = p_.post(base + "/chat/completions", h, body, router.timeoutMs);
-    d = run::interpret(cp, clientRequestId, r, router.timeoutMs);
+    run::RouterConfig rc = router;
+    if (cut0g) rc.fallbackModels.clear();  // Cut 0G: one call to the blackhole, as the TypeScript program does
+    const bool keepImage = run::modelsOf(rc).size() > 1;  // a fallback resends the same image
+    run::CallFn call = [&](const std::string& model, uint32_t timeoutMs) {
+      run::RouterConfig one = rc;
+      one.model = model;
+      std::string body = run::routerBody(one, cp, prompts_.text[ci], ctx.as<JsonObjectConst>(), image);
+      if (!keepImage) {
+        image.clear();
+        image.shrink_to_fit();
+      }
+      return p_.post(base + "/chat/completions", h, body, timeoutMs);
+    };
+    d = run::decide(rc, cp, clientRequestId, call, [this] { return p_.millis(); });
+    image.clear();
   }
   run::PolicyResult pr = policy(d);
   std::string frameHash, frameRoot;

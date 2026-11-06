@@ -130,6 +130,8 @@ struct SimArm : orch::ArmLink {
 struct SimPlatform : orch::Platform {
   std::map<std::string, std::deque<std::string>> answers;
   bool down = false;
+  std::vector<std::string> deadModels;  // these answer 502 (their provider is down)
+  std::vector<std::string> modelsAsked;
   int n = 0;
   long long t0 = 1762405800000;  // 2026-11-06T05:10:00Z
   int tick = 0;
@@ -157,6 +159,14 @@ struct SimPlatform : orch::Platform {
     }
     JsonDocument b;
     deserializeJson(b, body);
+    std::string model = b["model"] | "";
+    modelsAsked.push_back(model);
+    for (const std::string& m : deadModels)
+      if (m == model) {
+        r.status = 502;
+        r.body = R"({"error":{"message":"fetch provider quote: EOF","type":"server_error","code":"provider_error"},"request_id":"rid-dead-)" + std::to_string(++n) + "\"}";
+        return r;
+      }
     JsonDocument user;
     deserializeJson(user, b["messages"][1]["content"][0]["text"].as<const char*>());
     std::string cp = user["checkpoint"] | "";
@@ -166,7 +176,7 @@ struct SimPlatform : orch::Platform {
     }
     std::string rid = "0g-req-" + std::to_string(++n) + "-" + cp;
     JsonDocument resp;
-    resp["model"] = "glm-5.3-flash";
+    resp["model"] = model;
     resp["choices"][0]["message"]["content"] = answers[cp].front();
     answers[cp].pop_front();
     resp["x_0g_trace"]["request_id"] = rid;
@@ -209,7 +219,7 @@ static orch::Prompts prompts() {
   return p;
 }
 
-static void runOne(const char* name, SimPlatform& plat, SimArm& arm, const char* expectOutcome) {
+static void runOne(const char* name, SimPlatform& plat, SimArm& arm, const char* expectOutcome, std::vector<std::string> fallbacks = {}) {
   run::ArmCfg cfg;
   CHECK(run::parseArmConfig(readFile(repo() + "/config/arm.json"), cfg));
   orch::Prompts pr = prompts();
@@ -223,6 +233,7 @@ static void runOne(const char* name, SimPlatform& plat, SimArm& arm, const char*
   o.owner = {rj["x"].as<const char*>(), rj["y"].as<const char*>()};
   o.router.baseUrl = "https://router-api.0g.ai/v1";
   o.router.model = "glm-5.3-flash";
+  o.router.fallbackModels = fallbacks;
   std::string why;
   o.monitor().pump(0);
   CHECK(o.canStart(why));
@@ -303,4 +314,27 @@ TEST(run_low_confidence_and_bad_json_are_handled) {
   SimArm a2;
   p2.answers["PLAN"] = {R"({"action":"PICK","slot":"A2","reason":"x","confidence":0.9,"extra":1})"};
   runOne("badschema", p2, a2, "FAILSAFE");
+}
+
+TEST(run_primary_down_fallback_answers) {
+  SimPlatform p;
+  SimArm a;
+  p.deadModels = {"glm-5.3-flash"};
+  p.answers["PLAN"] = {PICK};
+  p.answers["VERIFY_GRASP"] = {HELD};
+  p.answers["VERIFY_PLACE"] = {IN_BIN};
+  p.jpeg = utf8("JPEG-FRAME-BYTES");
+  runOne("fallback", p, a, "DONE", {"qwen2.5-vl-72b-instruct", "gemini-2.5-flash-lite"});
+  // each checkpoint: the primary, then the first fallback; the second fallback is never needed
+  CHECK_EQ(p.modelsAsked.size(), (size_t)6);
+  for (size_t i = 0; i < p.modelsAsked.size(); i++) CHECK_EQ(p.modelsAsked[i], std::string(i % 2 ? "qwen2.5-vl-72b-instruct" : "glm-5.3-flash"));
+}
+
+TEST(run_every_model_down_is_a_failsafe_stop) {
+  SimPlatform p;
+  SimArm a;
+  p.deadModels = {"glm-5.3-flash", "qwen2.5-vl-72b-instruct", "gemini-2.5-flash-lite"};
+  p.answers["PLAN"] = {PICK};  // would be a good answer, but no model is reachable to give it
+  runOne("allmodelsdown", p, a, "FAILSAFE", {"qwen2.5-vl-72b-instruct", "gemini-2.5-flash-lite"});
+  CHECK_EQ(p.modelsAsked.size(), (size_t)3);
 }

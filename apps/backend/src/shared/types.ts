@@ -55,6 +55,21 @@ export interface DecisionRecord {
   override: string | null;
   commandsSent: string[];
   latencyMs: number;
+  /**
+   * Present only when more than one 0G model was asked (the primary failed on the provider side and a fallback was
+   * tried): every call in order, the last one being the answer (or the last failure). Absent on single-call records,
+   * so those keep exactly the shape and hash they had before fallbacks existed.
+   */
+  attempts?: ModelAttempt[];
+}
+
+/** One call to one 0G model inside a decision. */
+export interface ModelAttempt {
+  model: string; // the model we asked for
+  status: number | null; // HTTP status, null = no response
+  requestId: string | null;
+  error: string | null; // null = this call returned an answer (which the decision then checked)
+  latencyMs: number;
 }
 
 /** A device or host event recorded in the log (hand_in_zone, trip_bump, nack, parse_error, reset_done, ...). */
