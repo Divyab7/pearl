@@ -363,6 +363,7 @@ fieldset.plain:disabled .btn { opacity: .45; cursor: not-allowed; }
 .replay { display: grid; gap: var(--s3); }
 .replay-stage { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); }
 .replay-stage .armview { max-height: 320px; }
+.replay-stage .arm3d { aspect-ratio: 16 / 9; }
 .replay-side { display: grid; gap: var(--s3); }
 .replay-bar { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
 .replay-bar input { flex: 1; }
@@ -400,6 +401,11 @@ fieldset.plain:disabled .btn { opacity: .45; cursor: not-allowed; }
 .armview .ring.dim { stroke: var(--text-3); } .armview .ring.blue { stroke: var(--accent); } .armview .ring.cyan { stroke: var(--info); }
 .armview .ring.amber { stroke: var(--warn); } .armview .ring.red { stroke: var(--bad); } .armview .ring.white { stroke: var(--text); }
 .armview .ringbar { fill: var(--text-3); } .armview .ringbar.red { fill: var(--bad); } .armview .ringbar.amber { fill: var(--warn); } .armview .ringbar.blue, .armview .ringbar.cyan { fill: var(--accent); }
+.arm3d { position: relative; aspect-ratio: 4 / 3; overflow: hidden; background: var(--card); border: 1px solid var(--border); border-radius: var(--r2); touch-action: none; user-select: none; cursor: grab; }
+.arm3d:active { cursor: grabbing; }
+.arm3d-canvas { display: block; width: 100%; height: 100%; }
+.arm3d-labels { position: absolute; inset: 0; pointer-events: none; }
+.arm3d-label { font: 600 11px var(--sans); letter-spacing: .02em; padding: 1px 6px; border-radius: var(--r1); background: var(--panel); color: var(--text-2); border: 1px solid var(--border); }
 
 /* ---------------------------------------------------------------- welcome */
 .welcome { gap: var(--s6); padding-top: var(--s8); }
