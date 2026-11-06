@@ -156,4 +156,16 @@ describe("offline relay end to end", () => {
     expect((await post(JSON.stringify(tampered))).status).toBe(400);
     expect((await fetch(`${base}/api/relay/bundles/0x${"0".repeat(64)}`)).status).toBe(404);
   });
+
+  it("GET /api/mesh/sim returns the demo shape; unknown scenarios are 400", async () => {
+    const r = await fetch(`${base}/api/mesh/sim?scenario=tamperer&seed=2`);
+    expect(r.status).toBe(200);
+    const body = (await r.json()) as { nodes: unknown[]; events: { t: number; type: string }[]; bundles: { valid: boolean }[]; result: { delivered: number; total: number; refused: number } };
+    expect(body.nodes).toHaveLength(3);
+    expect(body.result.delivered).toBe(body.result.total);
+    expect(body.result.refused).toBeGreaterThan(0);
+    expect(body.bundles.some((b) => !b.valid)).toBe(true);
+    expect((await fetch(`${base}/api/mesh/sim?scenario=nope`)).status).toBe(400);
+    expect((await fetch(`${base}/api/mesh/sim?scenario=tamperer&seed=x`)).status).toBe(400);
+  }, 60_000);
 });

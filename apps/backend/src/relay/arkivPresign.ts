@@ -23,7 +23,7 @@ const opt = <T>(v: T | null | undefined) => (v === null || v === undefined || v 
 export async function presignArkivCreate(
   privateKey: string,
   e: IndexInput,
-  tx: { nonce: number; gas: bigint; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint; lifetimeDays: number },
+  tx: { nonce: number; gas: bigint; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint; lifetimeDays: number; salt?: bigint },
 ): Promise<{ raw: Hex; hash: Hex }> {
   const chain = rabdi({ accessKey: "offline" });
   const transport = custom({
@@ -52,7 +52,7 @@ export async function presignArkivCreate(
         kind: e.kind, armId: e.armId, episodeId: e.episodeId, outcome: e.outcome, ts: u64(BigInt(e.endedAtMs)), severity: e.severity,
         headHash: e.headHash, rootHash: opt(e.rootHash), storageTx: opt(e.storageTx), anchorTx: opt(e.anchorTx),
       },
-      { expiration: ExpirationTime.fromDays(tx.lifetimeDays), flags: { readonly: true } },
+      { expiration: ExpirationTime.fromDays(tx.lifetimeDays), flags: { readonly: true }, ...(tx.salt !== undefined ? { salt: tx.salt } : {}) },
       { nonce: tx.nonce, gas: tx.gas, maxFeePerGas: tx.maxFeePerGas, maxPriorityFeePerGas: tx.maxPriorityFeePerGas },
     );
   } catch (err) {

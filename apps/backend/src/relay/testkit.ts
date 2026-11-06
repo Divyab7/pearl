@@ -1,4 +1,4 @@
-/** TESTS ONLY: a robot wallet, a primed pre-sign cache and a bundle input, for the relay tests. */
+/** Tests and the mesh simulator (fake chains only): a robot wallet, a primed pre-sign cache and a bundle input, for the relay tests. */
 import { ethers } from "ethers";
 import { emptyCache, type PresignCache } from "./cache.js";
 import type { BundleInput } from "./bundle.js";

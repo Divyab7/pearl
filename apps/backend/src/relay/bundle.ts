@@ -103,6 +103,8 @@ export interface BundleInput {
   anchorAddress: string | null;
   /** Arkiv entity lifetime; null = no Arkiv tx (INDEX_ARKIV off) */
   arkivLifetimeDays: number | null;
+  /** Arkiv entity-key salt (default: 16 random bytes, as the SDK does); the mesh simulator fixes it for determinism */
+  arkivSalt?: bigint;
 }
 
 /**
@@ -166,7 +168,7 @@ export async function buildBundle(
         endedAtMs: input.endedAtMs, severity: input.severity, headHash: input.headHash.replace(/^0x/, ""),
         rootHash: log.root, storageTx: log.txHash, anchorTx,
       },
-      { nonce: a.nextNonce, gas: GAS_LIMIT.arkiv, ...feesFor("arkiv-rabdi", next), lifetimeDays: input.arkivLifetimeDays },
+      { nonce: a.nextNonce, gas: GAS_LIMIT.arkiv, ...feesFor("arkiv-rabdi", next), lifetimeDays: input.arkivLifetimeDays, ...(input.arkivSalt !== undefined ? { salt: input.arkivSalt } : {}) },
     );
     txs.push({ chain: "arkiv-rabdi", chainId: CHAIN_IDS["arkiv-rabdi"], purpose: "arkiv", nonce: a.nextNonce, hash: r.hash, raw: r.raw });
     a.nextNonce++;

@@ -40,6 +40,7 @@ import { ClaimLedger, type LedgerWriter } from "./claimLedger.js";
 import { RelayQueue, type BundleSubmitter } from "../relay/queue.js";
 import { submitBundle } from "../relay/submit.js";
 import { httpJsonRpc } from "../relay/rpc.js";
+import { meshSimView, SCENARIOS } from "../relay/meshsim.js";
 
 export interface DashboardOptions {
   deviceUrl?: string;
@@ -114,6 +115,26 @@ export function createDashboard(opts: DashboardOptions = {}) {
       return;
     }
     res.json(s);
+  });
+
+  // mesh demo (relay spec §7): a deterministic simulation of robots carrying each other's bundles (fake chains only)
+  app.get("/api/mesh/sim", async (req, res) => {
+    const scenario = typeof req.query.scenario === "string" ? req.query.scenario : "three-owners";
+    const seed = Number(req.query.seed ?? 1);
+    if (!Number.isInteger(seed) || seed < 0 || seed > 1_000_000) {
+      res.status(400).json({ error: "seed must be an integer 0..1000000" });
+      return;
+    }
+    const p = meshSimView(scenario, seed);
+    if (!p) {
+      res.status(400).json({ error: `unknown scenario; one of: ${Object.keys(SCENARIOS).join(", ")}` });
+      return;
+    }
+    try {
+      res.json(await p);
+    } catch (e) {
+      res.status(500).json({ error: errMsg(e) });
+    }
   });
 
   // no CORS: the dashboard page is served same-origin (Vite proxy in development); other origins get nothing
