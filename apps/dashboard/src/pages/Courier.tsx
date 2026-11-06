@@ -5,7 +5,7 @@ import { ARKIV_EXPLORER } from "../components/claims";
 import { Outcome, Severity, shortRun } from "../components/run";
 import { Badge, Callout, Card, Chip, DotLabel, Empty, Icon, Spinner, Stepper, type Step, type Tone } from "../components/ui";
 import {
-  bluetoothSupport, changes, checkPing, collect, CourierError, deliver, FAKE_RELAY, FAKE_ROBOT, findRobot, forget, listCarried, relay,
+  bluetoothSupport, changes, checkPing, checkPings, collect, listServable, readReceipts, type HeardPing, type Receipt, type ServeEntry, CourierError, deliver, FAKE_RELAY, FAKE_ROBOT, findRobot, forget, listCarried, relay,
   startCarrier, stepDone, stepFailed, stepGroup, type BundleCheck, type Carried, type Ping, type RelayStatus, type RelayStep, type RobotInfo,
   type RobotLink, type Support,
 } from "../lib/courier";
@@ -113,6 +113,37 @@ function useRelayList() {
   return { list, down };
 }
 
+/** Announcements the robot heard from any robot, passed hand to hand, each checked here against its signature. */
+function IncidentsNearby({ heard, self }: { heard: HeardPing[]; self?: string }) {
+  const shown = heard.filter((h) => !h.ok || h.p.severity > 0 || h.p.outcome !== "DONE");
+  const refused = heard.filter((h) => !h.ok).length;
+  return (
+    <Card title="Incidents nearby" sub="Short signed announcements robots pass to each other, so news of an incident spreads before its full record arrives.">
+      {shown.length === 0 ? <Empty title="No incidents announced">This robot hasn't heard of any incident from robots around it.</Empty> : (
+        <ul className="list">
+          {shown.map((h) => (
+            <li key={`${h.p.device}|${h.p.episodeId}`} className="list-row">
+              <div>
+                <span className="row">
+                  <code className="mono" title={h.p.episodeId}>Run {shortRun(h.p.episodeId ?? "")}</code>
+                  <Outcome outcome={h.p.outcome} incident={h.p.severity > 0} />
+                  <Severity value={h.p.severity} incident={h.p.severity > 0} />
+                </span>
+                <span className="small muted">{self && h.p.device?.toLowerCase() === self.toLowerCase() ? "this robot" : `robot ${short(h.p.device)}`} · {ago(h.p.ts)}</span>
+              </div>
+              <div className="list-side">
+                {h.ok ? <Badge tone="ok" title="The signature matches the robot it names">✓ Signed by that robot</Badge>
+                  : <Badge tone="bad" title="The signature does not match the robot it names, so it is ignored">✕ Forged · ignored</Badge>}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {refused > 0 && <p className="small muted">{refused} {refused === 1 ? "announcement doesn't" : "announcements don't"} match the robot named in it and {refused === 1 ? "is" : "are"} ignored.</p>}
+    </Card>
+  );
+}
+
 export function Courier() {
   const cfg = useConfig();
   const online = useOnline();
@@ -122,6 +153,9 @@ export function Courier() {
   const [link, setLink] = useState<RobotLink | null>(null);
   const [info, setInfo] = useState<RobotInfo | null>(null);
   const [ping, setPing] = useState<{ p: Ping; ok: boolean } | null>(null);
+  const [serve, setServe] = useState<ServeEntry[]>([]);
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [heard, setHeard] = useState<HeardPing[] | null>(null);
   const [finding, setFinding] = useState(false);
   const [err, setErr] = useState<{ kind: CourierError["kind"]; detail?: string } | null>(null);
   const [lost, setLost] = useState(false);
@@ -147,9 +181,17 @@ export function Courier() {
       linkRef.current = l;
       l.onDisconnect(() => setLost(true));
       l.onPing((p) => void showPing(p));
-      const [i, p] = await Promise.all([l.info(), l.ping()]);
+      const i = await l.info();
+      const p = await l.ping();
+      // one Bluetooth request at a time: listing, then receipts, then the pings it heard
+      const list = await listServable(l, i);
+      const rec = await readReceipts(l);
+      const hp = await checkPings(await l.pings());
       setLink(l);
       setInfo(i);
+      setServe(list);
+      setReceipts(rec);
+      setHeard(hp);
       await showPing(p);
     } catch (e: any) {
       setErr({ kind: e instanceof CourierError ? e.kind : "protocol", detail: e?.message });
@@ -159,7 +201,7 @@ export function Courier() {
   };
 
   const collectOne = async (bundleId: string) => {
-    const p = info?.pending.find((x) => x.bundleId === bundleId);
+    const p = serve.find((x) => x.bundleId === bundleId);
     if (!link || !p) return;
     setResults((r) => {
       const { [bundleId]: _, ...rest } = r;
@@ -181,10 +223,13 @@ export function Courier() {
   };
 
   const collectAll = async () => {
-    for (const p of info?.pending ?? []) if (!carriedIds.has(p.bundleId)) await collectOne(p.bundleId);
+    for (const p of collectable) await collectOne(p.bundleId);
   };
 
   const carriedIds = new Set((carried ?? []).map((c) => c.bundleId));
+  const deliveredIds = new Set(receipts.map((r) => r.bundleId.toLowerCase()));
+  const collectable = serve.filter((p) => !carriedIds.has(p.bundleId) && !deliveredIds.has(p.bundleId.toLowerCase()));
+  const ownCount = serve.filter((p) => p.own).length;
   const carrying = (carried ?? []).filter((c) => c.state === "carrying" || c.state === "sending");
   const settled = (carried ?? []).filter((c) => !(c.state === "carrying" || c.state === "sending"));
   const btOk = support?.ok === true;
@@ -245,16 +290,21 @@ export function Courier() {
                 <div className="card-head">
                   <div>
                     <h3 className="h4">Records waiting to be delivered</h3>
-                    <p className="card-sub">{info.pending.length ? `${info.pending.length} on the robot` : "None: everything on this robot has been delivered."}</p>
+                    <p className="card-sub">
+                      {serve.length === 0 ? "None: everything on this robot has been delivered."
+                        : `${ownCount} of its own${serve.length > ownCount ? `, ${serve.length - ownCount} carried for other robots` : ""}`}
+                      {receipts.length > 0 && ` · knows of ${receipts.length} already delivered`}
+                    </p>
                   </div>
-                  {info.pending.length > 1 && <button type="button" className="btn" onClick={collectAll} disabled={Object.keys(progress).length > 0 || info.pending.every((p) => carriedIds.has(p.bundleId))}>Collect all</button>}
+                  {collectable.length > 1 && <button type="button" className="btn" onClick={collectAll} disabled={Object.keys(progress).length > 0}>Collect all</button>}
                 </div>
-                {info.pending.length > 0 && (
+                {serve.length > 0 && (
                   <ul className="list">
-                    {info.pending.map((p) => {
+                    {serve.map((p) => {
                       const pr = progress[p.bundleId];
                       const res = results[p.bundleId];
                       const have = carriedIds.has(p.bundleId);
+                      const gone = deliveredIds.has(p.bundleId.toLowerCase());
                       return (
                         <li key={p.bundleId} className="list-row">
                           <div style={{ flex: 1 }}>
@@ -263,7 +313,7 @@ export function Courier() {
                               <Outcome outcome={p.outcome} incident={p.severity > 0} />
                               <Severity value={p.severity} incident={p.severity > 0} />
                             </span>
-                            <span className="small muted">{kb(p.size)}</span>
+                            <span className="small muted">{kb(p.size)}{p.own ? "" : ` · carried for robot ${short(p.origin)}, ${p.hops} ${p.hops === 1 ? "hop" : "hops"} so far`}</span>
                             {pr && (
                               <div className="meter" role="progressbar" aria-label={`Collecting run ${shortRun(p.episodeId)}`} aria-valuemin={0} aria-valuemax={pr.total} aria-valuenow={pr.got}>
                                 <div style={{ width: `${Math.min(100, (pr.got / Math.max(1, pr.total)) * 100)}%` }} />
@@ -275,6 +325,7 @@ export function Courier() {
                           <div className="list-side">
                             {pr ? <span className="small muted tabular">{Math.round((pr.got / Math.max(1, pr.total)) * 100)}%</span>
                               : have ? <Badge tone="ok"><Icon name="check" size={12} /> Collected</Badge>
+                                : gone ? <Badge title="Another device already delivered it">Already delivered</Badge>
                                 : <button type="button" className="btn" onClick={() => collectOne(p.bundleId)}><Icon name="download" size={14} /> Collect</button>}
                           </div>
                         </li>
@@ -288,6 +339,7 @@ export function Courier() {
               </div>
             )}
           </Card>
+          {link && heard && <IncidentsNearby heard={heard} self={info?.device} />}
         </div>
 
         <div className="stack">

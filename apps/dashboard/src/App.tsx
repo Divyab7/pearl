@@ -4,6 +4,7 @@ import { href, useRoute } from "./router";
 import { Icon } from "./components/ui";
 import { Courier } from "./pages/Courier";
 import { Insurer } from "./pages/Insurer";
+import { Mesh } from "./pages/Mesh";
 import { MyRobot } from "./pages/MyRobot";
 import { Verify } from "./pages/Verify";
 import { Welcome } from "./pages/Welcome";
@@ -33,12 +34,13 @@ export function App() {
     { id: "insurer", label: "Insurer" },
     { id: "verify", label: "Verify" },
     { id: "courier", label: "Courier" },
+    { id: "mesh", label: "Robot mesh" },
   ];
   const mods = live.state?.modules ?? {};
   // show services only when one is degraded; "off" means switched off on purpose and is not shown
   const degraded = Object.entries(mods).filter(([, v]) => v === "not_configured" || v === "failed");
   useEffect(() => {
-    const names: Record<string, string> = { robot: "My robot", insurer: "Insurer", verify: "Verify", courier: "Courier" };
+    const names: Record<string, string> = { robot: "My robot", insurer: "Insurer", verify: "Verify", courier: "Courier", mesh: "Robot mesh" };
     document.title = names[page] ? `${names[page]} · Pearl` : "Pearl";
   }, [page]);
   return (
@@ -72,7 +74,8 @@ export function App() {
           : page === "insurer" ? <Insurer tick={live.tick} claimId={route[1]} />
             : page === "verify" ? <Verify tick={live.tick} runId={route[1]} />
               : page === "courier" ? <Courier />
-              : <Welcome />}
+                : page === "mesh" ? <Mesh />
+                  : <Welcome />}
       </main>
       {page === "" && <footer className="foot muted small">Pearl · locked on the robot, checkable by anyone</footer>}
     </div>

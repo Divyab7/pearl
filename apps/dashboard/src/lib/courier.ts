@@ -22,14 +22,18 @@ export interface Bundle {
   sig: string;
 }
 export interface PendingEntry { bundleId: string; episodeId: string; size: number; severity: number; outcome: string }
-export interface RobotInfo { v: number; device: string; deviceId?: string; pending: PendingEntry[] }
+export interface RobotInfo { v: number; device: string; deviceId?: string; pending: PendingEntry[]; carrying?: number; delivered?: number }
+/** One bundle a mesh node can serve (§7 "LIST"): its own, or one it carries for another robot. */
+export interface ServeEntry { bundleId: string; origin: string; episodeId: string; size: number; severity: number; outcome: string; hops: number; own: boolean }
+/** A delivery the node has heard of (§7 "RECEIPTS"). */
+export interface Receipt { bundleId: string; anchorTx: string; chainId: number }
 export interface Ping { v: number; device: string; episodeId: string; outcome: string; severity: number; headHash: string; ts: number; sig: string }
 export interface RelayStep { purpose: string; txHash?: string | null; status: string; error?: string | null }
 export interface RelayStatus { bundleId: string; episodeId?: string; device?: string; state: string; steps: RelayStep[]; updatedAt?: string }
 
 export const SERVICE = "5b0e0001-7c2a-4f8e-9a51-70ea21c0b10c";
 const uuid = (n: number) => `5b0e000${n}-7c2a-4f8e-9a51-70ea21c0b10c`;
-export const CHAR = { info: uuid(2), ping: uuid(3), select: uuid(4), data: uuid(5), ack: uuid(6) } as const;
+export const CHAR = { info: uuid(2), ping: uuid(3), select: uuid(4), data: uuid(5), ack: uuid(6), pings: uuid(7) } as const;
 export const NAME_PREFIX = "Pearl-";
 
 /** Chains a bundle may target, by chainId (§1: relayers reject unexpected chain ids). */
@@ -156,7 +160,9 @@ export interface RobotLink {
   connected(): boolean;
   info(): Promise<RobotInfo>;
   ping(): Promise<Ping | null>;
-  /** Downloads one bundle's JSON bytes; resumes from what it already has after a dropped link. */
+  /** Recent pings this robot heard from any robot (§7 `pings`); unchecked as read. */
+  pings(): Promise<Ping[]>;
+  /** Downloads one bundle's JSON bytes (or, with "LIST"/"RECEIPTS" as the id, that listing); resumes from what it already has after a dropped link. */
   download(bundleId: string, size: number, onProgress: (got: number, total: number) => void): Promise<Uint8Array>;
   ack(msg: { bundleId: string; state: string; steps?: RelayStep[] }): Promise<void>;
   onDisconnect(cb: () => void): void;
@@ -187,6 +193,7 @@ async function downloadWith(
   size: number,
   onProgress: (got: number, total: number) => void,
 ): Promise<Uint8Array> {
+  if (bundleId === "LIST" || bundleId === "RECEIPTS") partial.delete(bundleId); // listings are always read fresh
   const parts = partial.get(bundleId) ?? [];
   partial.set(bundleId, parts);
   let got = parts.reduce((n, p) => n + p.length, 0);
@@ -265,6 +272,15 @@ export async function findRobot(): Promise<RobotLink> {
         return parseJson(await read(chars.ping)) as Ping | null;
       } catch {
         return null;
+      }
+    },
+    pings: async () => {
+      if (!chars.pings) return [];
+      try {
+        const v = parseJson(await read(chars.pings));
+        return Array.isArray(v) ? v : [];
+      } catch {
+        return [];
       }
     },
     download: (id, size, onProgress) =>
@@ -482,8 +498,45 @@ export function startCarrier() {
   }, 30_000);
 }
 
-/** Collects one pending bundle from a robot: download, parse, check, then carry it. */
-export async function collect(link: RobotLink, p: PendingEntry, onProgress: (got: number, total: number) => void): Promise<BundleCheck> {
+/** Everything a robot can serve: own outbox and bundles it carries for others (§7 LIST). A robot without mesh
+ *  support answers LIST with nothing or an error; its own pending list from `info` is used then. */
+export async function listServable(link: RobotLink, info: RobotInfo): Promise<ServeEntry[]> {
+  const own = (): ServeEntry[] => info.pending.map((p) => ({ ...p, origin: info.device, hops: 0, own: true }));
+  try {
+    const v = parseJson(await link.download("LIST", 0, () => {}));
+    if (!Array.isArray(v) || (v.length === 0 && info.pending.length > 0)) return own();
+    return (v as ServeEntry[]).sort((a, b) => b.severity - a.severity || Number(b.own) - Number(a.own));
+  } catch {
+    return own();
+  }
+}
+
+/** Deliveries the robot has heard of (§7 RECEIPTS); empty when it has none or does not support them. */
+export async function readReceipts(link: RobotLink): Promise<Receipt[]> {
+  try {
+    const v = parseJson(await link.download("RECEIPTS", 0, () => {}));
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+
+export interface HeardPing { p: Ping; ok: boolean }
+/** Checks each gossiped ping; newest first, one per run. */
+export async function checkPings(list: Ping[]): Promise<HeardPing[]> {
+  const seen = new Set<string>();
+  const out: HeardPing[] = [];
+  for (const p of [...list].sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0))) {
+    const k = `${p.device?.toLowerCase()}|${p.episodeId}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push({ p, ok: await checkPing(p) });
+  }
+  return out;
+}
+
+/** Collects one bundle from a robot (its own or one it carries): download, parse, check, then carry it. */
+export async function collect(link: RobotLink, p: PendingEntry & { origin?: string; hops?: number }, onProgress: (got: number, total: number) => void): Promise<BundleCheck> {
   const bytes = await link.download(p.bundleId, p.size, onProgress);
   let bundle: Bundle;
   const json = dec.decode(bytes);
@@ -493,6 +546,10 @@ export async function collect(link: RobotLink, p: PendingEntry, onProgress: (got
     throw new CourierError("invalid", "The record arrived incomplete. Try collecting it again.");
   }
   const check = await checkBundle(bundle, p.bundleId);
+  if (p.origin && !sameAddr(p.origin, bundle.device)) {
+    check.ok = false;
+    check.checks.push({ name: "From the robot listed", ok: false, detail: "made by a different robot than announced" });
+  }
   if (check.ok) await carry(bundle, json, check.bundleId, link.name, link);
   return check;
 }
@@ -513,16 +570,21 @@ export function stepFailed(status: string) {
 
 // A throwaway key that only signs the fake robot's sample bundle; it holds nothing and is never used on a real robot.
 const FAKE_KEY = "0x8d3c1e1a6f2b4d5e9c7a0b1f2e3d4c5b6a79881726354453627180918a7b6c5d" as const;
+// A second practice robot (another owner) whose bundle the first one carries; a third whose ping is forged.
+const FAKE_KEY_2 = "0x3b9f0c6e2a417d58c1e09b7a6f5d4c3b2a1908f7e6d5c4b3a29180f7e6d5c4b3" as const;
+const FAKE_KEY_3 = "0x5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b" as const;
 
-async function sampleBundles(): Promise<{ bundle: Bundle; json: string; id: string }[]> {
+type Sample = { bundle: Bundle; json: string; id: string; own: boolean; hops: number };
+async function sampleBundles(): Promise<Sample[]> {
   const { privateKeyToAccount } = await import("viem/accounts");
-  const acct = privateKeyToAccount(FAKE_KEY);
   const runs = [
-    { episodeId: "ep_20261106093012_c4e1", outcome: "TRIPPED", incident: true, severity: 2, nonce: 41, ark: 7, frames: 3 },
-    { episodeId: "ep_20261106095540_1a9f", outcome: "DONE", incident: false, severity: 0, nonce: 46, ark: 8, frames: 1 },
+    { key: FAKE_KEY, episodeId: "ep_20261106093012_c4e1", outcome: "TRIPPED", incident: true, severity: 2, nonce: 41, ark: 7, frames: 3, hops: 0 },
+    { key: FAKE_KEY, episodeId: "ep_20261106095540_1a9f", outcome: "DONE", incident: false, severity: 0, nonce: 46, ark: 8, frames: 1, hops: 0 },
+    { key: FAKE_KEY_2, episodeId: "ep_20261106081205_7d02", outcome: "TRIPPED", incident: true, severity: 3, nonce: 12, ark: 3, frames: 2, hops: 1 },
   ];
-  const out = [];
+  const out: Sample[] = [];
   for (const r of runs) {
+    const acct = privateKeyToAccount(r.key);
     const fileBytes = (n: number, seed: number) => Uint8Array.from({ length: n }, (_, i) => (i * 31 + seed * 17) & 0xff);
     const files: BundleFile[] = [{ role: "log", root: "", size: 8700, data: "" }, ...Array.from({ length: r.frames }, (_, i) => ({ role: "frame", idx: 3 + i * 4, root: "", size: 6000, data: "" }))];
     for (const [i, f] of files.entries()) {
@@ -549,7 +611,7 @@ async function sampleBundles(): Promise<{ bundle: Bundle; json: string; id: stri
     };
     const id = `0x${sha256HexPure(canonicalize(unsigned))}`;
     const bundle: Bundle = { ...unsigned, sig: await acct.signMessage({ message: `pearl/bundle/v1|${id}` }) };
-    out.push({ bundle, json: canonicalize(bundle), id });
+    out.push({ bundle, json: canonicalize(bundle), id, own: r.key === FAKE_KEY, hops: r.hops });
   }
   return out;
 }
@@ -559,9 +621,22 @@ async function fakeRobot(): Promise<RobotLink> {
   const samples = await sampleBundles();
   const { privateKeyToAccount } = await import("viem/accounts");
   const acct = privateKeyToAccount(FAKE_KEY);
-  const last = samples[0].bundle;
-  const pingBody = { v: 1, device: acct.address, episodeId: last.episodeId, outcome: last.summary.outcome, severity: last.summary.severity, headHash: last.summary.headHash, ts: Date.parse("2026-11-06T09:31:40Z") };
-  const ping: Ping = { ...pingBody, sig: await acct.signMessage({ message: pingMessage(pingBody) }) };
+  const signPing = async (key: Hex, b: Bundle, ts: number, signer: Hex = key): Promise<Ping> => {
+    const body = { v: 1, device: privateKeyToAccount(key).address, episodeId: b.episodeId, outcome: b.summary.outcome, severity: b.summary.severity, headHash: b.summary.headHash, ts };
+    return { ...body, sig: await privateKeyToAccount(signer).signMessage({ message: pingMessage(body) }) };
+  };
+  const ping = await signPing(FAKE_KEY, samples[0].bundle, Date.parse("2026-11-06T09:31:40Z"));
+  const forged = { ...samples[2].bundle, episodeId: "ep_20261106090044_e5b8", summary: { ...samples[2].bundle.summary, severity: 3 } };
+  const heard: Ping[] = [
+    ping,
+    await signPing(FAKE_KEY_2, samples[2].bundle, Date.parse("2026-11-06T08:12:51Z")),
+    await signPing(FAKE_KEY_3, forged, Date.parse("2026-11-06T09:00:44Z"), FAKE_KEY), // claims robot 3, signed by another key
+  ];
+  const listing = samples.map((s) => ({
+    bundleId: s.id, origin: s.bundle.device, episodeId: s.bundle.episodeId, size: enc.encode(s.json).length,
+    severity: s.bundle.summary.severity, outcome: s.bundle.summary.outcome, hops: s.hops, own: s.own,
+  }));
+  const receipts: Receipt[] = [{ bundleId: `0x${sha256HexPure("delivered-by-a-phone")}`, anchorTx: `0x${sha256HexPure("anchor-tx")}`, chainId: 16602 }];
   let connected = true;
   let dropOnce = flags.get("fakeRobot") === "drop";
   let sel: { bytes: Uint8Array; off: number } | null = null;
@@ -570,22 +645,23 @@ async function fakeRobot(): Promise<RobotLink> {
     name: `Pearl-${acct.address.slice(-4)}`,
     connected: () => connected,
     info: async () => ({
-      v: 1, device: acct.address, deviceId: "pearl-arm-01",
-      pending: samples.map((s) => ({ bundleId: s.id, episodeId: s.bundle.episodeId, size: enc.encode(s.json).length, severity: s.bundle.summary.severity, outcome: s.bundle.summary.outcome })),
+      v: 1, device: acct.address, deviceId: "pearl-arm-01", carrying: listing.filter((l) => !l.own).length, delivered: receipts.length,
+      pending: listing.filter((l) => l.own).map(({ bundleId, episodeId, size, severity, outcome }) => ({ bundleId, episodeId, size, severity, outcome })),
     }),
     ping: async () => ping,
+    pings: async () => heard,
     download: (id, size, onProgress) =>
       downloadWith({
         select: async (s) => {
           const [bid, off] = s.split(" ");
-          const found = samples.find((x) => x.id === bid);
-          if (!found) throw new CourierError("protocol", "unknown bundle");
-          sel = { bytes: enc.encode(found.json), off: Number(off) };
+          const body = bid === "LIST" ? JSON.stringify(listing) : bid === "RECEIPTS" ? JSON.stringify(receipts) : samples.find((x) => x.id === bid)?.json;
+          if (body === undefined) throw new CourierError("protocol", "unknown bundle");
+          sel = { bytes: enc.encode(body), off: Number(off) };
         },
         read: async () => {
           await sleep(12);
           if (!connected || !sel) throw Object.assign(new Error("GATT Server is disconnected."), { name: "NetworkError" });
-          if (dropOnce && sel.off > sel.bytes.length / 2) {
+          if (dropOnce && sel.bytes.length > 4096 && sel.off > sel.bytes.length / 2) {
             dropOnce = false;
             connected = false;
             throw Object.assign(new Error("GATT Server is disconnected."), { name: "NetworkError" });
