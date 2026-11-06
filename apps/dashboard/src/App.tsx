@@ -14,6 +14,7 @@ import { Offline } from "./pages/Offline";
 import { Proof } from "./pages/Proof";
 import { Account } from "./pages/Account";
 import { Kit } from "./pages/Kit";
+import { Landing } from "./pages/Landing"; // LANDING-TEMP: APP agent wires #/ → Landing at merge
 import "./styles.css";
 
 /** Services that can be degraded, in plain words. */
@@ -39,7 +40,14 @@ const NAV: { page: Route["page"]; label: string; href: string }[] = [
   { page: "offline", label: PAGE.offline, href: to.offline() },
 ];
 
+// LANDING-TEMP (landing worktree only): #/ shows the public Landing without the app shell. The APP agent owns the
+// real wiring (router + shell) and replaces this at merge.
 export function App() {
+  const route = useRouteInfo();
+  return route.page === "home" ? <Landing /> : <AppShell />;
+}
+
+function AppShell() {
   const live = useLive();
   const route = useRouteInfo();
   const [theme, toggle] = useTheme();

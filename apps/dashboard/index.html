@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pearl</title>
+    <!-- theme before first paint (no dark flash); light is the default -->
+    <script>document.documentElement.dataset.theme = localStorage.getItem("pearl.theme") || "light";</script>
+    <meta name="description" content="Pearl is a tamper-proof black box for robots: evidence insurers can check, sealed on the robot and recorded on 0G." />
+    <meta name="theme-color" content="#faf8f4" />
+    <!-- landing hero image (LCP on #/) -->
+    <link rel="preload" as="image" type="image/webp" href="/img/factory-1600.webp" imagesrcset="/img/factory-800.webp 800w, /img/factory-1600.webp 1600w" imagesizes="(max-width: 900px) 100vw, 600px" fetchpriority="high" />
   </head>
   <body>
     <div id="root"></div>
