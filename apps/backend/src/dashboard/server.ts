@@ -37,6 +37,9 @@ import { zerobotFromEnv } from "../zerobot/zerobot.js";
 import { errMsg } from "../shared/util.js";
 import { CLAIM_SCHEMA, claimArkivConfigFromEnv, claimReaderConfigured, claimWriterConfigured, createClaimRecord, listClaimRecords, patchClaimRecord } from "../index/arkivClaims.js";
 import { ClaimLedger, type LedgerWriter } from "./claimLedger.js";
+import { RelayQueue, type BundleSubmitter } from "../relay/queue.js";
+import { submitBundle } from "../relay/submit.js";
+import { httpJsonRpc } from "../relay/rpc.js";
 
 export interface DashboardOptions {
   deviceUrl?: string;
@@ -59,6 +62,10 @@ export interface DashboardOptions {
   /** Overrides the Arkiv claim-record read (tests). */
   listClaimRecords?: typeof listClaimRecords;
   claimLedgerFile?: string;
+  /** Overrides the bundle relay's submitter (tests: fake chains); default: the §2 relayer against the real RPCs. */
+  relaySubmit?: BundleSubmitter;
+  /** Where relayed bundles are kept (default data/relay-bundles, or RELAY_BUNDLES_DIR). */
+  relayBundlesDir?: string;
 }
 
 export function createDashboard(opts: DashboardOptions = {}) {
@@ -71,6 +78,44 @@ export function createDashboard(opts: DashboardOptions = {}) {
   const zbChain = zerobotFromEnv();
 
   const app = express();
+
+  // ---------------------------------------------------------------- offline bundle relay (relay spec §3)
+  // A robot without internet (or a courier page carrying its bundles) POSTs a sealed bundle; the laptop submits the
+  // robot's own pre-signed txs and uploads the locked files. No key, no funds, no trust: the bundle verifies itself.
+  // Registered before the global 64 kB JSON parser: bundles carry the locked files, so this one route takes 2 MB.
+  const relaySubmit: BundleSubmitter = opts.relaySubmit ?? ((b, steps, onStep) => submitBundle(b, { rpc: httpJsonRpc(f) }, { steps, onStep }));
+  const relayQueue = new RelayQueue(relaySubmit, opts.relayBundlesDir);
+  const bundleParser = express.json({ limit: "2mb" });
+  app.post(
+    "/api/relay/bundle",
+    (req: Request, res: Response, next: NextFunction) =>
+      bundleParser(req, res, (err?: unknown) => {
+        if (!err) return next();
+        const e = err as { status?: number; message?: string };
+        res.status(e.status === 413 ? 413 : 400).json({ error: e.status === 413 ? "bundle larger than 2 MB" : `body is not JSON: ${e.message ?? ""}` });
+      }),
+    async (req: Request, res: Response) => {
+      try {
+        const r = await relayQueue.accept(req.body);
+        res.status(r.status).json(r.body);
+      } catch (e) {
+        res.status(400).json({ error: errMsg(e) });
+      }
+    },
+  );
+  app.get("/api/relay/bundles", (req, res) => {
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit ?? 50) || 50));
+    res.json({ items: relayQueue.list(limit) });
+  });
+  app.get("/api/relay/bundles/:bundleId", (req, res) => {
+    const s = relayQueue.get(String(req.params.bundleId).toLowerCase());
+    if (!s) {
+      res.status(404).json({ error: "unknown bundle" });
+      return;
+    }
+    res.json(s);
+  });
+
   // no CORS: the dashboard page is served same-origin (Vite proxy in development); other origins get nothing
   app.use(express.json({ limit: "64kb" }));
 
@@ -139,6 +184,7 @@ export function createDashboard(opts: DashboardOptions = {}) {
   app.post("/api/episode/start", gate, passthrough);
   app.use("/api/control", gate, passthrough);
   app.use("/api/sim", gate, passthrough);
+  app.get("/api/outbox", passthrough); // the robot outbox: offline-relay bundles waiting for a carrier
   app.post("/api/zerobot/dispatch", gate, passthrough);
   app.use("/api/zerobot", passthrough);
   app.use("/api/camera", passthrough);
@@ -841,5 +887,5 @@ export function createDashboard(opts: DashboardOptions = {}) {
     return () => ac.abort();
   }
 
-  return { app, deviceUrl, watchForRelays };
+  return { app, deviceUrl, watchForRelays, relayQueue };
 }

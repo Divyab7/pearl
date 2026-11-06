@@ -109,3 +109,27 @@ describe("zerobot command → episode → receipt → verifier", () => {
     expect(v2.result).toBe("REJECTED");
   }, 30_000);
 });
+
+describe("internet drill (offline relay)", () => {
+  it("POST /api/sim/net toggles the robot's internet and /api/state reports it", async () => {
+    const arm = loadArmConfig();
+    const ctx = await createApp({ arm, device: new SimArm(arm, { tickMs: 10 }), writeFiles: false, publish: false, relay: { discover: async () => null } });
+    const s = ctx.app.listen(0);
+    await new Promise((r) => s.once("listening", r));
+    const base = `http://127.0.0.1:${(s.address() as import("node:net").AddressInfo).port}`;
+    try {
+      const st = async () => (await (await fetch(`${base}/api/state`)).json()) as { net: string; outbox: { pending: number } };
+      expect((await st()).net).toBe("online");
+      const post = (body: unknown) => fetch(`${base}/api/sim/net`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      expect((await post({ online: "no" })).status).toBe(400);
+      const r = await post({ online: false });
+      expect(await r.json()).toMatchObject({ ok: true, net: "offline" });
+      expect(await st()).toMatchObject({ net: "offline", outbox: { pending: expect.any(Number) } });
+      await post({ online: true });
+      expect((await st()).net).toBe("online");
+    } finally {
+      s.close();
+      await ctx.stop();
+    }
+  });
+});

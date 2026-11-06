@@ -25,6 +25,36 @@ import {
   type ZerobotChain,
 } from "../zerobot/zerobot.js";
 import { errMsg } from "../shared/util.js";
+import { ethers } from "ethers";
+import type { RobotRelay } from "../relay/robot.js";
+import type { BundleInput } from "../relay/bundle.js";
+
+/** Everything the offline bundle needs from a closed run: the locked file, the locked frames, public labels. */
+export function bundleInputOf(log: EpisodeLog, sealed: SealedEpisode): BundleInput {
+  const frames = log.records.flatMap((r) => {
+    if (r.kind !== "decision" || !r.frameRoot) return [];
+    try {
+      return [{ idx: r.idx, bytes: new Uint8Array(readFileSync(framePath(log.episodeId, r.idx))) }];
+    } catch {
+      return [];
+    }
+  });
+  const anchorAddress = process.env.OG_ANCHOR_ADDRESS ?? "";
+  return {
+    episodeId: log.episodeId,
+    armId: sealed.armId,
+    endedAtMs: Date.parse(sealed.endedAt),
+    outcome: log.outcome,
+    incident: sealed.incident,
+    severity: sealed.severity,
+    headHash: log.headHash,
+    requestIds: requestIdsOf(log),
+    log: sealedBytes(sealed),
+    frames,
+    anchorAddress: envFlag("OG_CHAIN_ANCHOR", "on") && ethers.isAddress(anchorAddress) ? anchorAddress : null,
+    arkivLifetimeDays: envFlag("INDEX_ARKIV", "on") ? arkivConfigFromEnv().lifetimeDays : null,
+  };
+}
 
 /** The zerobot command an episode answers, from its episode_start record (null for locally started episodes). */
 export function zerobotOriginOf(log: EpisodeLog): { robotId: string; nonce: number } | null {
@@ -53,7 +83,32 @@ export async function publishEpisode(
   /** The app passes its zerobot connection; without one, the env config is used. */
   zerobotChain?: () => ZerobotChain,
   /** rev 5: the device's own key signs and pays for every write: 0G Storage, the 0G Chain anchor, Arkiv. */
-  opts: { devicePrivateKey?: string; skipStorage?: boolean } = {},
+  opts: { devicePrivateKey?: string; skipStorage?: boolean; relay?: RobotRelay } = {},
+): Promise<EpisodeMeta> {
+  // 0. Offline relay (relay spec): without internet the run is packed into a sealed bundle of the robot's own
+  // pre-signed txs for the laptop relay; with internet, older bundles go first so nonces stay in order.
+  if (opts.relay && !opts.skipStorage) {
+    if (!(await opts.relay.online())) {
+      const m = await opts.relay.packOffline(bundleInputOf(log, sealed));
+      notify(m);
+      return m;
+    }
+    await opts.relay.flush().catch((e) => console.error("outbox flush:", errMsg(e)));
+  }
+  try {
+    return await publishDirect(log, sealed, notify, zerobotChain, opts);
+  } finally {
+    // the robot is online: remember nonces, fees and the storage price for the next offline run
+    if (opts.relay && !opts.skipStorage) await opts.relay.refresh().catch(() => {});
+  }
+}
+
+async function publishDirect(
+  log: EpisodeLog,
+  sealed: SealedEpisode,
+  notify: (m: EpisodeMeta) => void,
+  zerobotChain: (() => ZerobotChain) | undefined,
+  opts: { devicePrivateKey?: string; skipStorage?: boolean },
 ): Promise<EpisodeMeta> {
   // 1. 0G Storage
   const sc = storageConfigFromEnv(opts.devicePrivateKey);

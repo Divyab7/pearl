@@ -31,6 +31,10 @@ import { SseHub } from "./sse.js";
 import { ZerobotOperator } from "./zerobot/operator.js";
 import { API_RUN_EPISODE, txLink, ZEROBOT_MISSING, zerobotConfigFromEnv, zerobotFromEnv, type ZerobotChain } from "./zerobot/zerobot.js";
 import { errMsg } from "./shared/util.js";
+import { RobotRelay } from "./relay/robot.js";
+import { discoverRelay } from "./relay/mdns.js";
+import { galileoRpc } from "./og/config.js";
+import { httpJsonRpc } from "./relay/rpc.js";
 
 export interface AppOptions {
   /** zerobot chain access (tests pass a fake); default: real contracts when ROBOT_ZEROBOT=on and configured. */
@@ -44,6 +48,8 @@ export interface AppOptions {
   /** Tests only: run the publish pipeline without the networked 0G Storage upload. */
   skipStorage?: boolean;
   onEpisodeClosed?: (log: EpisodeLog, sealed: SealedEpisode | null) => Promise<void> | void;
+  /** Offline relay overrides (tests): how the robot finds the laptop relay, checks its internet, reaches the chains. */
+  relay?: Partial<Pick<import("./relay/robot.js").RobotRelayDeps, "discover" | "online" | "fetchImpl" | "rpc" | "submitDeps" | "pollMs" | "pollTimeoutMs" | "cacheDir" | "outbox">>;
 }
 
 const simDeviceId = () => process.env.SIM_DEVICE_ID ?? "sim-arm-01";
@@ -86,6 +92,27 @@ export async function createApp(opts: AppOptions = {}) {
     : (process.env.DEVICE_ID ?? (mj ? "mujoco-arm-01" : "esp32-s3-01"));
   const deviceWallet = loadDeviceWallet(deviceIdNow);
 
+  // offline relay: the sim/mujoco drill can cut the robot's internet; otherwise "online" = Galileo answers quickly
+  let netOnline = true;
+  const probe = httpJsonRpc(opts.relay?.fetchImpl ?? fetch, 3000);
+  const relay = new RobotRelay({
+    wallet: deviceWallet,
+    online: async () => {
+      if (!netOnline) return false;
+      if (opts.relay?.online) return opts.relay.online();
+      return probe(galileoRpc(), "eth_chainId").then(() => true, () => false);
+    },
+    discover: opts.relay?.discover ?? (() => discoverRelay()),
+    notify: (m) => sse.send("meta", m),
+    ...(opts.relay?.fetchImpl ? { fetchImpl: opts.relay.fetchImpl } : {}),
+    ...(opts.relay?.rpc ? { rpc: opts.relay.rpc } : {}),
+    ...(opts.relay?.submitDeps ? { submitDeps: opts.relay.submitDeps } : {}),
+    ...(opts.relay?.pollMs !== undefined ? { pollMs: opts.relay.pollMs } : {}),
+    ...(opts.relay?.pollTimeoutMs !== undefined ? { pollTimeoutMs: opts.relay.pollTimeoutMs } : {}),
+    ...(opts.relay?.cacheDir ? { cacheDir: opts.relay.cacheDir } : {}),
+    ...(opts.relay?.outbox ? { outbox: opts.relay.outbox } : {}),
+  });
+
   const orch = new Orchestrator({
     deviceSigner: signerFor(deviceWallet),
     device,
@@ -103,7 +130,7 @@ export async function createApp(opts: AppOptions = {}) {
       sse.send("episode", { episodeId: log.episodeId, outcome: log.outcome, headHash: log.headHash });
       if (opts.publish !== false && sealed) {
         // storage, anchor, index and receipt run after the episode, off the control path; the dashboard sees each result
-        void publishEpisode(log, sealed, (meta) => sse.send("meta", meta), zbChain ? () => zbChain : undefined, { devicePrivateKey: deviceWallet.privateKey, ...(opts.skipStorage ? { skipStorage: true } : {}) })
+        void publishEpisode(log, sealed, (meta) => sse.send("meta", meta), zbChain ? () => zbChain : undefined, { devicePrivateKey: deviceWallet.privateKey, relay, ...(opts.skipStorage ? { skipStorage: true } : {}) })
           .catch((e) => console.error("publish failed:", e));
       }
       await opts.onEpisodeClosed?.(log, sealed);
@@ -165,6 +192,8 @@ export async function createApp(opts: AppOptions = {}) {
     scene: sceneNow(),
     cameraKind: camera.kind,
     cut0g,
+    net: netOnline ? "online" : "offline",
+    outbox: { pending: relay.pending() },
     heartbeatPaused: heartbeat.isPaused,
     modules: {
       ogChainAnchor: process.env.OG_CHAIN_ANCHOR ?? "on",
@@ -224,6 +253,29 @@ export async function createApp(opts: AppOptions = {}) {
     cut0g = on;
     sse.send("cut0g", { on });
     res.json({ ok: true, cut0g });
+  });
+
+  // drill: cut or restore the robot's internet (sim/mujoco only). Offline runs are packed into relay bundles; on
+  // reconnect the robot flushes its outbox itself before any new direct publish.
+  app.post("/api/sim/net", (req: Request, res: Response) => {
+    if (!sim && !mj) {
+      res.status(404).json({ error: "the internet drill exists only with DEVICE=sim or DEVICE=mujoco" });
+      return;
+    }
+    const online = (req.body as { online?: unknown } | undefined)?.online;
+    if (typeof online !== "boolean") {
+      res.status(400).json({ error: "body must be {online: true|false}" });
+      return;
+    }
+    netOnline = online;
+    sse.send("net", { net: online ? "online" : "offline" });
+    void relay.deliver().catch((e) => console.error("outbox:", errMsg(e)));
+    res.json({ ok: true, net: online ? "online" : "offline", outbox: { pending: relay.pending() } });
+  });
+  app.get("/api/outbox", (_req, res) => {
+    res.json({
+      items: relay.outbox.list().map((e) => ({ bundleId: e.bundleId, episodeId: e.episodeId, state: e.state, via: e.via, relayUrl: e.relayUrl ?? null, error: e.error ?? null, createdAt: e.createdAt, updatedAt: e.updatedAt })),
+    });
   });
 
   app.post("/api/sim/inject", async (req: Request, res: Response) => {
@@ -445,12 +497,26 @@ export async function createApp(opts: AppOptions = {}) {
     },
     zerobot: zbOperator,
     deviceAddress: deviceWallet.address,
+    relay,
+    setNetOnline(v: boolean) {
+      netOnline = v;
+    },
     async startDevice() {
       await device.connect();
       heartbeat.start();
+      // retry loop for bundles waiting for a carrier; when online, prime the pre-sign cache and flush leftovers
+      if (opts.publish !== false && !opts.skipStorage) {
+        relay.start();
+        void relay.online().then(async (on) => {
+          if (!on) return;
+          await relay.refresh().catch(() => {});
+          await relay.flush().catch(() => {});
+        });
+      }
       await zbOperator?.start();
     },
     async stop() {
+      relay.stop();
       zbOperator?.stop();
       heartbeat.stop();
       await device.close();
