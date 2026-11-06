@@ -6,13 +6,12 @@ import { to, useRouteInfo, type Route } from "./router";
 import { Icon, Tabs } from "./components/ui";
 import { EmptyState, PageHeader, StatusPill } from "./components/blocks";
 import { useAccount, useInsurerSession } from "./lib/account";
-import { OFFLINE_DETAIL, PAGE, ROBOT_LINK } from "./lib/words";
-import { Courier } from "./pages/Courier";
+import { PAGE, ROBOT_LINK } from "./lib/words";
+import { Home } from "./pages/Home";
 import { Insurer } from "./pages/Insurer";
-import { Mesh } from "./pages/Mesh";
 import { MyRobot } from "./pages/MyRobot";
 import { Verify } from "./pages/Verify";
-import { Welcome } from "./pages/Welcome";
+import { Offline } from "./pages/Offline";
 import { Kit } from "./pages/Kit";
 import "./styles.css";
 
@@ -109,7 +108,7 @@ export function App() {
 function Page({ route, live }: { route: Route; live: ReturnType<typeof useLive> }) {
   switch (route.page) {
     case "home":
-      return <Welcome />;
+      return <Home live={live} />;
     case "robot":
       return route.runId || route.runs ? <MyRobot live={live} sub="runs" runId={route.runId} /> : <MyRobot live={live} sub="live" />;
     case "proof":
@@ -117,7 +116,7 @@ function Page({ route, live }: { route: Route; live: ReturnType<typeof useLive> 
     case "insurance":
       return <InsuranceInterim live={live} side={route.side} claimId={route.claimId} />;
     case "offline":
-      return <OfflineInterim section={route.section} />;
+      return <Offline section={route.section} />;
     case "account":
       return (
         <div className="page">
@@ -149,22 +148,6 @@ function InsuranceInterim({ live, side, claimId }: { live: ReturnType<typeof use
       {side === "owner"
         ? <div className="page"><MyRobot live={live} sub="claims" bare /></div>
         : <Insurer tick={live.tick} claimId={claimId} />}
-    </>
-  );
-}
-
-function OfflineInterim({ section }: { section?: "courier" | "mesh" }) {
-  useEffect(() => {
-    if (section) document.getElementById(`offline-${section}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [section]);
-  return (
-    <>
-      <div className="page interim-head">
-        <PageHeader title={PAGE.offline} description={OFFLINE_DETAIL}
-          actions={<><a className="btn" href={to.offline("courier")}>Carry by phone or laptop</a><a className="btn" href={to.offline("mesh")}>Robots carry each other's</a></>} />
-      </div>
-      <div id="offline-courier" style={{ scrollMarginTop: 72 }}><Courier /></div>
-      <div id="offline-mesh" style={{ scrollMarginTop: 72 }}><Mesh /></div>
     </>
   );
 }
