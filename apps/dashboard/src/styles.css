@@ -550,3 +550,12 @@ fieldset.plain:disabled .btn { opacity: .45; cursor: not-allowed; }
 .small-btn, .btn.small-btn { min-height: 32px; padding: 6px 10px; font-size: 13px; }
 .btn.icon-only { min-height: 28px; }
 @media (pointer: coarse) { .btn { min-height: 44px; } .small-btn, .btn.small-btn { min-height: 40px; } .btn.icon-only { min-height: 36px; min-width: 36px; } }
+/* live table camera (MuJoCo render or the real camera) */
+.cam { margin: 0; position: relative; }
+.cam .live-cam { aspect-ratio: 4 / 3; object-fit: cover; background: var(--card); }
+.cam-wait { aspect-ratio: 4 / 3; display: grid; place-items: center; border: 1px solid var(--border); border-radius: var(--r2); background: var(--card); color: var(--text-2); }
+.cam-tags { position: absolute; left: 10px; top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+.cam-tags > span { font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 999px; background: rgba(10, 12, 15, .72); color: #e9ecf1; backdrop-filter: blur(4px); text-transform: capitalize; }
+.cam-live { display: inline-flex; align-items: center; gap: 6px; }
+.cam-live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #ff4d4f; box-shadow: 0 0 0 3px rgba(255, 77, 79, .25); }
+.cam-live.off::before { background: #8a93a3; box-shadow: none; }

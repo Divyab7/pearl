@@ -73,15 +73,47 @@ export function MyRobot({ live, sub, runId }: { live: any; sub?: string; runId?:
 }
 
 // ---------------------------------------------------------------- Live
-function LiveCamera() {
-  const [t, setT] = useState(Date.now());
-  const [ok, setOk] = useState(true);
+/** The robot's table camera, refreshed a few times a second (fetched off-screen, swapped in when loaded: no flicker). */
+function LiveCamera({ label, phase }: { label: string; phase?: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [down, setDown] = useState(false);
   useEffect(() => {
-    const id = setInterval(() => setT(Date.now()), 500);
-    return () => clearInterval(id);
+    let alive = true;
+    let timer: any;
+    let last: string | null = null;
+    const next = async () => {
+      const t0 = Date.now();
+      try {
+        const r = await fetch(`/api/camera/live.jpg?t=${t0}`, { cache: "no-store" });
+        if (!r.ok) throw new Error(String(r.status));
+        const url = URL.createObjectURL(await r.blob());
+        if (!alive) return URL.revokeObjectURL(url);
+        setSrc(url);
+        setDown(false);
+        if (last) URL.revokeObjectURL(last);
+        last = url;
+      } catch {
+        if (alive) setDown(true);
+      }
+      if (alive) timer = setTimeout(next, Math.max(60, 250 - (Date.now() - t0)));
+    };
+    void next();
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+      if (last) URL.revokeObjectURL(last);
+    };
   }, []);
-  if (!ok) return <p className="muted small">Camera unavailable.</p>;
-  return <img className="live-cam" alt="Live table camera" src={`/api/camera/live.jpg?t=${t}`} onError={() => setOk(false)} />;
+  return (
+    <figure className="cam">
+      {src ? <img className="live-cam" alt="Live view of the robot's table" src={src} /> : <div className="cam-wait"><Spinner /> Connecting to the camera…</div>}
+      <figcaption className="cam-tags">
+        <span className={`cam-live ${down ? "off" : ""}`}>{down ? "Camera offline" : "Live"}</span>
+        <span className="cam-tag">{label}</span>
+        {phase && phase !== "IDLE" && <span className="cam-tag">{phase.replaceAll("_", " ").toLowerCase()}</span>}
+      </figcaption>
+    </figure>
+  );
 }
 
 const JOINTS = ["Base", "Shoulder", "Elbow", "Gripper"];
@@ -100,6 +132,7 @@ function LiveTab({ live }: { live: any }) {
       .finally(() => setBusy(""));
   };
   const sim = state?.deviceKind === "sim" || state?.deviceKind === "mujoco";
+  const hasCam = !!state?.cameraKind && state.cameraKind !== "none";
   const [access, setAccess] = useState<any>(null);
   useEffect(() => {
     get("/api/access").then(setAccess).catch(() => setAccess(null));
@@ -112,9 +145,16 @@ function LiveTab({ live }: { live: any }) {
   return (
     <div className="grid-2">
       <div className="stack">
-        <Card title="Arm" sub={status?.phase && status.phase !== "IDLE" ? `Run phase: ${status.phase.replaceAll("_", " ").toLowerCase()}` : "No run in progress"}>
-          <ArmView joints={tel?.joints} scene={tel?.scene} ring={ringClass(tel?.status?.ring)} label={DEVICE_LABEL[state?.deviceKind] ?? "arm"} showAngles={false} />
-          {state?.cameraKind && state.cameraKind !== "none" && <LiveCamera />}
+        <Card title={hasCam ? "Table camera" : "Arm"} sub={status?.phase && status.phase !== "IDLE" ? `Run phase: ${status.phase.replaceAll("_", " ").toLowerCase()}` : "No run in progress"}>
+          {hasCam
+            ? <LiveCamera label={state?.deviceKind === "mujoco" ? "MuJoCo physics" : DEVICE_LABEL[state?.deviceKind] ?? "Camera"} phase={status?.phase} />
+            : <ArmView joints={tel?.joints} scene={tel?.scene} ring={ringClass(tel?.status?.ring)} label={DEVICE_LABEL[state?.deviceKind] ?? "arm"} showAngles={false} />}
+          {hasCam && (
+            <details className="disclosure">
+              <summary>Arm diagram</summary>
+              <ArmView joints={tel?.joints} scene={tel?.scene} ring={ringClass(tel?.status?.ring)} label={DEVICE_LABEL[state?.deviceKind] ?? "arm"} showAngles={false} />
+            </details>
+          )}
           <div className="meters">
             {JOINTS.map((n, i) => (
               <div key={n} className="meter-row">
