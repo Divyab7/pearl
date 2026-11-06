@@ -65,6 +65,9 @@ function removeDemoKeys() {
   localStorage.removeItem(KEYS);
 }
 
+/** What a robot action says in a demo (the demo server answers 409 to every robot action). */
+export const DEMO_ACTIONS_NOTE = "Actions are off in the demo — the live robot is in the real app.";
+
 const notify = () => dispatchEvent(new Event(EVT));
 
 export class DemoUnavailable extends Error {

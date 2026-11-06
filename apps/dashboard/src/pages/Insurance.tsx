@@ -13,6 +13,7 @@ import { RunStory } from "../components/RunStory";
 import { ARKIV_EXPLORER } from "../components/claims";
 import { accountChanged, useAccount } from "../lib/account";
 import { loadKey } from "../lib/keys";
+import { demoActive } from "../lib/demo";
 import { runContext, wrapRunKey } from "../lib/core";
 import { unwrapWith, type FullCheck } from "../lib/fullcheck";
 import { useOwnerUnlock } from "../lib/ownerUnlock";
@@ -298,7 +299,8 @@ function OwnerClaims({ live, account, linked, claims, setClaims }: { live: any; 
   useEffect(load, [live.tick, account?.accountId, account?.robots?.length]);
   useEffect(() => {
     clearInterval(timer.current);
-    if (claims?.some((c) => ["AGENT_PASS", "INSURER_REVIEW", "PAYING"].includes(c.status))) timer.current = setInterval(load, 2500);
+    const polled = demoActive() ? ["AGENT_PASS", "IDKIT", "INSURER_REVIEW", "PAYING"] : ["AGENT_PASS", "INSURER_REVIEW", "PAYING"];
+    if (claims?.some((c) => polled.includes(c.status))) timer.current = setInterval(load, 2500);
     return () => clearInterval(timer.current);
   }, [claims?.map((c) => c.status).join()]);
 
@@ -424,7 +426,9 @@ function ClaimCard({ claim: c, incident, onChange, cancel }: { claim: any; incid
         {c.status === "AGENT_PASS" && (
           <>
             <Why icon="user" title="Prove it's you" info={INS_TIP.agentPass}>A fresh World ID check, so someone with your laptop can't claim for you.</Why>
-            {c.agentPass?.prompt
+            {demoActive()
+              ? <p className="muted small" role="status"><Spinner label="Checking" /> Checking it's you (demo: simulated)…</p>
+              : c.agentPass?.prompt
               ? <WorldPrompt prompt={c.agentPass.prompt} onCancel={() => cancel(c.claimId)} label="Approve in World App" />
               : <p className="muted small"><Spinner label="Asking World ID" /> Asking World ID…</p>}
           </>
@@ -432,7 +436,10 @@ function ClaimCard({ claim: c, incident, onChange, cancel }: { claim: any; incid
         {c.status === "IDKIT" && (
           <>
             <Why icon="shield" title="Prove you're one person" info={INS_TIP.proofOfHuman}>One person, one claim: no fake accounts. It's anonymous: the insurer never learns who you are.</Why>
-            <IdkitStep claim={c} onDone={onChange} />
+            {demoActive()
+              // demo: the sample server submits a simulated Proof of Human by itself; never open World App here
+              ? <p className="muted small" role="status"><Spinner label="Checking" /> Checking you're one person (demo: simulated)…</p>
+              : <IdkitStep claim={c} onDone={onChange} />}
           </>
         )}
         {c.status === "INSURER_REVIEW" && (

@@ -16,7 +16,26 @@
    motion    --t-fast 120ms · --t-mid 200ms · --t-slow 320ms · --ease · --ease-out (all 0ms under prefers-reduced-motion)
    layout    --page-max 1200px · --page-narrow 760px · --topbar-h 60px
    One rule per thing: base rules by component, then the responsive rules in breakpoint order at the end. */
-:root, [data-theme="dark"] {
+/* LIGHT is the default (owner decision 6 Nov): a warm pearl canvas, deep ink text, one confident indigo accent.
+   Contrast (on --bg #f8f5ef / --panel #fffdf9): text 16.9:1, text-2 8.6:1, text-3 5.6:1, accent 6.6:1, ok 6.4:1,
+   warn 6.0:1, bad 6.1:1, info 5.6:1; --line-input 3.4:1. */
+:root, [data-theme="light"] {
+  --bg: #f8f5ef; --panel: #fffdf9; --card: #fffdf9; --raise: #f2ede4; --border: #e8e1d5; --border-strong: #d8cfc0;
+  --line-input: #8a8070;
+  --text: #17140f; --text-2: #4a443b; --text-3: #645c50;
+  --accent: #3a4cc4; --accent-ink: #ffffff; --accent-soft: rgba(58, 76, 196, .085);
+  --ok: #0b6b3e; --ok-soft: rgba(15, 122, 71, .08); --ok-line: rgba(15, 122, 71, .3);
+  --warn: #8a4b00; --warn-soft: rgba(176, 116, 0, .1); --warn-line: rgba(176, 116, 0, .35);
+  --bad: #b42318; --bad-soft: rgba(192, 38, 45, .075); --bad-line: rgba(192, 38, 45, .3);
+  --info: #0b659a; --info-soft: rgba(11, 106, 161, .075); --info-line: rgba(11, 106, 161, .3);
+  --red-cube: #d93434; --blue-cube: #3552d6; --input-bg: #ffffff;
+  --shadow: 0 1px 2px rgba(64, 48, 24, .05), 0 4px 14px -6px rgba(64, 48, 24, .08);
+  --shadow-pop: 0 16px 40px -8px rgba(64, 48, 24, .2), 0 0 0 1px var(--border);
+  --skeleton: linear-gradient(90deg, #ece6db 0%, #f5f1ea 50%, #ece6db 100%);
+  --canvas: radial-gradient(1100px 520px at 0% -8%, #fffefb 0%, rgba(255, 254, 251, 0) 70%), radial-gradient(900px 480px at 100% 0%, rgba(58, 76, 196, .045) 0%, rgba(58, 76, 196, 0) 70%), var(--bg);
+  color-scheme: light;
+}
+[data-theme="dark"] {
   --bg: #0b0d10; --panel: #121519; --card: #171b21; --raise: #1f242c; --border: #262c35; --border-strong: #363d49;
   --line-input: #5b6574;
   --text: #eceef2; --text-2: #b0b8c4; --text-3: #8f98a7;
@@ -25,27 +44,14 @@
   --warn: #f2b544; --warn-soft: rgba(242, 181, 68, .12); --warn-line: rgba(242, 181, 68, .35);
   --bad: #ff7a7a; --bad-soft: rgba(255, 122, 122, .12); --bad-line: rgba(255, 122, 122, .38);
   --info: #6ccfff; --info-soft: rgba(108, 207, 255, .12); --info-line: rgba(108, 207, 255, .35);
-  --red-cube: #ff6b6b; --blue-cube: #6f8dff;
+  --red-cube: #ff6b6b; --blue-cube: #6f8dff; --input-bg: var(--bg);
   --shadow: 0 1px 0 rgba(255, 255, 255, .025) inset, 0 6px 20px rgba(0, 0, 0, .22);
   --shadow-pop: 0 12px 40px rgba(0, 0, 0, .5), 0 0 0 1px var(--border-strong);
   --skeleton: linear-gradient(90deg, #181c22 0%, #222831 50%, #181c22 100%);
+  --canvas: var(--bg);
   color-scheme: dark;
 }
-[data-theme="light"] {
-  --bg: #f5f6f8; --panel: #ffffff; --card: #ffffff; --raise: #eef0f3; --border: #e2e6eb; --border-strong: #cfd5dd;
-  --line-input: #8a939f;
-  --text: #0f141a; --text-2: #465060; --text-3: #5a6372;
-  --accent: #3f57cf; --accent-ink: #ffffff; --accent-soft: rgba(63, 87, 207, .09);
-  --ok: #0b6b3e; --ok-soft: rgba(15, 122, 71, .08); --ok-line: rgba(15, 122, 71, .3);
-  --warn: #8f4f00; --warn-soft: rgba(176, 116, 0, .1); --warn-line: rgba(176, 116, 0, .35);
-  --bad: #b42318; --bad-soft: rgba(192, 38, 45, .08); --bad-line: rgba(192, 38, 45, .3);
-  --info: #0b6aa1; --info-soft: rgba(11, 106, 161, .08); --info-line: rgba(11, 106, 161, .3);
-  --red-cube: #d93434; --blue-cube: #3552d6; --input-bg: #ffffff;
-  --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 1px 1px rgba(16, 24, 40, .03);
-  --shadow-pop: 0 12px 32px rgba(16, 24, 40, .14), 0 0 0 1px var(--border);
-  --skeleton: linear-gradient(90deg, #e2e6eb 0%, #eef1f4 50%, #e2e6eb 100%);
-  color-scheme: light;
-}
+
 :root {
   --r1: 4px; --r2: 8px; --r3: 12px; --r4: 16px; --r-pill: 999px;
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px; --s8: 64px; --s9: 96px;
@@ -63,7 +69,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 html.demo { zoom: 1.25; } /* ?demo: larger type for the recorded video */
-body { background: var(--bg); color: var(--text); font: var(--fs-body)/var(--lh-body) var(--sans); -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums; }
+body { background: var(--canvas, var(--bg)); background-attachment: fixed; color: var(--text); font: var(--fs-body)/var(--lh-body) var(--sans); -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums; }
 h1, h2, h3, h4 { margin: 0; line-height: var(--lh-tight); letter-spacing: -.01em; }
 h1 { font-size: var(--fs-title); font-weight: 680; letter-spacing: -.02em; }
 h2 { font-size: 18px; font-weight: 620; }

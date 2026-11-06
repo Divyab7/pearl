@@ -10,6 +10,7 @@ import { RunStory, runTime, SEVERITY_WORD } from "../components/RunStory";
 import { Dl, Icon, Spinner, Stepper, verdictOf, type Step, type VerdictKind } from "../components/ui";
 import { useAccount } from "../lib/account";
 import { ownerUnlock } from "../lib/ownerUnlock";
+import { DEMO_ACTIONS_NOTE, demoActive } from "../lib/demo";
 import { EXAMPLE, EXAMPLE_ID } from "../example";
 import { isTechy, outcomeWord, OUTCOME_TONE, plainError, ROBOT_LINK, robotName, ROBOT_STATE, TIP } from "../lib/words";
 import "./robot.css";
@@ -77,7 +78,9 @@ function RobotHome({ live }: { live: Live }) {
     setMsg(null);
     return post(path, body)
       .then((r) => setMsg({ tone: "ok", text: done ?? (r.note && !isTechy(r.note) ? r.note : `${label}: done.`) }))
-      .catch((e) => setMsg({ tone: "bad", text: `${label}: ${plainError(e, "the robot didn't accept that right now. Try again in a moment.")}`, raw: isTechy(e) ? e.message : undefined }))
+      .catch((e) => demoActive() && e?.status === 409
+        ? setMsg({ tone: "ok", text: DEMO_ACTIONS_NOTE })
+        : setMsg({ tone: "bad", text: `${label}: ${plainError(e, "the robot didn't accept that right now. Try again in a moment.")}`, raw: isTechy(e) ? e.message : undefined }))
       .finally(() => setBusy(""));
   };
 

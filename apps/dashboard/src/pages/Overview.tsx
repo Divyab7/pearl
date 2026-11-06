@@ -9,6 +9,7 @@ import { shortWhen, useRuns } from "../components/run";
 import { EmptyState, ErrorState, InfoTip, PageHeader, RunRow, Skeleton, Stat, StatusPill } from "../components/blocks";
 import { Icon, Spinner, verdictOf, type VerdictKind } from "../components/ui";
 import { OUTCOME_TONE, ROBOT_STATE, TIP, outcomeWord, plainError, robotName } from "../lib/words";
+import { DEMO_ACTIONS_NOTE, demoActive } from "../lib/demo";
 import "./home.css";
 
 type Live = ReturnType<typeof useLive>;
@@ -102,7 +103,7 @@ function LivePanel({ live, latestId }: { live: Live; latestId?: string }) {
     setMsg(null);
     post("/api/episode/start", task)
       .then(() => setMsg({ bad: false, text: `Started: picking the ${task.color} cube. Watch it here.` }))
-      .catch((e) => setMsg({ bad: true, text: plainError(e, "Couldn't start a run right now. Open the Robot page to see why, or try again.") }))
+      .catch((e) => demoActive() && e?.status === 409 ? setMsg({ bad: false, text: DEMO_ACTIONS_NOTE }) : setMsg({ bad: true, text: plainError(e, "Couldn't start a run right now. Open the Robot page to see why, or try again.") }))
       .finally(() => setBusy(false));
   };
 
