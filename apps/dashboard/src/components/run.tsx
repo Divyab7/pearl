@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { get, post, short, useConfig } from "../api";
 import { fullCheck, type FullCheck } from "../lib/fullcheck";
-import { ArmView } from "./ArmView";
+import { ArmView3D } from "./ArmView3D";
 import { Badge, Callout, Card, CheckList, Chip, CopyButton, Dl, DotLabel, Empty, Icon, Spinner, Verdict, verdictOf, type Tone } from "./ui";
 
 export const OUTCOME_TONE: Record<string, Tone> = { DONE: "neutral", ABORTED: "warn", FAILSAFE: "warn", TRIPPED: "bad" };
@@ -216,7 +216,7 @@ export function Replay({ log, frames, startAtIncident = false }: { log: any; fra
   return (
     <div className="replay">
       <div className="replay-stage">
-        <ArmView joints={joints} scene={kf[Math.min(Math.round(pos), kf.length - 1)]?.scene ?? null} ring="" label={`${OUTCOME_WORD[log.outcome] ?? log.outcome} · ${kf.length - 1} steps`} />
+        <ArmView3D joints={joints} scene={kf[Math.min(Math.round(pos), kf.length - 1)]?.scene ?? null} ring="" label={`${OUTCOME_WORD[log.outcome] ?? log.outcome} · ${kf.length - 1} steps`} />
         <div className="replay-side">
           <div className="replay-bar" style={{ ["--marks" as any]: "" }}>
             <button type="button" className="btn primary" onClick={playing ? pause : play} disabled={kf.length < 2}>
