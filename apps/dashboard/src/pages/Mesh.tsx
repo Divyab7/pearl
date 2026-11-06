@@ -62,15 +62,9 @@ export function Mesh() {
 
   const blurb = SCENARIOS.find((s) => s.id === scenario)!.blurb;
   return (
-    <div className="page">
-      <div className="page-head">
-        <div>
-          <div className="eyebrow">Robot mesh · simulation{practice ? " · built-in example" : ""}</div>
-          <h1>Robots carry each other's records</h1>
-          <p className="muted">When robots have no internet, they pass their sealed records to whichever robot or phone comes within Bluetooth range, whoever owns it. The first one with internet delivers. Each record is checked at every hand-over, so a forged one goes nowhere, and each is delivered once.</p>
-        </div>
-      </div>
-      <Tabs label="Scenario" active={scenario} onChange={(id) => setScenario(id as Scenario)} tabs={SCENARIOS.map((s) => ({ id: s.id, label: s.label }))} />
+    <div className="stack mesh">
+      {practice && <span className="small muted">Built-in example</span>}
+      <Tabs label="What happens" active={scenario} onChange={(id) => setScenario(id as Scenario)} tabs={SCENARIOS.map((s) => ({ id: s.id, label: s.label }))} />
       {err && (
         <Callout tone="warn" title="The simulator isn't available on this server yet">
           <div className="row">
@@ -130,9 +124,9 @@ function Player({ sim, t, setT, playing, setPlaying, end, reduce, blurb }: {
           {/* the chain */}
           <g className={`mesh-chain ${flash ? "flash" : ""}`}>
             <rect x={CHAIN.x - 62} y={CHAIN.y - 46} width={124} height={92} rx={12} />
-            <text x={CHAIN.x} y={CHAIN.y - 18} textAnchor="middle" className="mesh-chain-title">0G Chain</text>
+            <text x={CHAIN.x} y={CHAIN.y - 18} textAnchor="middle" className="mesh-chain-title">Delivered online</text>
             <text x={CHAIN.x} y={CHAIN.y + 12} textAnchor="middle" className="mesh-chain-count">{s.delivered.size} / {valid}</text>
-            <text x={CHAIN.x} y={CHAIN.y + 32} textAnchor="middle" className="mesh-small">delivered</text>
+            <text x={CHAIN.x} y={CHAIN.y + 32} textAnchor="middle" className="mesh-small">records</text>
           </g>
           {/* nodes */}
           {sim.nodes.map((n) => {
@@ -142,8 +136,8 @@ function Player({ sim, t, setT, playing, setPlaying, end, reduce, blurb }: {
             return (
               <g key={n.id} className={`mesh-node ${alive ? "" : "dead"}`}>
                 <circle cx={p.x} cy={p.y} r={30} className="mesh-node-body" style={{ stroke: colour(n.owner) }} />
-                <text x={p.x} y={p.y + 5} textAnchor="middle" className="mesh-node-label">{n.label}</text>
-                <text x={p.x} y={p.y + 50} textAnchor="middle" className="mesh-small">{n.owner}</text>
+                <text x={p.x} y={p.y + 6} textAnchor="middle" className="mesh-node-label" aria-hidden>{n.owner.charAt(0)}</text>
+                <text x={p.x} y={p.y + 50} textAnchor="middle" className="mesh-small mesh-name">{n.label}</text>
                 <text x={p.x} y={p.y + 64} textAnchor="middle" className={`mesh-small ${alive ? (s.internet[n.id] ? "on" : "") : "bad"}`}>{alive ? (s.internet[n.id] ? "internet" : "no internet") : "broken"}</text>
                 {!alive && <path d={`M${p.x - 14} ${p.y - 14}L${p.x + 14} ${p.y + 14}M${p.x + 14} ${p.y - 14}L${p.x - 14} ${p.y + 14}`} className="mesh-x" />}
                 {held.map((id, i) => {
@@ -204,7 +198,7 @@ function Player({ sim, t, setT, playing, setPlaying, end, reduce, blurb }: {
             <li><i className="lg-link" /> In Bluetooth range</li>
             <li><i className="lg-net" /> Has internet</li>
           </ul>
-          {t >= end && <Callout tone={sim.result.delivered === valid ? "ok" : "warn"}>{sim.result.delivered === valid ? `All ${valid} genuine records reached 0G Chain, each once.` : `${sim.result.delivered} of ${valid} genuine records reached 0G Chain.`}{sim.result.refused ? ` ${sim.result.refused} forged offers were refused.` : ""}</Callout>}
+          {t >= end && <Callout tone={sim.result.delivered === valid ? "ok" : "warn"}>{sim.result.delivered === valid ? `All ${valid} genuine records were delivered, each exactly once.` : `${sim.result.delivered} of ${valid} genuine records were delivered.`}{sim.result.refused ? ` ${sim.result.refused} forged offers were refused.` : ""}</Callout>}
         </Card>
         <Card title="What just happened">
           {log.length === 0 ? <Empty title="Nothing yet">Press Play.</Empty> : (
@@ -224,11 +218,11 @@ function describe(e: MeshEvent, name: (id?: string) => string, bundles: Map<stri
   switch (e.type) {
     case "link-up": return `${name(e.from)} and ${name(e.to)} are in Bluetooth range`;
     case "link-down": return `${name(e.from)} and ${name(e.to)} moved apart`;
-    case "ping": return `${name(e.from)} told ${name(e.to)} about its latest run`;
+    case "ping": return `${name(e.from)} told ${e.to ? name(e.to) : "everyone nearby"} about its latest run`;
     case "pull": return `${name(e.to)} picked up ${whose} from ${name(e.from)}`;
     case "refused": return `${name(e.to)} refused ${b && !b.valid ? whose : "a forged record"} offered by ${name(e.from)}: the signature doesn't match`;
     case "submit": return `${name(e.from)} has internet and sends ${whose}`;
-    case "delivered": return `${whose.charAt(0).toUpperCase() + whose.slice(1)} is on 0G Chain`;
+    case "delivered": return `${whose.charAt(0).toUpperCase() + whose.slice(1)} is delivered`;
     case "drop": return `${name(e.from)} let go of ${whose}${e.detail ? ` (${e.detail})` : ""}`;
     case "internet-up": return `${name(e.from)} got internet`;
     case "internet-down": return `${name(e.from)} lost internet`;

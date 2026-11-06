@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { ago, short, useConfig } from "../api";
 import { ARKIV_EXPLORER } from "../components/claims";
 import { Outcome, Severity, shortRun } from "../components/run";
+import { TechDetails } from "../components/blocks";
 import { Badge, Callout, Card, Chip, DotLabel, Empty, Icon, Spinner, Stepper, type Step, type Tone } from "../components/ui";
 import {
   bluetoothSupport, changes, checkPing, checkPings, collect, listServable, readReceipts, type HeardPing, type Receipt, type ServeEntry, CourierError, deliver, FAKE_RELAY, FAKE_ROBOT, findRobot, forget, listCarried, relay,
@@ -36,7 +37,7 @@ const PURPOSE_WORD = (p: string) =>
 /** The three public records a run ends up in, from the relay's per-transaction steps. */
 function relaySteps(c: { state: string; relay?: RelayStatus | null }): Step[] {
   const steps = c.relay?.steps ?? [];
-  const groups: [string, "storage" | "anchor" | "arkiv"][] = [["0G Storage", "storage"], ["0G Chain anchor", "anchor"], ["Arkiv", "arkiv"]];
+  const groups: [string, "storage" | "anchor" | "arkiv"][] = [["Stored copy", "storage"], ["Fingerprint recorded", "anchor"], ["Search labels", "arkiv"]];
   return groups.map(([label, g]) => {
     const mine = steps.filter((s) => stepGroup(s.purpose) === g);
     const done = mine.filter((s) => stepDone(s.status)).length;
@@ -51,12 +52,14 @@ function TxChips({ steps, explorer }: { steps: RelayStep[]; explorer?: string })
   const withTx = steps.filter((s) => s.txHash);
   if (!withTx.length) return null;
   return (
+    <TechDetails label="Transactions" boxless>
     <div className="chips">
       {withTx.map((s) => {
         const base = stepGroup(s.purpose) === "arkiv" ? ARKIV_EXPLORER : explorer;
         return <Chip key={s.purpose} label={PURPOSE_WORD(s.purpose)} value={s.txHash} href={base ? `${base}/tx/${s.txHash}` : null} tone={stepFailed(s.status) ? "bad" : undefined} />;
       })}
     </div>
+    </TechDetails>
   );
 }
 
@@ -236,16 +239,10 @@ export function Courier() {
   const failedFind = err ? FIND_ERROR[err.kind] : null;
 
   return (
-    <div className="page">
-      <div className="page-head">
-        <div>
-          <div className="eyebrow">Courier{FAKE_ROBOT || FAKE_RELAY ? " · practice robot" : ""}</div>
-          <h1>Carry a robot's records</h1>
-          <p className="muted">When a robot has no internet, this browser can collect its records over Bluetooth and deliver them to 0G and Arkiv. They stay locked and signed by the robot: you can carry them, not read or change them.</p>
-        </div>
-        <div className="page-head-side">
-          <DotLabel tone={online ? "ok" : "warn"}>{online ? "This device is online" : "This device is offline"}</DotLabel>
-        </div>
+    <div className="stack courier">
+      <div className="courier-status">
+        <DotLabel tone={online ? "ok" : "warn"}>{online ? "This device is online" : "This device is offline"}</DotLabel>
+        {(FAKE_ROBOT || FAKE_RELAY) && <span className="small muted">Practice robot</span>}
       </div>
 
       {support && !support.ok && <Unsupported why={support.why} />}
@@ -370,7 +367,7 @@ export function Courier() {
                 )}
           </Card>
 
-          <Card title="Delivered" sub="What the relay did with each record: the locked file to 0G Storage, its fingerprint to 0G Chain, its public labels to Arkiv.">
+          <Card title="Delivered" sub="For each record: its locked copy stored, its fingerprint recorded publicly, its search labels added.">
             {settled.length === 0 ? <Empty title="Nothing delivered yet">Each delivered record shows its transactions here, so you can follow them on the explorer.</Empty> : (
               <ul className="list">
                 {settled.map((c) => {
