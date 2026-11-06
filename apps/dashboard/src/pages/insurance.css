@@ -171,3 +171,8 @@
   .ins-paid-icon { width: 40px; height: 40px; }
   .ins-inc-side:not(:has(.btn.primary)) { justify-content: flex-start; }
 }
+
+/* claim cards are records too (signature motif, styles.css): quiet band on owner claim lists, full band on review */
+.ins-claim.record { gap: var(--s4); }
+.ins-review .rs-head.record { --rec-behind: var(--bg); }
+@media (max-width: 640px) { .ins-claim.record, .ins-sum.record { --rec-pad: var(--s4); } }

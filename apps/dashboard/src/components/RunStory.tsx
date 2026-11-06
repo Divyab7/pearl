@@ -27,6 +27,7 @@ import { ArmView3D } from "./ArmView3D";
 import { ErrorState, InfoTip, ShareProofButton, Skeleton, StatusPill, TechDetails } from "./blocks";
 import { ARKIV_EXPLORER } from "./claims";
 import { CheckList, Chip, CopyButton, Icon, Spinner, verdictOf, type Tone, type VerdictKind } from "./ui";
+import { RecordStrip, serialOf } from "./record";
 import "./runstory.css";
 
 export type RunStoryMode = "owner" | "insurer" | "public";
@@ -377,7 +378,8 @@ function LiveRunStory({
 
   return (
     <article className={`rs ${incident ? "has-incident" : ""}`} aria-labelledby={`rs-t-${episodeId}`}>
-      <header className="rs-head">
+      <header className="rs-head record">
+        <RecordStrip serial={serialOf(s?.headHash, pub?.rootHash)} seal={kind === "ok" ? "ok" : kind === "bad" ? "bad" : "warn"} />
         <div className="rs-head-text">
           <div className="eyebrow">Run{s?.origin ? " · started remotely" : ""}</div>
           <H className="rs-title" id={`rs-t-${episodeId}`}>

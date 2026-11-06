@@ -3,7 +3,7 @@
 .rs-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--s4) var(--s5); flex-wrap: wrap; }
 .rs-head-text { display: grid; gap: var(--s2); min-width: 0; max-width: 760px; }
 .rs-head-text .eyebrow { margin: 0; }
-.rs-title { font-size: var(--fs-title); font-weight: 680; letter-spacing: -.02em; line-height: var(--lh-tight); }
+.rs-title { font-family: var(--display); font-size: var(--fs-title); font-weight: 600; letter-spacing: -.025em; line-height: var(--lh-tight); }
 h2.rs-title { font-size: 24px; }
 h3.rs-title { font-size: 22px; }
 .rs-pills { display: flex; gap: var(--s2); flex-wrap: wrap; align-items: center; }
@@ -97,3 +97,8 @@ button.rs-n:hover { border-color: var(--accent); color: var(--text); }
   .rs-time { margin-left: 0; width: 100%; }
 }
 @media (max-width: 860px) { .rs-locked-arm .arm3d { aspect-ratio: 16 / 7; } }
+
+/* the run's header is a sealed record (signature motif, styles.css): band + tear line across the top */
+.rs-head.record { background: var(--panel); border: 1px solid var(--border); border-radius: var(--r4); padding: var(--rec-pad); box-shadow: var(--shadow); }
+.rs-head.record > .record-strip { flex: 0 0 calc(100% + 2 * var(--rec-pad)); }
+@media (max-width: 640px) { .rs-head.record { --rec-pad: var(--s4); } }

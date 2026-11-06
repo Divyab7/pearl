@@ -6,6 +6,7 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { ago, get } from "../api";
 import { Icon } from "../components/ui";
+import { RecordStrip } from "../components/record";
 // the 3D arm (three.js) loads only when its section comes near, so the landing page ships light
 const ArmView3D = lazy(() => import("../components/ArmView3D").then((m) => ({ default: m.ArmView3D })));
 import { BUILT_ON, PRODUCT_HOW, SPONSOR_LINE } from "../lib/words";
@@ -138,7 +139,7 @@ export function Landing() {
             <a href={LANDING_LINKS.offline}>Works without internet</a>
             <a href={LANDING_LINKS.github} target="_blank" rel="noreferrer">GitHub <Icon name="ext" size={13} /></a>
           </nav>
-          <p className="lp-foot-note">Built at ETHGlobal Mumbai, 2026. Photos: Unsplash (see /img/CREDITS.txt). Demo workspaces use clearly labelled sample data.</p>
+          <p className="lp-foot-note">Built at ETHGlobal Mumbai, 2026. Images: our own arm, rendered from its 3D model and the MuJoCo simulation. Demo workspaces use clearly labelled sample data.</p>
         </div>
       </footer>
     </div>
@@ -169,18 +170,20 @@ function Hero() {
         <div className="lp-hero-visual rv" style={{ "--d": 2 } as React.CSSProperties}>
           <figure className="lp-photo">
             <img
-              src="/img/factory-1600.webp"
-              srcSet="/img/factory-640.webp 640w, /img/factory-800.webp 800w, /img/factory-1600.webp 1600w"
-              sizes="(max-width: 900px) calc(100vw - 32px), 600px"
-              width={1600}
-              height={1067}
-              alt="Orange industrial robot arms working along an assembly line"
+              src="/img/pearl-arm-1120.webp"
+              srcSet="/img/pearl-arm-640.webp 640w, /img/pearl-arm-1120.webp 1120w"
+              sizes="(max-width: 900px) calc(100vw - 32px), 480px"
+              width={1120}
+              height={1400}
+              alt="The Pearl robot arm, rendered from our 3D model, holding a red cube above its work table"
               fetchPriority="high"
               decoding="async"
             />
             <span className="lp-scan" aria-hidden />
+            <span className="lp-corners" aria-hidden />
+            <span className="lp-hud" aria-hidden><span className="lp-rec" /> PEARL-ARM-01 · REC</span>
+            <SealCard />
           </figure>
-          <SealCard />
         </div>
       </div>
     </section>
@@ -191,7 +194,8 @@ function Hero() {
  *  light); only the lock and the fingerprint animate, calmly. */
 function SealCard() {
   return (
-    <div className="lp-seal" role="img" aria-label="A sealed robot decision, verified at 10:42: signed on the robot, stored on 0G Storage, recorded on 0G Chain and listed on Arkiv">
+    <div className="lp-seal record" role="img" aria-label="A sealed robot decision, verified at 10:42: signed on the robot, stored on 0G Storage, recorded on 0G Chain and listed on Arkiv">
+      <RecordStrip serial="7CD2·F3CF·6E1D" />
       <div className="lp-seal-head">
         <span className="lp-seal-lock" aria-hidden>
           <svg viewBox="0 0 24 24" width="18" height="18"><path className="lp-shackle" d="M8 11V8a4 4 0 0 1 8 0v3" /><rect x="5.5" y="11" width="13" height="9" rx="2" /></svg>
@@ -471,12 +475,12 @@ function Owners() {
         </div>
         <div className="lp-photos">
           <figure className="lp-photo-tile rv">
-            <img src="/img/warehouse-1400.webp" srcSet="/img/warehouse-700.webp 700w, /img/warehouse-1400.webp 1400w" sizes="(max-width: 900px) 100vw, 700px" width={1400} height={786} alt="An automated warehouse with conveyor lines and storage racks" loading="lazy" decoding="async" />
-            <figcaption>Warehouses and fleets</figcaption>
+            <img src="/img/sim-640.webp" sizes="(max-width: 900px) 100vw, 700px" width={640} height={400} alt="The Pearl arm in the MuJoCo physics simulation: cubes on slots A1 to A3 and a bin" loading="lazy" decoding="async" />
+            <figcaption><span className="lp-tile-k">MuJoCo</span> The arm in a physics simulation</figcaption>
           </figure>
           <figure className="lp-photo-tile rv" style={{ "--d": 1 } as React.CSSProperties}>
-            <img src="/img/service-hand-1200.webp" srcSet="/img/service-hand-600.webp 600w, /img/service-hand-1200.webp 1200w" sizes="(max-width: 900px) 100vw, 500px" width={1200} height={864} alt="A white service robot holding out its open hand" loading="lazy" decoding="async" />
-            <figcaption>Service robots around people</figcaption>
+            <img src="/img/camera-640.webp" sizes="(max-width: 900px) 100vw, 500px" width={640} height={400} alt="The table seen from above by the arm's fixed AI camera" loading="lazy" decoding="async" />
+            <figcaption><span className="lp-tile-k">AI camera</span> What the AI sees at a checkpoint</figcaption>
           </figure>
         </div>
       </div>

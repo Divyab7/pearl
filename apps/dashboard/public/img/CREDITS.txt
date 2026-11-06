@@ -1,18 +1,17 @@
-Photos used on the Pearl landing page. All are free to use under the Unsplash License (https://unsplash.com/license).
-Downloaded once, resized and re-encoded to WebP, bundled here (never hot-linked). No endorsement by the photographers
-or by any company shown is implied.
+Images used by the Pearl dashboard. All of them are Pearl's own: no stock photography, nothing hot-linked.
 
-file: factory-1600.webp, factory-800.webp
-source: https://unsplash.com/photos/8gr6bObQLOI
-photographer: Simon Kadula (https://unsplash.com/@simonkadula)
-licence: Unsplash License
+file: pearl-arm-1120.webp, pearl-arm-640.webp  (landing hero, sign-in brand panel)
+source: our 3D model of the Pearl arm (components/ArmView3D.tsx, three.js), rendered in headless Chrome at 2x on the
+        ink background, table faded into ink. Captured 7 Nov 2026.
 
-file: warehouse-1400.webp, warehouse-700.webp
-source: https://unsplash.com/photos/a-warehouse-with-several-machines-xoSw4kQMgbk
-photographer: Alberto Rodriguez (https://unsplash.com/@albertorodriguez)
-licence: Unsplash License
+file: sim-640.webp  (landing, "For robot owners")
+source: the MuJoCo physics simulation of the Pearl arm, free-orbit renderer of the MuJoCo bridge
+        (/view.jpg?az=150&el=-38&dist=0.38), cropped to 16:10.
 
-file: service-hand-1200.webp, service-hand-600.webp
-source: https://unsplash.com/photos/closeup-photo-of-white-robot-arm-jIBMSMs4_kA
-photographer: Franck V. (https://unsplash.com/@possessedphotography)
-licence: Unsplash License
+file: camera-640.webp  (landing, "For robot owners")
+source: the fixed AI camera of the MuJoCo simulation (/frame.jpg): the frame the AI model is shown at a checkpoint.
+
+file: plan-640.webp, plan-400.webp, incident-640.webp, incident-400.webp  (landing, "How it works")
+source: camera frames of Pearl's own sample run.
+
+The earlier Unsplash photos (factory, warehouse, service hand) were removed on 7 Nov 2026.
