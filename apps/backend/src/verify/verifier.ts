@@ -1,165 +1,167 @@
 /**
- * Episode verifier (prompt §8.8, PLAN §4.4 S10). Result VALID only if every check that ran passed; a check whose module
- * is off or not configured is SKIPPED and says why. A SKIPPED check never counts as a pass for a module that is on:
- * storage is never optional (0G is the main track), so a missing storage root is a FAIL.
+ * PUBLIC episode check (owner decisions 5–6 Nov 2026): anyone can confirm a run is untouched without being able to
+ * read it. Runs on the dashboard server and needs no key and no help from the robot:
  *
- *  1 chain        every prevHash/recordHash and the headHash recompute
- *  2 anchor       the headHash in the device's 0G Chain EpisodeAnchor record equals the recomputed head
- *  3 storage      the copy downloaded from 0G Storage by root equals this copy byte-for-byte (canonical JSON)
- *  4 provenance   every source "0g" record has a requestId and a model; every failsafe has model/parsed/raw null
- *  5 policy       replaying the host policy over the recorded decisions reproduces every commandsSent; no RESUME after a
- *                 hard trip; no resume after a hand event without hand_clear
- *  6 frames       every frameHash matches its frame downloaded by frameRoot (SKIPPED when no frames were taken)
- *  7 zerobot      for an episode started by a zerobot command: the command's on-chain receipt carries this episode's
- *                 id and recomputed head, and its success flag matches the outcome (SKIPPED for local starts)
- *  8 device       the log head is signed by the device key (EIP-191); with expectedDevice, by that device
+ *  1 anchor      the robot's own record for this run exists on 0G Chain (EpisodeAnchor, keyed by the robot's address)
+ *  2 storage     the locked file at the anchored 0G Storage root downloads with proof (any edit changes its root)
+ *  3 header      the locked file's public header names this run and robot and matches the anchor: head hash, outcome,
+ *                severity, incident
+ *  4 signature   the head in the header is signed by the robot's key (EIP-191), the expected robot when one is given
+ *  5 zerobot     for a run started by a zerobot command: that command's on-chain receipt carries this run and head
+ *
+ * Checks 6–10 need the unlocked log and run in the key holder's browser (verify/content.ts). A check whose module is
+ * off is SKIPPED and says why; a SKIPPED check never counts as a pass for a module that is on.
  */
-import { canonicalize } from "../shared/canonical.js";
-import { envFlag } from "../shared/env.js";
-import { hashCanonical, sha256Hex } from "../shared/hash.js";
-import type { ArmConfig } from "../shared/armConfig.js";
-import { isHardTrip, type ChainedRecord, type DecisionRecord, type EpisodeLog } from "../shared/types.js";
-import { downloadBytes, storageConfigFromEnv } from "../og/storage.js";
-import { anchorConfigFromEnv, OUTCOME_CODE, readAnchor, requestIdsHash, type OnChainAnchor } from "../og/anchor.js";
 import { ethers } from "ethers";
-import type { DecisionCore } from "../orchestrator/decision.js";
-import { requestIdsOf, verifyChain } from "../orchestrator/log.js";
+import { envFlag } from "../shared/env.js";
 import { headMessage, recoverDevice } from "../shared/deviceKey.js";
-import type { EpisodeMeta } from "../orchestrator/meta.js";
-import { episodeBytes, zerobotOriginOf } from "../orchestrator/pipeline.js";
-import { commandsOf, policyPlan, policyVerifyGrasp, policyVerifyPlace } from "../orchestrator/policy.js";
-import { Poses } from "../orchestrator/poses.js";
+import { parseSealed, sealedBytes, type SealedEpisode } from "../shared/seal.js";
+import { downloadBytes, localRoot, storageConfigFromEnv } from "../og/storage.js";
+import { anchorConfigFromEnv, OUTCOME_CODE, readAnchor, type OnChainAnchor } from "../og/anchor.js";
 import { decodeResult, ethersZerobot, ZEROBOT_MISSING, zerobotConfigFromEnv, zerobotConfigured } from "../zerobot/zerobot.js";
+import type { EpisodeOutcome } from "../shared/types.js";
 import { errMsg } from "../shared/util.js";
+import type { CheckResult, CheckStatus } from "./content.js";
 
-export type CheckStatus = "PASS" | "FAIL" | "SKIPPED";
-export interface CheckResult {
-  id: number;
-  name: string;
-  status: CheckStatus;
-  detail: string;
-}
-export interface VerifyResult {
+export type { CheckResult, CheckStatus } from "./content.js";
+
+export interface PublicVerifyResult {
   episodeId: string;
+  device: string;
   result: "VALID" | "REJECTED";
   failed: number[];
-  recomputedHead: string;
   checks: CheckResult[];
+  /** The 0G Storage root the locked file was read from (anchored, or relayed when the robot's own upload failed). */
+  rootHash: string | null;
+  /** Where the locked file came from: 0G Storage, or the robot's memory when 0G Storage could not serve it. */
+  source: "0g-storage" | "robot" | null;
+  sealed: SealedEpisode | null;
+  anchor: (OnChainAnchor & { address: string }) | null;
+  /** Set when this result is for a deliberately edited copy ("Edit 1 byte"). */
+  tampered?: string;
+  /** The edited copy's own 0G Storage fingerprint (root), to show next to the stored one. */
+  editedRoot?: string;
 }
 
-export interface VerifyDeps {
-  arm: ArmConfig;
-  /** Device-first logs must be signed by the device (FAIL instead of SKIPPED when the signature is missing). */
-  requireDeviceSignature?: boolean;
-  /** The device address this log must come from (e.g. the robot linked to the user's account). */
-  expectedDevice?: string;
-  /** R5 backup: a root the dashboard uploaded for a device-signed log whose own upload failed. */
-  relayedRoot?: string | null;
-  /** Override the networked lookups (tests, and the dashboard's Edit-log which reuses the real ones). */
-  downloadStorage?: (rootHash: string) => Promise<Uint8Array>;
+export interface PublicVerifyDeps {
+  /** The robot this run must come from (the robot linked to the account, or the robot this dashboard serves). */
+  device: string;
   anchorOn?: boolean;
   anchorAddress?: string;
   readAnchor?: (device: string, episodeId: string) => Promise<OnChainAnchor | null>;
+  downloadStorage?: (rootHash: string) => Promise<Uint8Array>;
+  rootOf?: (bytes: Uint8Array) => Promise<string>;
+  /** A root recorded off-chain: the robot's own meta, or the dashboard's relay record (R5 backup). */
+  fallbackRoot?: string | null;
+  /** The robot's own copy of the locked file, used only when 0G Storage cannot serve it (shown as such). */
+  robotCopy?: () => Promise<SealedEpisode | null>;
+  /** "Edit 1 byte": verify this edited copy instead of the stored file. */
+  editedCopy?: { bytes: Uint8Array; where: string };
   zerobotOn?: boolean;
   readZerobotReceipt?: (nonce: number) => Promise<{ success: boolean; resultData: string; txHash: string } | null>;
 }
 
-const decisionsOf = (rs: readonly ChainedRecord[]) =>
-  rs.filter((r): r is ChainedRecord & DecisionRecord => r.kind === "decision");
-const same = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+const ZERO_ROOT = ethers.ZeroHash;
 
-export async function verifyEpisode(log: EpisodeLog, meta: EpisodeMeta, deps: VerifyDeps): Promise<VerifyResult> {
+export async function verifyPublic(episodeId: string, deps: PublicVerifyDeps): Promise<PublicVerifyResult> {
   const checks: CheckResult[] = [];
-  const add = (id: number, name: string, status: CheckStatus, detail: string) => checks.push({ id, name, status, detail });
+  const TECH: Record<number, string> = { 1: "0G Chain anchor", 2: "0G Storage", 3: "public header", 4: "device signature", 5: "zerobot receipt" };
+  const add = (id: number, name: string, status: CheckStatus, detail: string, missing = false) =>
+    checks.push({ id, name, status, detail, tech: TECH[id]!, ...(status === "FAIL" && missing ? { missing: true } : {}) });
+  const device = deps.device;
 
-  // 1 chain
-  const chain = verifyChain(log);
-  add(1, "Hash chain", chain.ok ? "PASS" : "FAIL",
-    chain.ok ? `${log.records.length} records link; head ${chain.recomputedHead.slice(0, 12)}…`
-      : `record ${chain.badIdx ?? "head"}: ${chain.reason}`);
-  const head = chain.recomputedHead;
-
-  // 2 0G Chain anchor
+  // 1 anchor
   const anchorOn = deps.anchorOn ?? envFlag("OG_CHAIN_ANCHOR", "on");
   const ac = anchorConfigFromEnv();
   const anchorAddr = deps.anchorAddress ?? ac.address;
-  if (!anchorOn) add(2, "0G Chain anchor", "SKIPPED", "OG_CHAIN_ANCHOR=off");
-  else if (!ethers.isAddress(anchorAddr)) add(2, "0G Chain anchor", "FAIL", "OG_CHAIN_ANCHOR=on but no contract address (pnpm anchor:deploy)");
-  else if (!log.device) add(2, "0G Chain anchor", "FAIL", "log is not device-signed, so its device record cannot be located (rev 5 anchors are per device)");
+  let anchor: PublicVerifyResult["anchor"] = null;
+  if (!anchorOn) add(1, "Recorded on 0G Chain", "SKIPPED", "OG_CHAIN_ANCHOR=off");
+  else if (!ethers.isAddress(anchorAddr)) add(1, "Recorded on 0G Chain", "FAIL", "no EpisodeAnchor contract is configured, so the record cannot be read", true);
+  else if (!ethers.isAddress(device)) add(1, "Recorded on 0G Chain", "FAIL", "robot address unknown, so its record cannot be located", true);
   else {
     try {
-      const read = deps.readAnchor ?? ((dev: string, id: string) => readAnchor({ rpcUrl: ac.rpcUrl, address: anchorAddr }, dev, id));
-      const a = await read(log.device.address, log.episodeId);
-      const reqs = requestIdsHash(requestIdsOf(log));
-      if (!a) add(2, "0G Chain anchor", "FAIL", "episode not anchored in the contract");
-      else if (a.headHash !== head) add(2, "0G Chain anchor", "FAIL", `on-chain head ${a.headHash.slice(0, 12)}… ≠ recomputed ${head.slice(0, 12)}…`);
-      else if (a.requestIdsHash !== reqs) add(2, "0G Chain anchor", "FAIL", "request ids differ from the anchored set");
-      else if (a.outcome !== OUTCOME_CODE[log.outcome]) add(2, "0G Chain anchor", "FAIL", "anchored outcome differs from the log");
-      else add(2, "0G Chain anchor", "PASS", `device ${log.device.address.slice(0, 10)}… anchored this head and request ids`);
-    } catch (err) {
-      add(2, "0G Chain anchor", "FAIL", `contract read failed: ${errMsg(err)}`);
+      const read = deps.readAnchor ?? ((d: string, id: string) => readAnchor({ rpcUrl: ac.rpcUrl, address: anchorAddr }, d, id));
+      const a = await read(device, episodeId);
+      if (!a) add(1, "Recorded on 0G Chain", "FAIL", `robot ${device.slice(0, 10)}… has no record for this run on 0G Chain`);
+      else {
+        anchor = { ...a, address: anchorAddr };
+        add(1, "Recorded on 0G Chain", "PASS", `robot ${device.slice(0, 6)}…${device.slice(-4)} recorded this run in its own 0G Chain record`);
+      }
+    } catch (e) {
+      add(1, "Recorded on 0G Chain", "FAIL", `could not read 0G Chain: ${errMsg(e)}`, true);
     }
   }
 
-  // 3 storage
-  const st = meta.storage;
-  const ownRoot = st?.status === "ok" ? st.rootHash : null;
-  const root = ownRoot ?? deps.relayedRoot ?? null;
-  if (!root) {
-    const why = !st ? "no upload recorded" : st.status === "failed" ? `upload failed: ${st.error}` : st.status === "not_configured" ? `not configured (${st.missing})` : "off";
-    add(3, "0G Storage match", "FAIL", why);
+  // 2 storage: the locked file at the anchored root (a root not in the anchor is shown as such)
+  const anchoredRoot = anchor && anchor.rootHash !== ZERO_ROOT ? anchor.rootHash : null;
+  const root = anchoredRoot ?? deps.fallbackRoot ?? null;
+  let sealed: SealedEpisode | null = null;
+  let source: PublicVerifyResult["source"] = null;
+  const rootOf = deps.rootOf ?? localRoot;
+  let editedRoot: string | undefined;
+  const sh = (h: string | null) => (h ? `${h.slice(0, 8)}…${h.slice(-6)}` : "none");
+  if (deps.editedCopy) {
+    try {
+      const r = await rootOf(deps.editedCopy.bytes);
+      editedRoot = r;
+      sealed = parseSealedOrNull(deps.editedCopy.bytes);
+      source = "0g-storage";
+      add(2, "Stored copy on 0G Storage", r === root ? "PASS" : "FAIL",
+        r === root ? "The edited copy has the stored fingerprint (impossible for a real edit)." : `The edited copy's fingerprint ${sh(r)} differs from the stored one ${sh(root)}.`);
+    } catch (e) {
+      add(2, "Stored copy on 0G Storage", "FAIL", `edited copy: ${errMsg(e)}`);
+    }
+  } else if (!root) {
+    add(2, "Stored copy on 0G Storage", "FAIL", anchor ? "the locked file never reached 0G Storage (the robot's upload failed), so the stored copy cannot be checked" : "no 0G Storage copy is recorded for this run", true);
   } else {
     try {
       const dl = deps.downloadStorage ?? ((r: string) => downloadBytes(storageConfigFromEnv(), r));
-      const got = Buffer.from(await dl(root));
-      const mine = Buffer.from(episodeBytes(log));
-      const how = ownRoot ? "uploaded by the device" : "relayed by the dashboard (device-signed log)";
-      add(3, "0G Storage match", got.equals(mine) ? "PASS" : "FAIL",
-        got.equals(mine) ? `root ${root.slice(0, 14)}… ${how}, downloaded with proof, ${got.length} bytes identical`
-          : `downloaded copy differs from this copy (${got.length} vs ${mine.length} bytes)`);
-    } catch (err) {
-      add(3, "0G Storage match", "FAIL", `download failed: ${errMsg(err)}`);
+      const bytes = await dl(root);
+      sealed = parseSealed(bytes);
+      source = "0g-storage";
+      const kb = (bytes.length / 1024).toFixed(1);
+      add(2, "Stored copy on 0G Storage", "PASS", anchoredRoot
+        ? `Downloaded the locked file (${kb} KB) with proof. It is the exact file recorded on 0G Chain.`
+        : `Downloaded the locked file (${kb} KB) by its relayed root. The dashboard uploaded it as a backup, so this root is not in the 0G Chain record.`);
+    } catch (e) {
+      add(2, "Stored copy on 0G Storage", "FAIL", `could not download the stored copy: ${errMsg(e)}`, true);
     }
   }
+  if (!sealed && deps.robotCopy && !deps.editedCopy) {
+    sealed = await deps.robotCopy().catch(() => null);
+    if (sealed) source = "robot";
+  }
 
-  // 4 provenance
-  const ds = decisionsOf(log.records);
-  const bad = ds.filter((d) =>
-    d.source === "0g" ? !d.requestId || !d.model : d.model !== null || d.parsed !== null || d.raw !== null || !d.error,
-  );
-  add(4, "0G provenance", bad.length ? "FAIL" : "PASS",
-    bad.length ? `records ${bad.map((d) => d.idx).join(", ")} break the 0G/failsafe rules`
-      : `${ds.filter((d) => d.source === "0g").length} 0G decisions with request ids, ${ds.filter((d) => d.source === "failsafe").length} failsafe`);
-
-  // 5 policy replay
-  add(5, "Policy replay", ...replayPolicy(log, deps.arm));
-
-  // 6 frames: download each frame by its recorded root and compare its sha256 with the recorded frameHash
-  const framed = ds.filter((d) => d.frameHash !== null);
-  if (!framed.length) add(6, "Frames", "SKIPPED", "no camera frames in this episode (CAMERA_SOURCE=none)");
+  // 3 header vs anchor
+  if (!sealed) add(3, "Run summary matches the record", "FAIL", "no locked file to read", true);
   else {
-    const dl = deps.downloadStorage ?? ((root: string) => downloadBytes(storageConfigFromEnv(), root));
-    const bad: string[] = [];
-    for (const d of framed) {
-      if (!d.frameRoot) {
-        bad.push(`#${d.idx} no frameRoot`);
-        continue;
-      }
-      try {
-        if (sha256Hex(await dl(d.frameRoot)) !== d.frameHash) bad.push(`#${d.idx} hash differs`);
-      } catch (err) {
-        bad.push(`#${d.idx} ${errMsg(err)}`);
-      }
+    const problems: string[] = [];
+    if (sealed.episodeId !== episodeId) problems.push(`names run ${sealed.episodeId}`);
+    if (sealed.device.address.toLowerCase() !== device.toLowerCase()) problems.push(`names robot ${sealed.device.address}`);
+    if (anchor) {
+      if (anchor.headHash !== sealed.headHash) problems.push(`head ${sealed.headHash.slice(0, 12)}… ≠ anchored ${anchor.headHash.slice(0, 12)}…`);
+      if (anchor.outcome !== OUTCOME_CODE[sealed.outcome as EpisodeOutcome]) problems.push("outcome differs from the anchor");
+      if (anchor.severity !== sealed.severity || anchor.incident !== sealed.incident) problems.push("incident or severity differs from the anchor");
     }
-    add(6, "Frames", bad.length ? "FAIL" : "PASS",
-      bad.length ? bad.join("; ") : `${framed.length} frames downloaded from 0G Storage, hashes match`);
+    if (problems.length) add(3, "Run summary matches the record", "FAIL", problems.join("; "));
+    else add(3, "Run summary matches the record", anchor ? "PASS" : "SKIPPED",
+      anchor ? `run, robot, fingerprint, result and ${sealed.incident ? `incident severity ${sealed.severity}` : "no incident"} match the 0G Chain record` : "no 0G Chain record to compare with");
   }
 
-  // 7 zerobot receipt
-  const origin = zerobotOriginOf(log);
+  // 4 robot signature
+  if (!sealed) add(4, "Signed by this robot", "FAIL", "no locked file to read", true);
+  else {
+    const who = recoverDevice(headMessage(sealed.episodeId, sealed.headHash), sealed.device.signature);
+    if (!who) add(4, "Signed by this robot", "FAIL", "signature is malformed");
+    else if (who.toLowerCase() !== device.toLowerCase()) add(4, "Signed by this robot", "FAIL", `signed by ${who}, expected robot ${device}`);
+    else add(4, "Signed by this robot", "PASS", `the run's fingerprint carries robot ${who.slice(0, 6)}…${who.slice(-4)}'s own signature`);
+  }
+
+  // 5 zerobot receipt
+  const origin = sealed?.origin ?? null;
   const zbOn = deps.zerobotOn ?? envFlag("ROBOT_ZEROBOT", "on");
-  if (!origin) add(7, "zerobot receipt", "SKIPPED", "started locally, not by a zerobot command");
-  else if (!zbOn) add(7, "zerobot receipt", "SKIPPED", "ROBOT_ZEROBOT=off");
+  if (!origin) add(5, "Remote command receipt", "SKIPPED", sealed ? "not used: the run was started at the robot, not by a remote command" : "no locked file to read");
+  else if (!zbOn) add(5, "Remote command receipt", "SKIPPED", "ROBOT_ZEROBOT=off");
   else {
     try {
       const read = deps.readZerobotReceipt ?? (() => {
@@ -169,101 +171,36 @@ export async function verifyEpisode(log: EpisodeLog, meta: EpisodeMeta, deps: Ve
       })();
       const rc = await read(origin.nonce);
       const res = rc ? decodeResult(rc.resultData) : null;
-      if (!rc) add(7, "zerobot receipt", "FAIL", `no receipt for command #${origin.nonce}`);
-      else if (!res) add(7, "zerobot receipt", "FAIL", `receipt for #${origin.nonce} has no Pearl result`);
-      else if (res.episodeId !== log.episodeId || res.headHash !== head) {
-        add(7, "zerobot receipt", "FAIL", `receipt #${origin.nonce} names ${res.episodeId} / head ${res.headHash.slice(0, 12)}…, recomputed ${head.slice(0, 12)}…`);
-      } else if (rc.success !== (log.outcome === "DONE")) {
-        add(7, "zerobot receipt", "FAIL", `receipt success=${rc.success} but outcome ${log.outcome}`);
-      } else add(7, "zerobot receipt", "PASS", `command #${origin.nonce} receipt ${rc.txHash.slice(0, 12)}… carries this head`);
+      if (!rc) add(5, "Remote command receipt", "FAIL", `no receipt for command #${origin.nonce}`);
+      else if (!res) add(5, "Remote command receipt", "FAIL", `receipt for #${origin.nonce} has no Pearl result`);
+      else if (res.episodeId !== episodeId || res.headHash !== sealed!.headHash) add(5, "Remote command receipt", "FAIL", `receipt #${origin.nonce} names another run or head`);
+      else if (rc.success !== (sealed!.outcome === "DONE")) add(5, "Remote command receipt", "FAIL", `receipt success=${rc.success} but outcome ${sealed!.outcome}`);
+      else add(5, "Remote command receipt", "PASS", `command #${origin.nonce} receipt ${rc.txHash.slice(0, 12)}… carries this head`);
     } catch (e) {
-      add(7, "zerobot receipt", "FAIL", errMsg(e));
+      add(5, "Remote command receipt", "FAIL", errMsg(e));
     }
-  }
-
-  // 8 device signature: the device's own key signed this log's head (rev 5, device-first)
-  if (!log.device) add(8, "Device signature", deps.requireDeviceSignature ? "FAIL" : "SKIPPED", "log carries no device signature");
-  else {
-    const who = recoverDevice(headMessage(log.episodeId, head), log.device.signature);
-    const expected = deps.expectedDevice ?? log.device.address;
-    if (!who) add(8, "Device signature", "FAIL", "signature is malformed");
-    else if (who.toLowerCase() !== log.device.address.toLowerCase()) add(8, "Device signature", "FAIL", `signed by ${who}, log names ${log.device.address}`);
-    else if (who.toLowerCase() !== expected.toLowerCase()) add(8, "Device signature", "FAIL", `signed by ${who}, expected device ${expected}`);
-    else add(8, "Device signature", "PASS", `head signed by device ${who}`);
   }
 
   const failed = checks.filter((c) => c.status === "FAIL").map((c) => c.id);
-  return { episodeId: log.episodeId, result: failed.length ? "REJECTED" : "VALID", failed, recomputedHead: head, checks };
+  return {
+    episodeId, device, result: failed.length ? "REJECTED" : "VALID", failed, checks, rootHash: root, source, sealed, anchor,
+    ...(deps.editedCopy ? { tampered: deps.editedCopy.where, ...(editedRoot ? { editedRoot } : {}) } : {}),
+  };
 }
 
-function core(d: DecisionRecord): DecisionCore {
-  return d as unknown as DecisionCore;
+function parseSealedOrNull(b: Uint8Array): SealedEpisode | null {
+  try {
+    return parseSealed(b);
+  } catch {
+    return null;
+  }
 }
 
-/** Re-runs the pure host policy over the recorded decisions; returns [status, detail]. */
-export function replayPolicy(log: EpisodeLog, arm: ArmConfig): [CheckStatus, string] {
-  const start = log.records.find((r) => r.kind === "event" && r.ev === "episode_start");
-  const recordedCfg = start && start.kind === "event" ? (start.data as { armConfigHash?: string }).armConfigHash : undefined;
-  if (recordedCfg && recordedCfg !== hashCanonical(arm)) {
-    return ["SKIPPED", "arm calibration changed since this episode; replay needs the original config"];
-  }
-  const poses = new Poses(arm);
-  let graspRetries = 0;
-  let placeRetries = 0;
-  let hardTrip = false;
-  let handClear = true;
-  const problems: string[] = [];
-  for (const r of log.records) {
-    if (r.kind === "event") {
-      if (isHardTrip(r.ev)) hardTrip = true;
-      if (r.ev === "reset_done") hardTrip = false;
-      if (r.ev === "hand_in_zone") handClear = false;
-      if (r.ev === "hand_clear") handClear = true;
-      continue;
-    }
-    const d = core(r);
-    let expected: { commands: string[]; policy: string; override: string | null } | null = null;
-    if (r.checkpoint === "PLAN") {
-      const p = policyPlan(d, log.task, poses);
-      expected = { commands: commandsOf(p.steps), policy: p.policy, override: p.override };
-    } else if (r.checkpoint === "VERIFY_GRASP") {
-      const p = policyVerifyGrasp(d, log.task, poses, graspRetries);
-      if (p.next === "VERIFY_GRASP") graspRetries++;
-      expected = { commands: commandsOf(p.steps), policy: p.policy, override: p.override };
-    } else if (r.checkpoint === "VERIFY_PLACE") {
-      const p = policyVerifyPlace(d, poses, placeRetries);
-      if (p.next === "VERIFY_PLACE") placeRetries++;
-      expected = { commands: commandsOf(p.steps), policy: p.policy, override: p.override };
-    } else {
-      // INCIDENT: the interrupted steps depend on timing, so check the safety invariants instead of exact commands
-      const resumes = r.commandsSent[0] === "resume";
-      if (hardTrip && r.commandsSent.length) problems.push(`#${r.idx}: commands sent after a hard trip`);
-      if (hardTrip && (r.parsed as { action?: string } | null)?.action === "RESUME" && r.override !== "hard trip: operator reset required") {
-        problems.push(`#${r.idx}: RESUME after a hard trip not overridden`);
-      }
-      if (resumes && (!handClear || r.source !== "0g")) problems.push(`#${r.idx}: resume without hand_clear or without a 0G decision`);
-    }
-    if (expected) {
-      if (!same(expected.commands, r.commandsSent)) problems.push(`#${r.idx} ${r.checkpoint}: commands differ from policy`);
-      if (expected.policy !== r.policy) problems.push(`#${r.idx} ${r.checkpoint}: policy text differs`);
-      if (expected.override !== r.override) problems.push(`#${r.idx} ${r.checkpoint}: override differs`);
-    }
-  }
-  return problems.length ? ["FAIL", problems.join("; ")] : ["PASS", "every command follows from a recorded decision"];
-}
-
-/** Dashboard "Edit log": flips one character of the first decision's reason in a COPY and re-verifies. */
-export function tamperedCopy(log: EpisodeLog): { copy: EpisodeLog; where: string } {
-  const copy = JSON.parse(canonicalize(log)) as EpisodeLog;
-  for (const r of copy.records) {
-    const reason = (r.kind === "decision" ? (r.parsed as { reason?: string } | null)?.reason : undefined);
-    if (r.kind === "decision" && typeof reason === "string" && reason.length) {
-      const c = reason[0] === "x" ? "y" : "x";
-      (r.parsed as { reason: string }).reason = c + reason.slice(1);
-      return { copy, where: `record ${r.idx} parsed.reason[0] → "${c}"` };
-    }
-  }
-  const r = copy.records[0]!;
-  r.ts = r.ts.replace(/.$/, (ch) => (ch === "0" ? "1" : "0"));
-  return { copy, where: `record 0 ts last character changed` };
+/** "Edit 1 byte" on the public page: a copy of the locked file with one character of its locked data changed. */
+export function editedSealedCopy(s: SealedEpisode): { bytes: Uint8Array; where: string } {
+  const d = s.cipher.data;
+  const i = Math.min(10, d.length - 3);
+  const c = d[i] === "A" ? "B" : "A";
+  const copy: SealedEpisode = { ...s, cipher: { ...s.cipher, data: d.slice(0, i) + c + d.slice(i + 1) } };
+  return { bytes: sealedBytes(copy), where: `1 byte of the locked data (position ${i} → "${c}")` };
 }

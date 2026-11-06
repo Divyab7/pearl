@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { loadArmConfig } from "../shared/armConfig.js";
 import { EpisodeRecorder } from "../orchestrator/log.js";
-import { episodeBytes } from "../orchestrator/pipeline.js";
 import { policyPlan } from "../orchestrator/policy.js";
 import { Poses } from "../orchestrator/poses.js";
-import type { EpisodeMeta } from "../orchestrator/meta.js";
 import type { DecisionCore } from "../orchestrator/decision.js";
 import { hashCanonical } from "../shared/hash.js";
-import { tamperedCopy, verifyEpisode } from "./verifier.js";
+import { editedSealedCopy, verifyPublic, type PublicVerifyDeps } from "./verifier.js";
+import { contentChecks, tamperedCopy } from "./content.js";
+import { newRunKey, openEpisode, sealEpisode, sealedBytes, type SealedEpisode } from "../shared/seal.js";
+import { sha256Hex } from "../shared/hash.js";
+import type { EpisodeLog } from "../shared/types.js";
 import { OUTCOME_CODE, requestIdsHash } from "../og/anchor.js";
 import { ethers } from "ethers";
 import { headMessage } from "../shared/deviceKey.js";
@@ -43,84 +45,130 @@ function buildLog(parsed: unknown, source: "0g" | "failsafe" = "0g") {
   return rec.close(source === "0g" ? "ABORTED" : "FAILSAFE");
 }
 
-const okMeta = (log: ReturnType<typeof buildLog>): EpisodeMeta => ({
-  episodeId: log.episodeId,
-  storage: { status: "ok", rootHash: "0xroot", txHash: "0xtx", txSeq: 1, url: "u", ms: 1 },
+const ANCHOR = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+const ROOT = `0x${"ab".repeat(32)}`;
+/** Stand-in for the 0G Storage root: sha256 of the exact bytes (the real one is a Merkle root; same property). */
+const rootOf = async (b: Uint8Array) => `0x${sha256Hex(b)}`;
+
+async function sealedRun(log: EpisodeLog) {
+  const key = newRunKey();
+  const sealed = await sealEpisode(log, key, { incident: false, severity: 0, origin: null });
+  const bytes = sealedBytes(sealed);
+  const root = await rootOf(bytes);
+  const anchor = {
+    headHash: log.headHash, rootHash: root, requestIdsHash: requestIdsHash(["rid-1"]), anchoredAt: 1_762_380_000,
+    outcome: OUTCOME_CODE[log.outcome], severity: 0, incident: false,
+  };
+  const deps: PublicVerifyDeps = {
+    device: DEVICE.address, anchorOn: true, anchorAddress: ANCHOR, rootOf, zerobotOn: false,
+    readAnchor: async () => anchor, downloadStorage: async (r) => (r === root ? bytes : Promise.reject(new Error("no such root"))),
+  };
+  return { key, sealed, bytes, root, anchor, deps };
+}
+
+describe("public check (no key)", () => {
+  const ABORT = { action: "ABORT", slot: null, reason: "no red cube at A2", confidence: 0.9 };
+
+  it("VALID when the anchor, the locked file on 0G Storage, its header and the robot's signature agree", async () => {
+    const log = await signed(buildLog(ABORT));
+    const { deps, root } = await sealedRun(log);
+    const v = await verifyPublic(log.episodeId, deps);
+    expect(v.result).toBe("VALID");
+    expect(v.rootHash).toBe(root);
+    expect(v.source).toBe("0g-storage");
+    expect(v.checks.map((c) => [c.id, c.status])).toEqual([[1, "PASS"], [2, "PASS"], [3, "PASS"], [4, "PASS"], [5, "SKIPPED"]]);
+  });
+
+  it("the locked file never contains the readable log", async () => {
+    const log = await signed(buildLog(ABORT));
+    const { bytes } = await sealedRun(log);
+    const text = new TextDecoder().decode(bytes);
+    expect(text).not.toContain("no red cube");
+    expect(text).not.toContain("glm-5.3-flash");
+    expect(text).toContain(log.headHash); // the public fingerprint stays readable
+  });
+
+  it("Edit 1 byte of the locked file → its root changes → REJECTED", async () => {
+    const log = await signed(buildLog(ABORT));
+    const { deps, sealed } = await sealedRun(log);
+    const v = await verifyPublic(log.episodeId, { ...deps, editedCopy: editedSealedCopy(sealed) });
+    expect(v.result).toBe("REJECTED");
+    expect(v.checks.find((c) => c.id === 2)).toMatchObject({ status: "FAIL" });
+    expect(v.tampered).toMatch(/locked data/);
+  });
+
+  it("a header that disagrees with the anchor, a wrong robot or a missing anchor fails", async () => {
+    const log = await signed(buildLog(ABORT));
+    const { deps, anchor } = await sealedRun(log);
+    const sev = await verifyPublic(log.episodeId, { ...deps, readAnchor: async () => ({ ...anchor, severity: 3, incident: true }) });
+    expect(sev.checks.find((c) => c.id === 3)).toMatchObject({ status: "FAIL" });
+    const other = await verifyPublic(log.episodeId, { ...deps, device: ethers.Wallet.createRandom().address });
+    expect(other.checks.find((c) => c.id === 4)).toMatchObject({ status: "FAIL" });
+    const none = await verifyPublic(log.episodeId, { ...deps, readAnchor: async () => null });
+    expect(none.checks.find((c) => c.id === 1)).toMatchObject({ status: "FAIL" });
+    expect(none.result).toBe("REJECTED");
+  });
+
+  it("no storage root is a FAIL, never a skip; anchor off is a SKIP; the robot's copy is labelled", async () => {
+    const log = await signed(buildLog(ABORT));
+    const { deps, sealed } = await sealedRun(log);
+    const v = await verifyPublic(log.episodeId, { ...deps, anchorOn: false, robotCopy: async () => sealed });
+    expect(v.checks.find((c) => c.id === 1)).toMatchObject({ status: "SKIPPED" });
+    expect(v.checks.find((c) => c.id === 2)).toMatchObject({ status: "FAIL" });
+    expect(v.source).toBe("robot");
+    expect(v.result).toBe("REJECTED");
+  });
+
+  it("a forged signature in the header fails check 4 even though the file is stored", async () => {
+    const log = await signed(buildLog(ABORT));
+    const forged = { ...log, device: { address: DEVICE.address, signature: await ethers.Wallet.createRandom().signMessage(headMessage(log.episodeId, log.headHash)) } };
+    const { deps } = await sealedRun(forged);
+    const v = await verifyPublic(log.episodeId, deps);
+    expect(v.checks.find((c) => c.id === 4)).toMatchObject({ status: "FAIL" });
+  });
 });
 
-describe("verifier", () => {
-  const PICK_OTHER = { action: "ABORT", slot: null, reason: "no red cube at A2", confidence: 0.9 };
+describe("full check (key holder's browser)", () => {
+  const ABORT = { action: "ABORT", slot: null, reason: "no red cube at A2", confidence: 0.9 };
+  const unlock = async (sealed: SealedEpisode, key: Uint8Array) => openEpisode<EpisodeLog>(sealed, key);
 
-  it("VALID when the chain, the anchor, storage, provenance, policy and device signature all agree", async () => {
-    const log = await signed(buildLog(PICK_OTHER));
-    const bytes = episodeBytes(log);
-    const v = await verifyEpisode(log, okMeta(log), {
-      arm,
-      downloadStorage: async () => bytes,
-      anchorOn: true, anchorAddress: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-      readAnchor: async (dev: string) => (dev === DEVICE.address ? { headHash: log.headHash, rootHash: "0xroot", requestIdsHash: requestIdsHash(["rid-1"]), anchoredAt: 1, outcome: OUTCOME_CODE[log.outcome], severity: 0, incident: false } : null),
-    });
-    expect(v.result).toBe("VALID");
-    expect(v.checks.map((c) => c.status)).toEqual(["PASS", "PASS", "PASS", "PASS", "PASS", "SKIPPED", "SKIPPED", "PASS"]);
+  it("unlocks with the run key and every content check passes", async () => {
+    const log = await signed(buildLog(ABORT));
+    const { sealed, key, anchor } = await sealedRun(log);
+    const plain = await unlock(sealed, key);
+    const cs = contentChecks(plain, { headerHead: sealed.headHash, anchoredRequestIdsHash: anchor.requestIdsHash, arm });
+    expect(cs.map((c) => [c.id, c.status])).toEqual([[6, "PASS"], [7, "PASS"], [8, "PASS"], [9, "PASS"]]);
   });
 
-  it("Edit log: one changed byte → REJECTED on chain, anchor, storage and device signature", async () => {
-    const log = await signed(buildLog(PICK_OTHER));
-    const bytes = episodeBytes(log);
-    const { copy, where } = tamperedCopy(log);
-    expect(where).toMatch(/parsed\.reason/);
-    const v = await verifyEpisode(copy, okMeta(log), {
-      arm,
-      downloadStorage: async () => bytes,
-      anchorOn: true, anchorAddress: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-      readAnchor: async (dev: string) => (dev === DEVICE.address ? { headHash: log.headHash, rootHash: "0xroot", requestIdsHash: requestIdsHash(["rid-1"]), anchoredAt: 1, outcome: OUTCOME_CODE[log.outcome], severity: 0, incident: false } : null),
-    });
-    expect(v.result).toBe("REJECTED");
-    expect(v.failed).toEqual([1, 2, 3, 8]);
+  it("a wrong key or an edited header cannot unlock", async () => {
+    const log = await signed(buildLog(ABORT));
+    const { sealed, key } = await sealedRun(log);
+    expect((await unlock(sealed, key)).episodeId).toBe(log.episodeId); // the right key and header work
+    await expect(unlock(sealed, newRunKey())).rejects.toThrow(/cannot unlock/);
+    await expect(unlock({ ...sealed, severity: 3 }, key)).rejects.toThrow(/cannot unlock/); // header is bound to the data
   });
 
-  it("no storage root is a FAIL, never a skip; anchor off is a SKIP", async () => {
-    const log = buildLog(PICK_OTHER, "failsafe");
-    const v = await verifyEpisode(log, { episodeId: log.episodeId, storage: { status: "not_configured", missing: "OG_STORAGE_PRIVATE_KEY" } }, {
-      arm, anchorOn: false,
-    });
-    expect(v.result).toBe("REJECTED");
-    expect(v.checks.find((c) => c.id === 3)).toMatchObject({ status: "FAIL" });
-    expect(v.checks.find((c) => c.id === 2)).toMatchObject({ status: "SKIPPED", detail: "OG_CHAIN_ANCHOR=off" });
+  it("Edit 1 byte of the unlocked log → the chain no longer reaches the signed head", async () => {
+    const log = await signed(buildLog(ABORT));
+    const { sealed, key, anchor } = await sealedRun(log);
+    const { copy } = tamperedCopy(await unlock(sealed, key));
+    const cs = contentChecks(copy, { headerHead: sealed.headHash, anchoredRequestIdsHash: anchor.requestIdsHash, arm });
+    expect(cs.find((c) => c.id === 6)).toMatchObject({ status: "FAIL" });
   });
 
   it("a command that does not follow from the decision fails policy replay", async () => {
-    const log = buildLog(PICK_OTHER);
+    const log = buildLog({ action: "PICK", slot: "A2", reason: "red cube at A2", confidence: 0.9 });
     const d = log.records[1] as { commandsSent: string[] };
-    d.commandsSent = ["move:[90,100,80,10]"]; // forged (chain will also break; check 5 must fail on its own)
-    const v = await verifyEpisode(log, okMeta(log), { arm, anchorOn: false, downloadStorage: async () => new Uint8Array() });
-    expect(v.checks.find((c) => c.id === 5)).toMatchObject({ status: "FAIL" });
+    d.commandsSent = ["move:[90,100,80,10]"];
+    const cs = contentChecks(log, { headerHead: log.headHash, anchoredRequestIdsHash: null, arm });
+    expect(cs.find((c) => c.id === 9)).toMatchObject({ status: "FAIL" });
+    expect(cs.find((c) => c.id === 7)).toMatchObject({ status: "SKIPPED" });
   });
 
-  it("a failsafe record carrying a model is a provenance failure", async () => {
-    const log = buildLog(PICK_OTHER, "failsafe");
+  it("a failsafe record carrying a model is a provenance failure", () => {
+    const log = buildLog(ABORT, "failsafe");
     (log.records[1] as { model: string | null }).model = "fake-model";
-    const v = await verifyEpisode(log, okMeta(log), { arm, anchorOn: false, downloadStorage: async () => episodeBytes(log) });
-    expect(v.checks.find((c) => c.id === 4)).toMatchObject({ status: "FAIL" });
-  });
-
-  it("device signature: a signed log passes check 8; a wrong device or an edited head fails", async () => {
-    const { ethers } = await import("ethers");
-    const { headMessage } = await import("../shared/deviceKey.js");
-    const log = buildLog({ action: "ABORT", slot: null, reason: "no red cube at A2", confidence: 0.9 });
-    const dev = ethers.Wallet.createRandom();
-    log.device = { address: dev.address, signature: await dev.signMessage(headMessage(log.episodeId, log.headHash)) };
-    const meta = okMeta(log);
-    const bytes = episodeBytes(log);
-    const base = { arm, anchorOn: false, downloadStorage: async () => bytes };
-    const ok = await verifyEpisode(log, meta, { ...base, expectedDevice: dev.address });
-    expect(ok.checks.find((c) => c.id === 8)).toMatchObject({ status: "PASS" });
-    const other = await verifyEpisode(log, meta, { ...base, expectedDevice: ethers.Wallet.createRandom().address });
-    expect(other.checks.find((c) => c.id === 8)).toMatchObject({ status: "FAIL" });
-    const { copy } = tamperedCopy(log);
-    const edited = await verifyEpisode(copy, meta, base);
-    expect(edited.checks.find((c) => c.id === 8)).toMatchObject({ status: "FAIL" });
-    const unsigned = await verifyEpisode({ ...log, device: undefined }, meta, { ...base, requireDeviceSignature: true });
-    expect(unsigned.checks.find((c) => c.id === 8)).toMatchObject({ status: "FAIL" });
+    const cs = contentChecks(log, { headerHead: log.headHash, anchoredRequestIdsHash: null, arm });
+    expect(cs.find((c) => c.id === 8)).toMatchObject({ status: "FAIL" });
   });
 });
