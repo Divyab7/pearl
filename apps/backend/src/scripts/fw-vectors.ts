@@ -91,7 +91,17 @@ const seal = {
   frame: { jpeg: b64(new TextEncoder().encode("JPEG-BYTES")), locked: b64(await lockFrame(runKey, new TextEncoder().encode("JPEG-BYTES"))) },
 };
 
-const out = { generatedBy: "apps/backend/src/scripts/fw-vectors.ts", numbers, parse, canon, hashes, eth, seal };
+// the 0G Chain anchor call, encoded by ethers from the contract ABI the dashboard uses
+const { ANCHOR_ABI, episodeKey } = await import("../og/anchor.js");
+const iface = new ethers.Interface(ANCHOR_ABI);
+const aIn = { episodeId: "ep_20261106052200_b7e2", headHash: "0x" + "ab".repeat(32), rootHash: "0x" + "cd".repeat(32), requestIdsHash: "0x" + "ef".repeat(32), outcome: 3, severity: 3, incident: true };
+const anchor = {
+  ...aIn,
+  calldata: iface.encodeFunctionData("anchor", [episodeKey(aIn.episodeId), aIn.headHash, aIn.rootHash, aIn.requestIdsHash, aIn.outcome, aIn.severity, aIn.incident]),
+  calldataNoRoot: iface.encodeFunctionData("anchor", [episodeKey(aIn.episodeId), aIn.headHash, ethers.ZeroHash, aIn.requestIdsHash, aIn.outcome, aIn.severity, aIn.incident]),
+};
+
+const out = { generatedBy: "apps/backend/src/scripts/fw-vectors.ts", numbers, parse, canon, hashes, eth, seal, anchor };
 const path = resolve(REPO_ROOT, "firmware/esp32-arm/test/host/vectors.json");
 writeFileSync(path, JSON.stringify(out, null, 1));
 console.log(`wrote ${path}: ${numbers.length} numbers, ${canon.length} canonical, ${hashes.length} hashes, ${eth.signatures.length} signatures, ${eth.transactions.length} txs`);
