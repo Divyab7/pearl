@@ -38,6 +38,8 @@ export interface RouterConfig {
    * ask the same models again with trust mode "standard" (not hardware-verified), inside the same budget.
    */
   allowStandardFallback?: boolean;
+  /** API key for standard-mode calls (a verified-only key is refused with trust_mode_mismatch); default: apiKey. */
+  standardApiKey?: string;
   timeoutMs: number;
   verifyTee: boolean;
   maxTokens: number;

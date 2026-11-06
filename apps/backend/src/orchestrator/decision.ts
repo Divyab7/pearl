@@ -153,7 +153,9 @@ export async function decide(
       budgetLeft = false;
       break;
     }
-    const r = await callRouter({ ...cfg, model, trustMode, timeoutMs: left }, req, fetchImpl);
+    // standard-mode calls use the standard key (when set) and don't ask for TEE verification (there is none to give)
+    const std = trustMode === "standard";
+    const r = await callRouter({ ...cfg, model, trustMode, timeoutMs: left, ...(std ? { apiKey: cfg.standardApiKey || cfg.apiKey, verifyTee: false } : {}) }, req, fetchImpl);
     attempts.push({ model, trustMode, status: r.status, requestId: r.requestId, error: r.ok ? null : r.error, latencyMs: r.latencyMs });
     last = r;
     if (!isProviderFailure(r)) break; // an answer (good or bad) or a fault in our request: never ask another model
