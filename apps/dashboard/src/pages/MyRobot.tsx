@@ -383,7 +383,7 @@ function ClaimsTab({ live, account, linked }: { live: any; account: any; linked:
             <article key={c.claimId} id={`claim-${c.episodeId}`} className="claim">
               <header className="row">
                 <Severity value={c.severity} incident />
-                <RunRef id={c.episodeId} />
+                <RunRef id={c.episodeId} label="Incident" />
                 <ClaimBadge status={c.status} />
                 <span className="push"><Amount wei={c.payout?.amountWei ?? c.amountWei} paid={!!c.payout} /></span>
               </header>
@@ -557,12 +557,14 @@ function PrivacyAside() {
 }
 
 /** One way to name a run everywhere: its time and short id, linked to the run. */
-export function RunRef({ id, ts, to = "robot" }: { id: string; ts?: number | string; to?: "robot" | "verify" }) {
+export function RunRef({ id, ts, to = "robot", label }: { id: string; ts?: number | string; to?: "robot" | "verify"; label?: string }) {
   // ep_YYYYMMDDhhmmss_xxxx carries its start time; use it when no end time is given
   const m = id.match(/^ep_(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})_/);
   const t = ts ?? (m ? Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!, +m[4]!, +m[5]!, +m[6]!) : undefined);
   return (
     <a className="runref" href={to === "verify" ? href("verify", id) : href("robot", "runs", id)} title={`Open run ${id}`}>
+      {label && <span>{label}</span>}
+      {label && t ? <span aria-hidden>·</span> : null}
       {t ? <span className="tabular">{shortWhen(t)}</span> : null}
       <code className="mono">…{id.slice(-4)}</code>
     </a>

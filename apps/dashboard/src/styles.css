@@ -17,7 +17,7 @@
   --text: #11151b; --text-2: #4a5361; --text-3: #5f6875;
   --accent: #4a62d8; --accent-ink: #ffffff; --accent-soft: rgba(74, 98, 216, .09);
   --ok: #0b6b3e; --ok-soft: rgba(15, 122, 71, .08);
-  --warn: #7a4d00; --warn-soft: rgba(176, 116, 0, .1);
+  --warn: #8a5800; --warn-soft: rgba(176, 116, 0, .1);
   --bad: #c0262d; --bad-soft: rgba(192, 38, 45, .08);
   --info: #0b6aa1; --info-soft: rgba(11, 106, 161, .08);
   --red-cube: #d93434; --blue-cube: #3552d6; --input-bg: #ffffff;
@@ -545,3 +545,8 @@ fieldset.plain:disabled .btn { opacity: .45; cursor: not-allowed; }
 .pool-stats .amount { font-size: 20px; }
 @media (max-width: 760px) { .pool-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .warn-text { color: var(--warn); }
+/* one button scale everywhere (round 6): regular 36, small 32, icon 28; larger touch targets on touch screens */
+.btn { min-height: 36px; }
+.small-btn, .btn.small-btn { min-height: 32px; padding: 6px 10px; font-size: 13px; }
+.btn.icon-only { min-height: 28px; }
+@media (pointer: coarse) { .btn { min-height: 44px; } .small-btn, .btn.small-btn { min-height: 40px; } .btn.icon-only { min-height: 36px; min-width: 36px; } }
