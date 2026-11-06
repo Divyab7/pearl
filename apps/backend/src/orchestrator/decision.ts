@@ -6,11 +6,13 @@
  *  - source "failsafe": anything else. model, raw and parsed are null and `error` says why (prompt hard rule 3).
  *    requestId / httpRequestId are kept when 0G did return them: the call was made and billed, and hiding that would
  *    make the record less honest, not more.
- * There is no retry, no cache and no default answer.
+ * There is no cache and no default answer. The only retry is the model fallback in decide(): when a model fails on
+ * the provider side (no response, 5xx, 429, no provider for the trust mode), the next model in cfg.fallbackModels is
+ * asked the same thing, inside the same timeoutMs budget, and every call is kept in `attempts`.
  */
-import { callRouter, type DecisionRequest, type RouterConfig, type RouterResult } from "../og/router.js";
+import { callRouter, isProviderFailure, type DecisionRequest, type RouterConfig, type RouterResult } from "../og/router.js";
 import { CheckpointOutputSchemas, formatIssues } from "../shared/schemas.js";
-import type { Checkpoint, DecisionRecord } from "../shared/types.js";
+import type { Checkpoint, DecisionRecord, ModelAttempt } from "../shared/types.js";
 
 export type DecisionCore = Pick<
   DecisionRecord,
@@ -31,6 +33,7 @@ export type DecisionCore = Pick<
   | "parsed"
   | "error"
   | "latencyMs"
+  | "attempts"
 >;
 
 /** Remove one surrounding ```json … ``` fence, the only repair allowed (prompt §8.3). */
@@ -104,11 +107,50 @@ export function interpret(checkpoint: Checkpoint, clientRequestId: string, r: Ro
   };
 }
 
+/** The models to ask, in order: the primary then the fallbacks, without blanks or repeats. */
+export function modelsOf(cfg: RouterConfig): string[] {
+  const out: string[] = [];
+  for (const m of [cfg.model, ...(cfg.fallbackModels ?? [])]) if (m && !out.includes(m)) out.push(m);
+  return out.length ? out : [cfg.model];
+}
+
 export async function decide(
   cfg: RouterConfig,
   req: DecisionRequest,
   fetchImpl?: typeof fetch,
 ): Promise<DecisionCore> {
-  const r = await callRouter(cfg, req, fetchImpl);
-  return interpret(req.checkpoint, req.clientRequestId, r);
+  const models = modelsOf(cfg);
+  if (models.length === 1) {
+    const r = await callRouter(cfg, req, fetchImpl);
+    return interpret(req.checkpoint, req.clientRequestId, r);
+  }
+  // Fallbacks: one time budget (cfg.timeoutMs) shared by every call, so the arm never waits longer than with one model.
+  const started = performance.now();
+  const attempts: ModelAttempt[] = [];
+  let last: RouterResult | null = null;
+  let budgetLeft = true;
+  for (const model of models) {
+    const left = Math.floor(cfg.timeoutMs - (performance.now() - started));
+    if (left <= 0) {
+      budgetLeft = false;
+      break;
+    }
+    const r = await callRouter({ ...cfg, model, timeoutMs: left }, req, fetchImpl);
+    attempts.push({ model, status: r.status, requestId: r.requestId, error: r.ok ? null : r.error, latencyMs: r.latencyMs });
+    last = r;
+    if (!isProviderFailure(r)) break; // an answer (good or bad) or a fault in our request: never ask another model
+  }
+  const total = Math.round(performance.now() - started);
+  let r: RouterResult = last!;
+  const n = attempts.length;
+  if (!r.ok && (n > 1 || !budgetLeft)) {
+    const why = !budgetLeft
+      ? `time budget of ${cfg.timeoutMs} ms used up after ${n} ${n === 1 ? "model" : "models"}`
+      : isProviderFailure(r)
+        ? `all ${n} models failed`
+        : `model ${n} of ${models.length} refused the request`;
+    r = { ...r, error: `${why}; last (${attempts.at(-1)!.model}): ${r.error}` };
+  }
+  const d = interpret(req.checkpoint, req.clientRequestId, { ...r, latencyMs: total });
+  return attempts.length > 1 ? { ...d, attempts } : d;
 }

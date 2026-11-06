@@ -27,6 +27,11 @@ export interface RouterConfig {
   baseUrl: string; // e.g. https://router-api.0g.ai/v1 ; the Cut-0G switch replaces it with the blackhole URL
   apiKey: string;
   model: string;
+  /**
+   * Other 0G models tried in order, only when the one before failed on the provider side (see isProviderFailure), with
+   * the same prompt, image and trust mode, inside the same timeoutMs budget. Empty or absent: one model, as before.
+   */
+  fallbackModels?: string[];
   trustMode: TrustMode;
   timeoutMs: number;
   verifyTee: boolean;
@@ -58,7 +63,22 @@ export interface RouterTrace {
 
 export type RouterResult =
   | ({ ok: true; content: string; latencyMs: number; status: number } & RouterTrace)
-  | ({ ok: false; error: string; latencyMs: number; status: number | null } & RouterTrace);
+  | ({ ok: false; error: string; errorCode: string | null; latencyMs: number; status: number | null } & RouterTrace);
+
+/** Error codes the router uses when no provider could serve the model (not a fault in our request). */
+const PROVIDER_CODES = new Set(["no_provider_for_trust_mode", "no_available_provider"]);
+
+/**
+ * True when the failure is on 0G's side, so another model may answer: no response (network error, timeout),
+ * HTTP 5xx, HTTP 429, or a "no provider" error code. False for a 4xx caused by our request (400 invalid request,
+ * 401/402/403/404) and for any answer the model did give (empty, invalid or unsafe answers are never retried).
+ */
+export function isProviderFailure(r: RouterResult): boolean {
+  if (r.ok) return false;
+  if (r.errorCode && PROVIDER_CODES.has(r.errorCode)) return true;
+  if (r.status === null) return true;
+  return r.status >= 500 || r.status === 429;
+}
 
 const EMPTY_TRACE: RouterTrace = {
   model: null,
@@ -170,6 +190,7 @@ export async function callRouter(
     return {
       ok: false,
       error: aborted ? `timeout after ${cfg.timeoutMs} ms` : `network error: ${errMsg(e)}`,
+      errorCode: null,
       latencyMs: ms(),
       status: null,
       ...EMPTY_TRACE,
@@ -185,6 +206,7 @@ export async function callRouter(
     return {
       ok: false,
       error: aborted ? `timeout after ${cfg.timeoutMs} ms (reading body)` : `body read error: ${errMsg(e)}`,
+      errorCode: null,
       latencyMs: ms(),
       status: res.status,
       ...extractTrace(null, res.headers, req.clientRequestId),
@@ -204,11 +226,11 @@ export async function callRouter(
     const err = (body as any)?.error;
     const code = str(err?.code) ?? str(err?.type) ?? "unknown";
     const message = str(err?.message) ?? text.slice(0, 200);
-    return { ok: false, error: `HTTP ${res.status} ${code}: ${message}`, latencyMs: ms(), status: res.status, ...trace };
+    return { ok: false, error: `HTTP ${res.status} ${code}: ${message}`, errorCode: code, latencyMs: ms(), status: res.status, ...trace };
   }
   const content = (body as any)?.choices?.[0]?.message?.content;
   if (typeof content !== "string" || content.length === 0) {
-    return { ok: false, error: "response has no message content", latencyMs: ms(), status: res.status, ...trace };
+    return { ok: false, error: "response has no message content", errorCode: null, latencyMs: ms(), status: res.status, ...trace };
   }
   return { ok: true, content, latencyMs: ms(), status: res.status, ...trace };
 }

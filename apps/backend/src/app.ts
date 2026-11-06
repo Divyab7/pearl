@@ -122,7 +122,8 @@ export async function createApp(opts: AppOptions = {}) {
     armId: process.env.ARM_ID ?? "arm-1",
     deviceId: deviceIdNow,
     routerConfig: () =>
-      routerConfigFromEnv(cut0g ? { baseUrl: process.env.OG_BLACKHOLE_URL ?? "http://10.255.255.1" } : {}),
+      // Cut 0G: one call to the blackhole, no model fallback (every fallback would hit the same blackhole)
+      routerConfigFromEnv(cut0g ? { baseUrl: process.env.OG_BLACKHOLE_URL ?? "http://10.255.255.1", fallbackModels: [] } : {}),
     scene: sceneNow,
     ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
     ...(opts.writeFiles !== undefined ? { writeFiles: opts.writeFiles } : {}),
