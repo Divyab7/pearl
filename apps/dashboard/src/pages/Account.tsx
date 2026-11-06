@@ -133,7 +133,7 @@ export function Account({ live }: { live: any }) {
               <b>{doneN === 4 ? "All set" : `${doneN} of 4 done`}</b>
               <span className="muted small">{doneN === 4 ? "Your robot locks every run for your key, and payouts go to your wallet." : firstOpen >= 0 ? `Next: ${["sign in", "your unlock key", "link your robot", "your payout wallet"][firstOpen]}.` : ""}</span>
             </div>
-            <div className="ac-bar" role="progressbar" aria-valuemin={0} aria-valuemax={4} aria-valuenow={doneN} aria-valuetext={`${doneN} of 4 steps done`}>
+            <div className="ac-bar" role="progressbar" aria-label="Setup progress" aria-valuemin={0} aria-valuemax={4} aria-valuenow={doneN} aria-valuetext={`${doneN} of 4 steps done`}>
               {done.map((d, i) => <span key={i} className={d ? "on" : ""} />)}
             </div>
           </div>

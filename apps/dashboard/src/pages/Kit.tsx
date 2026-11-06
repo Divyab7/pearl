@@ -9,7 +9,7 @@ export function Kit() {
   const [n, setN] = useState(12);
   return (
     <div className="page">
-      <PageHeader display title="Design kit" description="Every building block in both themes. Not linked from the app." actions={<button type="button" className="btn primary" onClick={() => setN(n + 1)}>One primary action</button>} />
+      <PageHeader display title="Design kit" description="Every building block. Not linked from the app." actions={<button type="button" className="btn primary" onClick={() => setN(n + 1)}>One primary action</button>} />
 
       <Section title="Status" info={TIP.og} description="StatusPill tones: ok, warn, bad, info, neutral.">
         <div className="row">

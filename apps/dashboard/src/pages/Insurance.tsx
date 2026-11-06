@@ -323,7 +323,13 @@ function OwnerClaims({ live, account, linked, claims, setClaims }: { live: any; 
       const insurerKey = await wrapRunKey(runKey, ins.key.publicJwk, runContext(robotOf(device), episodeId));
       await post("/api/claims", { episodeId, insurerKey });
       load();
-      setTimeout(() => document.getElementById(`claim-${episodeId}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 400);
+      // the Claim button is replaced by "Claimed · view": move focus (and the view) to the new claim so keyboard and
+      // screen-reader users aren't dropped back at the top of the page
+      setTimeout(() => {
+        const el = document.getElementById(`claim-${episodeId}`);
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+        (el?.querySelector("h3 a") as HTMLElement | null)?.focus({ preventScroll: true });
+      }, 400);
     } catch (e: any) {
       setMsg({ tone: "bad", text: e.message });
     } finally {

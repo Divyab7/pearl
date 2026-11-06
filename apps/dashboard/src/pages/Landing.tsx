@@ -10,8 +10,10 @@ import { Icon } from "../components/ui";
 const ArmView3D = lazy(() => import("../components/ArmView3D").then((m) => ({ default: m.ArmView3D })));
 import { BUILT_ON } from "../lib/words";
 import arm from "../../../../config/arm.json";
-import planImg from "../example/plan.jpg";
-import incidentImg from "../example/incident.jpg";
+// the sample run's camera frames, as small webp variants (public/img) for the story panels
+const planImg = "/img/plan-640.webp";
+const incidentImg = "/img/incident-640.webp";
+const frameSet = (src: string) => `${src.replace("-640", "-400")} 400w, ${src} 640w`;
 import "./landing.css";
 
 /** Links the landing hands to the app. `?demo=` is read by the app shell (APP agent) to enter a demo workspace. */
@@ -26,15 +28,6 @@ export const LANDING_LINKS = {
 
 const reduced = () => typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 const revealAll = () => typeof location !== "undefined" && /[?&]reveal\b/.test(location.search + location.hash);
-
-function useTheme() {
-  const [t, setT] = useState<string>(() => localStorage.getItem("pearl.theme") ?? "light");
-  useEffect(() => {
-    document.documentElement.dataset.theme = t;
-    localStorage.setItem("pearl.theme", t);
-  }, [t]);
-  return [t, () => setT(t === "dark" ? "light" : "dark")] as const;
-}
 
 /** Adds `is-in` to every `.rv` inside the root once it scrolls into view (one observer for the page). */
 function useReveal(root: React.RefObject<HTMLElement | null>) {
@@ -97,7 +90,6 @@ const scrollToId = (id: string) => document.getElementById(id)?.scrollIntoView({
 
 export function Landing() {
   const root = useRef<HTMLDivElement>(null);
-  const [theme, toggle] = useTheme();
   useReveal(root);
   useEffect(() => {
     document.title = "Pearl · Evidence nobody can fake, for robot insurance";
@@ -118,9 +110,6 @@ export function Landing() {
           <div className="lp-bar-side">
             <a className="lp-link lp-hide-sm" href={LANDING_LINKS.verify()}>Verify a record</a>
             <a className="btn primary lp-btn-sm" href={LANDING_LINKS.app}>Open the app</a>
-            <button type="button" className="btn ghost icon-only lp-theme" onClick={toggle} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`} title={`${theme === "dark" ? "Light" : "Dark"} theme`}>
-              <Icon name={theme === "dark" ? "sun" : "moon"} size={18} />
-            </button>
           </div>
         </div>
       </header>
@@ -181,8 +170,8 @@ function Hero() {
           <figure className="lp-photo">
             <img
               src="/img/factory-1600.webp"
-              srcSet="/img/factory-800.webp 800w, /img/factory-1600.webp 1600w"
-              sizes="(max-width: 900px) 100vw, 600px"
+              srcSet="/img/factory-640.webp 640w, /img/factory-800.webp 800w, /img/factory-1600.webp 1600w"
+              sizes="(max-width: 900px) calc(100vw - 32px), 600px"
               width={1600}
               height={1067}
               alt="Orange industrial robot arms working along an assembly line"
@@ -312,7 +301,7 @@ function Stage({ active }: { active: number }) {
       <div className={p(2)} aria-hidden={active !== 2}>
         <div className="lp-sealbig">
           <div className="lp-sealbig-pkg">
-            <span className="lp-mini-frame" style={{ backgroundImage: `url(${planImg})` }} />
+            <span className="lp-mini-frame" style={{ backgroundImage: `url(${planImg.replace("-640", "-400")})` }} />
             <span className="lp-mini-lines"><i /><i /><i /></span>
           </div>
           <div className="lp-sealbig-lock" aria-hidden>
@@ -379,7 +368,7 @@ function Stage({ active }: { active: number }) {
 function Frame({ src, tag, dim, alert }: { src: string; tag: string; dim?: boolean; alert?: boolean }) {
   return (
     <div className={`lp-frame ${dim ? "dim" : ""} ${alert ? "alert" : ""}`}>
-      <img src={src} alt="" width={640} height={480} loading="lazy" decoding="async" />
+      <img src={src} srcSet={frameSet(src)} sizes="(max-width: 900px) 92vw, 420px" alt="" width={640} height={480} loading="lazy" decoding="async" />
       <span className="lp-frame-tag"><span className="lp-rec" /> {tag}</span>
       <span className="lp-corners" aria-hidden />
     </div>

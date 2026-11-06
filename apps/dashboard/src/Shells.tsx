@@ -24,22 +24,6 @@ type Live = ReturnType<typeof useLive>;
 /** Services that can be degraded, in plain words. */
 const MOD_LABEL: Record<string, string> = { ogChainAnchor: "Recording on 0G Chain", indexArkiv: "Search labels on Arkiv", robotZerobot: "The zerobot service" };
 
-/** Light by default everywhere; dark only when chosen with the toggle (never from the OS setting). Same storage key
- *  as the landing page and the pre-paint script in index.html. */
-const THEME_KEY = "pearl.theme";
-function useTheme() {
-  const [t, setT] = useState<string>(() => (localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light"));
-  useEffect(() => {
-    document.documentElement.dataset.theme = t;
-  }, [t]);
-  const toggle = () => setT((x) => {
-    const n = x === "dark" ? "light" : "dark";
-    localStorage.setItem(THEME_KEY, n);
-    return n;
-  });
-  return [t, toggle] as const;
-}
-
 function useMedia(q: string) {
   const [m, setM] = useState(() => matchMedia(q).matches);
   useEffect(() => {
@@ -59,7 +43,6 @@ const TITLE: Record<string, string> = {
 const routeKey = (r: Route) => ("ws" in r ? `${r.ws}/${r.page}` : `${r.shell}/${r.page}`);
 
 export default function Shells({ route, demoRole }: { route: Route; demoRole: DemoRole | null }) {
-  const theme = useTheme();
   const live = useLive();
   const key = routeKey(route);
   const first = useRef(true);
@@ -86,23 +69,13 @@ export default function Shells({ route, demoRole }: { route: Route; demoRole: De
     return () => clearTimeout(t);
   }, [key]);
 
-  if (route.shell === "public") return <PublicShell route={route} live={live} theme={theme} demoRole={demoRole} />;
-  if (route.page === "chooser") return <ChooserShell route={route} live={live} theme={theme} demoRole={demoRole} />;
-  return <AppShell route={route} live={live} theme={theme} demoRole={demoRole} />;
+  if (route.shell === "public") return <PublicShell route={route} live={live} demoRole={demoRole} />;
+  if (route.page === "chooser") return <ChooserShell route={route} live={live} demoRole={demoRole} />;
+  return <AppShell route={route} live={live} demoRole={demoRole} />;
 }
 
 function SkipLink() {
   return <a className="skip" href="#main" onClick={(e) => { e.preventDefault(); document.getElementById("main")?.focus(); }}>Skip to content</a>;
-}
-
-function ThemeButton({ theme, className = "" }: { theme: readonly [string, () => void]; className?: string }) {
-  const [t, toggle] = theme;
-  const next = t === "dark" ? "light" : "dark";
-  return (
-    <button type="button" className={`btn ghost icon-only ${className}`} onClick={toggle} aria-label={`Switch to ${next} theme`} title={`${next === "light" ? "Light" : "Dark"} theme`}>
-      <Icon name={t === "dark" ? "sun" : "moon"} size={18} />
-    </button>
-  );
 }
 
 function Brand({ href = to.landing() }: { href?: string }) {
@@ -144,7 +117,7 @@ function ServiceStrips({ live, route }: { live: Live; route: Route }) {
 }
 
 // ================================================================ public shell
-function PublicTopBar({ theme, current }: { theme: readonly [string, () => void]; current?: "verify" }) {
+function PublicTopBar({ current }: { current?: "verify" }) {
   return (
     <header className="topbar pub-top">
       <Brand />
@@ -152,18 +125,17 @@ function PublicTopBar({ theme, current }: { theme: readonly [string, () => void]
         <a href={to.verify()} className={current === "verify" ? "on" : ""} aria-current={current === "verify" ? "page" : undefined}>Verify a record</a>
       </nav>
       <div className="topbar-side">
-        <ThemeButton theme={theme} />
         <a className="btn primary" href={to.app()}>Open the app</a>
       </div>
     </header>
   );
 }
 
-function PublicShell({ route, live, theme, demoRole }: { route: Route; live: Live; theme: readonly [string, () => void]; demoRole: DemoRole | null }) {
+function PublicShell({ route, live, demoRole }: { route: Route; live: Live; demoRole: DemoRole | null }) {
   return (
     <div className="shell pub">
       <SkipLink />
-      <PublicTopBar theme={theme} current={route.page === "verify" ? "verify" : undefined} />
+      <PublicTopBar current={route.page === "verify" ? "verify" : undefined} />
       {demoRole && <DemoBanner role={demoRole} />}
       <main id="main" tabIndex={-1}>
         {route.page === "verify" ? <Proof tick={live.tick} runId={route.runId} tamper={route.tamper} />
@@ -194,14 +166,13 @@ function NotFound({ home }: { home: string }) {
 }
 
 // ================================================================ workspace chooser (#/app)
-function ChooserShell({ route, live, theme, demoRole }: { route: Extract<Route, { page: "chooser" }>; live: Live; theme: readonly [string, () => void]; demoRole: DemoRole | null }) {
+function ChooserShell({ route, live, demoRole }: { route: Extract<Route, { page: "chooser" }>; live: Live; demoRole: DemoRole | null }) {
   return (
     <div className="shell pub">
       <SkipLink />
       <header className="topbar pub-top">
         <Brand />
         <nav className="pub-nav" aria-label="Main"><a href={to.verify()}>Verify a record</a></nav>
-        <div className="topbar-side"><ThemeButton theme={theme} /></div>
       </header>
       {demoRole && <DemoBanner role={demoRole} />}
       <main id="main" tabIndex={-1}>
@@ -323,7 +294,7 @@ const NAV: Record<Workspace, { label: string; items: NavItem[] }[]> = {
   ],
 };
 
-function AppShell({ route, live, theme, demoRole }: { route: Exclude<Route, { page: "chooser" }>; live: Live; theme: readonly [string, () => void]; demoRole: DemoRole | null }) {
+function AppShell({ route, live, demoRole }: { route: Exclude<Route, { page: "chooser" }>; live: Live; demoRole: DemoRole | null }) {
   const ws: Workspace = "ws" in route ? route.ws : "owner";
   const mobile = useMedia("(max-width: 760px)");
   const tablet = useMedia("(max-width: 1180px)");
@@ -336,7 +307,7 @@ function AppShell({ route, live, theme, demoRole }: { route: Exclude<Route, { pa
   };
   const [drawer, setDrawer] = useState(false);
   const menuBtn = useRef<HTMLButtonElement>(null);
-  const sideRef = useRef<HTMLElement>(null);
+  const sideRef = useRef<HTMLDivElement>(null);
   const navKey = JSON.stringify(route);
   useEffect(() => setDrawer(false), [navKey, mobile]);
   useEffect(() => {
@@ -377,16 +348,16 @@ function AppShell({ route, live, theme, demoRole }: { route: Exclude<Route, { pa
           </button>
           <Brand href={to.app()} />
           <span className="app-top-ws">{ws === "owner" ? "Owner" : "Insurer"}{demoRole && <span className="ws-demo">Demo data</span>}</span>
-          <ThemeButton theme={theme} className="push" />
         </header>
       )}
       {mobile && drawer && <div className="side-scrim" aria-hidden onClick={() => setDrawer(false)} />}
-      <aside
+      {/* a div, not <aside>: role="dialog" isn't allowed on <aside> (axe aria-allowed-role); a complementary landmark otherwise */}
+      <div
         id="app-side"
         ref={sideRef}
         className={`side ${drawer ? "open" : ""}`}
         aria-label={`${ws === "owner" ? "Owner" : "Insurer"} workspace`}
-        {...(mobile && drawer ? { role: "dialog", "aria-modal": true } : {})}
+        {...(mobile && drawer ? { role: "dialog", "aria-modal": true } : { role: "complementary" })}
         {...(hidden ? { inert: true, "aria-hidden": true } : {})}
       >
         <div className="side-head">
@@ -437,9 +408,8 @@ function AppShell({ route, live, theme, demoRole }: { route: Exclude<Route, { pa
         <div className="side-foot">
           {ws === "owner" && <RobotStatus live={live} collapsed={collapsed} />}
           <Identity ws={ws} tick={live.tick} demoRole={demoRole} collapsed={collapsed} />
-          {!mobile && <ThemeButton theme={theme} className="side-theme" />}
         </div>
-      </aside>
+      </div>
       <div className="app-main">
         {demoRole && <DemoBanner role={demoRole} />}
         <ServiceStrips live={live} route={route} />
@@ -469,7 +439,7 @@ function RobotStatus({ live, collapsed }: { live: Live; collapsed: boolean }) {
 
 /** Who's signed in for this workspace, with sign-out (or "Exit demo" in a demo). */
 function Identity({ ws, tick, demoRole, collapsed }: { ws: Workspace; tick: number; demoRole: DemoRole | null; collapsed: boolean }) {
-  const { account, refresh } = useAccount(tick);
+  const { account, refresh } = useAccount(tick, ws === "owner");
   const insurer = useInsurerSession(tick);
   const signedIn = ws === "owner" ? !!account : !!insurer?.signedIn;
   const name = demoRole ? (ws === "owner" ? "Demo owner" : "Demo insurer") : signedIn ? (ws === "owner" ? "Verified human" : "Insurer wallet") : "Not signed in";

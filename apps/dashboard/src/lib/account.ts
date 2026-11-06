@@ -7,9 +7,10 @@ const EV = "pearl:account";
 
 /** Owner account: undefined while loading, null when signed out, else { accountId, key, wallet, robots[] }.
  *  Call refresh() after anything that changes it (sign-in, sign-out, key, wallet, robot link). */
-export function useAccount(tick: number) {
+export function useAccount(tick: number, enabled = true) {
   const [account, setAccount] = useState<any>(undefined);
-  const fetchIt = () => get("/api/account").then(setAccount).catch(() => setAccount(null));
+  // enabled=false (e.g. the insurer workspace's identity block): no request, so no 401 in the console on every page
+  const fetchIt = () => (enabled ? get("/api/account").then(setAccount).catch(() => setAccount(null)) : Promise.resolve(setAccount(null)));
   const refresh = () => {
     const p = fetchIt();
     dispatchEvent(new Event(EV));
@@ -17,12 +18,12 @@ export function useAccount(tick: number) {
   };
   useEffect(() => {
     fetchIt();
-  }, [tick]);
+  }, [tick, enabled]);
   useEffect(() => {
     const f = () => void fetchIt();
     addEventListener(EV, f);
     return () => removeEventListener(EV, f);
-  }, []);
+  }, [enabled]);
   return { account, refresh };
 }
 

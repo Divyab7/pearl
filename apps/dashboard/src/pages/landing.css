@@ -43,7 +43,6 @@
 .lp-nav button:hover { color: var(--text); background: var(--raise); }
 .lp-bar-side { margin-left: auto; display: flex; align-items: center; gap: var(--s3); }
 .landing .lp-btn-sm { min-height: 36px; padding: 8px 14px; font-size: 14px; }
-.landing .btn.lp-theme { min-width: 36px; min-height: 36px; }
 
 /* ---------------------------------------------------------------- buttons (landing polish over .btn) */
 .landing .btn { transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), transform var(--t-mid) var(--ease-out), box-shadow var(--t-mid) var(--ease-out); }
@@ -240,7 +239,6 @@
   display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--s5); align-items: center; padding: var(--s8) var(--s7); border-radius: 28px; color: var(--text);
   background: radial-gradient(70% 90% at 100% 0%, rgba(110, 130, 255, .28), transparent 60%), radial-gradient(60% 80% at 0% 100%, rgba(214, 170, 110, .14), transparent 60%), var(--lp-ink);
   box-shadow: var(--lp-shadow-lg); }
-[data-theme="dark"] .lp-live-card { border: 1px solid rgba(255, 255, 255, .08); }
 .lp-live-copy { grid-column: 1 / span 6; display: grid; gap: var(--s4); justify-items: start; }
 .lp-live-copy .lp-ctas { margin-top: var(--s3); }
 .landing .lp-live-card .lp-btn-quiet { background: transparent; box-shadow: none; color: var(--text); }
