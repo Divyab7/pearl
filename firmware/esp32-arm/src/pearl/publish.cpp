@@ -244,13 +244,16 @@ bool pushSegment(orch::Platform& p, const Config& c, const StorageNet& net, cons
     err = "storage nodes did not see the submission within " + std::to_string(c.storageTimeoutMs / 1000) + " s";
     return false;
   }
+  // only the nodes of this segment's shard hold it (a node of another shard reports "finalized" for files it
+  // has nothing to store for); send the segment to EVERY such node so one node going down can't hide the file
   uint64_t seg = start / chain::SEGMENT_CHUNKS;
-  const StorageNet::Node* target = &net.nodes[0];
+  std::vector<const StorageNet::Node*> targets;
   for (const auto& n : net.nodes)
-    if (n.numShard && seg % n.numShard == n.shardId) {
-      target = &n;
-      break;
-    }
+    if (n.numShard && seg % n.numShard == n.shardId) targets.push_back(&n);
+  if (targets.empty()) {
+    err = "no storage node holds the shard of segment " + std::to_string(seg);
+    return false;
+  }
   JsonDocument up;
   JsonArray ua = up.to<JsonArray>();
   JsonObject s = ua.add<JsonArray>().add<JsonObject>();
@@ -262,20 +265,31 @@ bool pushSegment(orch::Platform& p, const Config& c, const StorageNet& net, cons
   proof["path"].to<JsonArray>();
   s["fileSize"] = file.size();
   ua.add(out.txSeq);
-  std::string e;
-  if (!rpc(p, target->url, "zgs_uploadSegmentsByTxSeq", up.as<JsonVariantConst>(), res, e, 30000) && e.find("already uploaded") == std::string::npos) {
-    err = e;
+  std::vector<const StorageNet::Node*> took;
+  std::string e, lastErr;
+  for (const auto* t : targets) {
+    if (rpc(p, t->url, "zgs_uploadSegmentsByTxSeq", up.as<JsonVariantConst>(), res, e, 30000) ||
+        e.find("already uploaded") != std::string::npos || e.find("already been uploaded") != std::string::npos ||
+        e.find("being uploaded") != std::string::npos)
+      took.push_back(t);
+    else
+      lastErr = e;
+  }
+  if (took.empty()) {
+    err = "segment upload failed on every node of its shard: " + lastErr;
     return false;
   }
-  // finalized?
+  // finalized on a node that took it?
   while (static_cast<int32_t>(until - p.millis()) > 0) {
-    JsonDocument fp;
-    JsonArray a = fp.to<JsonArray>();
-    a.add(out.rootHash);
-    a.add(true);
-    if (rpc(p, target->url, "zgs_getFileInfo", fp.as<JsonVariantConst>(), res, e) && !res.isNull() && (res["finalized"] | false)) {
-      out.ms = p.millis() - started;
-      return true;
+    for (const auto* t : took) {
+      JsonDocument fp;
+      JsonArray a = fp.to<JsonArray>();
+      a.add(out.rootHash);
+      a.add(true);
+      if (rpc(p, t->url, "zgs_getFileInfo", fp.as<JsonVariantConst>(), res, e) && !res.isNull() && (res["finalized"] | false)) {
+        out.ms = p.millis() - started;
+        return true;
+      }
     }
     p.sleep(1500);
   }
@@ -304,7 +318,11 @@ bool uploadFile(orch::Platform& p, const Config& c, const eth::Key& k, const Byt
     a.add(out.rootHash);
     a.add(false);
     std::string e;
-    if (rpc(p, net.nodes[0].url, "zgs_getFileInfo", fp.as<JsonVariantConst>(), res, e) && !res.isNull() && (res["finalized"] | false)) {
+    // ask each node, but only believe one whose shard holds the file's segment (see uploadSegments)
+    for (const auto& n : net.nodes) {
+      if (!rpc(p, n.url, "zgs_getFileInfo", fp.as<JsonVariantConst>(), res, e) || res.isNull() || !(res["finalized"] | false)) continue;
+      uint64_t seg = (res["tx"]["startEntryIndex"] | 0ULL) / chain::SEGMENT_CHUNKS;
+      if (!n.numShard || seg % n.numShard != n.shardId || !(res["uploadedSegNum"] | 0ULL)) continue;
       out.txSeq = res["tx"]["seq"] | 0ULL;
       out.ms = p.millis() - started;
       return true;
