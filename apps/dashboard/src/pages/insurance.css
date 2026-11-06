@@ -87,7 +87,9 @@
 .ins-desk-side { display: grid; gap: var(--s4); }
 .ins-desk-main { min-width: 0; outline: none; scroll-margin-top: calc(var(--topbar-h) + 12px); }
 .ins-queue { padding: var(--s4); gap: var(--s3); }
-.ins-q { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--s2); }
+.ins-q { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--s2); }
+.ins-queue .sect-head { align-items: center; }
+.ins-queue .sect-actions .tabs { border-bottom: 0; }
 .ins-q-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); padding: 12px var(--s4); border-radius: var(--r3); border: 1px solid var(--border); background: var(--panel); color: var(--text); transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease); }
 .ins-q-row:hover { border-color: var(--border-strong); text-decoration: none; }
 .ins-q-row.sel { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 45%, transparent); box-shadow: inset 3px 0 0 var(--accent); }
@@ -102,6 +104,7 @@
 /* the selected claim: evidence (left, scrolls) | decision (right, stays in view) */
 .ins-review-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--s5); align-items: start; }
 .ins-evidence { display: grid; gap: var(--s4); min-width: 0; }
+.ins-story { scroll-margin-top: calc(var(--topbar-h) + 16px); }
 .ins-decide { position: sticky; top: calc(var(--topbar-h) + 16px); display: grid; gap: var(--s3); }
 .ins-decide > .ins-sum-amt { padding: var(--s4) var(--s5); background: var(--panel); border: 1px solid var(--border); border-radius: var(--r4); box-shadow: var(--shadow); }
 .ins-sum-side { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }

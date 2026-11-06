@@ -256,6 +256,7 @@ function Chooser({ tick, demo, demoRole }: { tick: number; demo?: Workspace; dem
           </header>
           <fieldset className="seg" aria-describedby="signin-role-line">
             <legend>I am…</legend>
+            <div className="seg-track">
             {(["insurer", "owner"] as const).map((r) => (
               <label key={r} className={`seg-opt ${role === r ? "on" : ""}`}>
                 <input type="radio" name="signin-role" value={r} checked={role === r} onChange={() => setRole(r)} />
@@ -263,6 +264,7 @@ function Chooser({ tick, demo, demoRole }: { tick: number; demo?: Workspace; dem
                 {r === "owner" ? "Robot owner" : "Insurer"}
               </label>
             ))}
+            </div>
           </fieldset>
           <p className="signin-role-line" id="signin-role-line">{ROLE_LINE[role]}</p>
           {err && <div className="chooser-err" role="alert"><Icon name="alert" size={16} /> {err}</div>}

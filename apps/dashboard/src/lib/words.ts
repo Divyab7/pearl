@@ -112,7 +112,7 @@ export const OUTCOME_TONE: Record<string, "neutral" | "ok" | "warn" | "bad"> = {
 export const ROBOT_STATE: Record<string, string> = {
   IDLE: "Idle",
   MOVING: "Moving",
-  WAITING: "Asking the AI",
+  WAITING: "Asking the AI on 0G",
   FROZEN_HAND: "Paused: hand in the way",
   SAFE: "In safe pose",
   TRIPPED: "Safety trip",

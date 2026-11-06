@@ -1,6 +1,6 @@
 // Owner overview (#/app/owner): the robot live, its latest runs with a real check of each, and the counters.
 // (What Pearl is and who it's for now lives on the public landing page.)
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ago, get, og, post, type useLive } from "../api";
 import { to } from "../router";
 import { ArmView3D } from "../components/ArmView3D";
@@ -30,9 +30,16 @@ export function Overview({ live }: { live: Live }) {
   const [retry, setRetry] = useState(0);
   const runs = useRuns(live.tick + retry);
   const stats = useStats(live.tick + retry);
-  const latest: any[] = (runs.items ?? []).slice(0, 5);
+  const [verdicts, setVerdicts] = useState<Record<string, VerdictKind | null>>({});
+  const onVerdict = (id: string, k: VerdictKind | null) => setVerdicts((m) => (m[id] === k ? m : { ...m, [id]: k }));
+  // newest first, but the list never leads with a scary row: once checked, verified runs come before the rest
+  const rank = (id: string) => (verdicts[id] === "ok" || verdicts[id] === undefined ? 0 : 1);
+  const latest: any[] = (runs.items ?? []).slice(0, 5).map((r: any, i: number) => ({ r, i })).sort((a: any, b: any) => rank(a.r.episodeId) - rank(b.r.episodeId) || a.i - b.i).map((x: any) => x.r);
   const runsLoading = !runs.source && !runs.err && latest.length === 0;
-  const [lastCheck, setLastCheck] = useState<{ kind: VerdictKind; at: number } | null>(null);
+  const newestOk = (runs.items ?? []).find((r: any) => verdicts[r.episodeId] === "ok");
+  const okAt = useRef<number>(0);
+  if (newestOk && !okAt.current) okAt.current = Date.now();
+  const lastCheck = newestOk ? { kind: "ok" as VerdictKind, at: okAt.current } : null;
 
   return (
     <div className="page home">
@@ -43,7 +50,7 @@ export function Overview({ live }: { live: Live }) {
       <Counters stats={stats} tick={live.tick} lastCheck={lastCheck} />
 
       <div className="home-grid">
-        <LivePanel live={live} latestId={latest[0]?.episodeId} />
+        <LivePanel live={live} latestId={newestOk?.episodeId} />
 
         <section className="home-runs sect boxed" aria-labelledby="home-runs-title">
           <div className="home-runs-head">
@@ -58,7 +65,7 @@ export function Overview({ live }: { live: Live }) {
                 ? <EmptyState title="No runs yet" icon="robot" plain>Start your first run and it shows up here, sealed on 0G and listed on Arkiv.</EmptyState>
                 : (
                   <ul className="rrows home-rrows">
-                    {latest.map((r, i) => <li key={r.episodeId}><HomeRunRow run={r} onVerdict={i === 0 ? setLastCheck : undefined} /></li>)}
+                    {latest.map((r) => <li key={r.episodeId}><HomeRunRow run={r} onVerdict={(k) => onVerdict(r.episodeId, k)} /></li>)}
                   </ul>
                 )}
           <p className="home-source small">
@@ -143,7 +150,7 @@ function LivePanel({ live, latestId }: { live: Live; latestId?: string }) {
         ) : (
           <StatusPill tone="neutral" title={access?.why ?? undefined}>View only</StatusPill>
         )}
-        {latestId && <a className="btn" href={to.run(latestId)}><Icon name="doc" size={15} /> Open the latest run</a>}
+        {latestId && <a className="btn" href={to.run(latestId)}><Icon name="doc" size={15} /> Open the latest verified run</a>}
         <a className="home-more push" href={to.robot()}>Robot controls <Icon name="arrow" size={14} /></a>
       </div>
       {!task && canStart && !running && <p className="small muted">No cube on the table. Put one back from the Robot page.</p>}
@@ -155,7 +162,7 @@ function LivePanel({ live, latestId }: { live: Live; latestId?: string }) {
 /* ------------------------------------------------------------------------------------------------ runs + counters */
 
 /** One run: time, outcome in words and a real public check of it (Verified / Not verified / Altered). */
-function HomeRunRow({ run, onVerdict }: { run: any; onVerdict?: (c: { kind: VerdictKind; at: number }) => void }) {
+function HomeRunRow({ run, onVerdict }: { run: any; onVerdict?: (k: VerdictKind | null) => void }) {
   const [verdict, setVerdict] = useState<VerdictKind | null | undefined>(undefined);
   useEffect(() => {
     let stop = false;
@@ -163,8 +170,12 @@ function HomeRunRow({ run, onVerdict }: { run: any; onVerdict?: (c: { kind: Verd
       if (stop) return;
       const k = verdictOf(v);
       setVerdict(k);
-      onVerdict?.({ kind: k, at: Date.now() });
-    }).catch(() => !stop && setVerdict(null));
+      onVerdict?.(k);
+    }).catch(() => {
+      if (stop) return;
+      setVerdict(null);
+      onVerdict?.(null);
+    });
     return () => {
       stop = true;
     };

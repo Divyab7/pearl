@@ -27,7 +27,7 @@
 .signin { flex: 1; display: grid; grid-template-columns: minmax(380px, 5fr) minmax(0, 7fr); min-height: 100vh; }
 .signin-shell:has(.demobar) .signin { min-height: calc(100vh - 44px); }
 .signin-brand { display: flex; flex-direction: column; gap: var(--s5); padding: var(--s6) var(--s7) var(--s7); background: linear-gradient(180deg, var(--raise), color-mix(in srgb, var(--raise) 60%, var(--bg))); border-right: 1px solid var(--border); }
-.signin-photo { margin: var(--s3) 0 0; border-radius: var(--r4); overflow: hidden; aspect-ratio: 3 / 2; background: var(--border); box-shadow: var(--shadow-lg); }
+.signin-photo { margin: var(--s3) 0 0; border-radius: var(--r4); overflow: hidden; aspect-ratio: 5 / 4; background: var(--border); box-shadow: var(--shadow-lg); }
 .signin-photo img { width: 100%; height: 100%; object-fit: cover; object-position: 40% 50%; display: block; }
 .signin-promise { font-size: 30px; line-height: 1.12; font-weight: 680; letter-spacing: -.025em; color: var(--text); text-wrap: balance; max-width: 18ch; }
 .signin-built { display: grid; gap: var(--s3); padding-top: var(--s4); border-top: 1px solid var(--border-strong); }
@@ -39,8 +39,9 @@
 .signin-card { width: 100%; max-width: 460px; display: grid; gap: var(--s4); }
 .signin-head { display: grid; gap: var(--s2); margin-bottom: var(--s2); }
 .signin-head h1 { font-size: 32px; }
-.seg { margin: 0; padding: 4px; border: 1px solid var(--border-strong); border-radius: var(--r3); background: var(--raise); display: grid; grid-template-columns: 1fr 1fr; gap: 4px; position: relative; }
-.seg legend { font-size: 14px; font-weight: 650; color: var(--text); padding: 0; margin-bottom: var(--s2); float: left; width: 100%; }
+.seg { margin: 0; padding: 0; border: 0; min-width: 0; width: 100%; }
+.seg legend { font-size: 14px; font-weight: 650; color: var(--text); padding: 0; margin-bottom: var(--s2); }
+.seg-track { padding: 4px; border: 1px solid var(--border-strong); border-radius: var(--r3); background: var(--raise); display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
 .seg-opt { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; border-radius: var(--r2); font-weight: 600; font-size: var(--fs-ui); color: var(--text-2); cursor: pointer; transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
 .seg-opt input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; width: 100%; height: 100%; min-height: 0; }
 .seg-opt:hover { color: var(--text); }

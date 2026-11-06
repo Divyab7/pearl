@@ -201,7 +201,7 @@ function SealCard() {
           <span>Camera frame + AI reasoning</span>
         </div>
       </div>
-      <div className="lp-seal-ok" aria-hidden><Icon name="check" size={14} /> Verified ✓ · not altered<span>10:42</span></div>
+      <div className="lp-seal-ok" aria-hidden>Verified ✓ · not altered<span>10:42</span></div>
       <div className="lp-seal-fp" aria-hidden>
         <span className="lp-seal-fp-k">Fingerprint</span>
         <span className="lp-seal-fp-v">{"7cd2f3cf6e1d".split("").map((c, i) => <i key={i} style={{ "--i": i } as React.CSSProperties}>{c}</i>)}<i className="lp-ell">…</i></span>

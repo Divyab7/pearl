@@ -353,7 +353,7 @@ function OwnerClaims({ live, account, linked, claims, setClaims }: { live: any; 
   return (
     <>
       {loadErr && <PlainError title="Couldn't load your claims" raw={loadErr} fallback="The claims service didn't answer. Your claims are safe." onRetry={load} />}
-      <Section title="Incidents you can claim" info={INS_TIP.shareOne} description={<>A live Arkiv query of your linked robots' runs, so it works even when the robot is offline<InfoTip text={TIP.arkivQuery} label="Where this list comes from" />. The payout is fixed by severity.</>}>
+      <Section title="Incidents you can claim" info={INS_TIP.shareOne} description={<>A live Arkiv query of your linked robots' runs, so it works even when the robot is offline. The payout is fixed by severity.<InfoTip text={TIP.arkivQuery} label="Where this list comes from" /></>}>
         {blockers.length > 0 && (
           <Callout tone="warn" title="Before you can claim">
             <ul className="ins-blockers">{blockers.map((b) => <li key={b}>{b}</li>)}</ul>
@@ -643,8 +643,7 @@ function Desk({ info, reload, tick, claimId, reloadPool }: { info: any; reload: 
       )}
       <div className="ins-desk">
         <aside className="ins-desk-side">
-          <Section boxed title="Queue" className="ins-queue">
-            <Tabs label="Claim queue" active={qtab} onChange={(t) => setQtab(t as any)} tabs={[{ id: "waiting", label: "Waiting", count: waiting.length }, { id: "decided", label: "Decided", count: done.length }]} />
+          <Section boxed title="Queue" className="ins-queue" actions={<Tabs label="Claim queue" active={qtab} onChange={(t) => setQtab(t as any)} tabs={[{ id: "waiting", label: "Waiting", count: waiting.length }, { id: "decided", label: "Decided", count: done.length }]} />}>
             {err && <PlainError title="Couldn't load claims" raw={err} fallback="The claims list didn't load." onRetry={loadClaims} />}
             {!claims && !err ? <Skeleton lines={3} label="Loading claims" /> : rows.length === 0 ? (
               <EmptyState plain icon={qtab === "waiting" ? "check" : "doc"} title={qtab === "waiting" ? "Nothing waiting" : "No decisions yet"}>

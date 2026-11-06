@@ -240,7 +240,7 @@ function PrivacyAside() {
       <ul className="ticks">
         <li><Icon name="check" size={14} /> An anonymous account number and your payout wallet</li>
         <li><Icon name="check" size={14} /> The public half of your unlock key</li>
-        <li><Icon name="check" size={14} /> Each run's public labels: result, incident, time</li>
+        <li><Icon name="check" size={14} /> Each run's Arkiv entry: outcome, incident, severity, time</li>
       </ul>
       <h2 className="ac-aside-title">What it can't see</h2>
       <ul className="ticks no">
