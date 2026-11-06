@@ -8,7 +8,8 @@ import { to } from "../router";
 import { EmptyState, ErrorState, InfoTip, PageHeader, Section, Skeleton, Stat, StatusPill, StepStrip, TechDetails } from "../components/blocks";
 import { Amount, Callout, Chip, CopyButton, Dl, DotLabel, Field, Icon, Spinner, Stepper, Tabs, type Step, type Tone } from "../components/ui";
 import { KeySetup, WorldPrompt } from "../components/KeySetup";
-import { RunDetail, Severity, shortWhen } from "../components/run";
+import { Severity, shortWhen } from "../components/run";
+import { RunStory } from "../components/RunStory";
 import { ARKIV_EXPLORER } from "../components/claims";
 import { accountChanged, useAccount } from "../lib/account";
 import { loadKey } from "../lib/keys";
@@ -582,7 +583,7 @@ function Review({ claim, rec, onDecided }: { claim: any; rec: any; onDecided: ()
   // the dock's "Unlock incident" presses the story's own unlock button (one action, shown where the decision is)
   const unlockStory = () => {
     const b = [...(story.current?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((x) => x.textContent?.includes("Unlock incident"));
-    b?.closest(".card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    b?.closest(".card, .rs")?.scrollIntoView({ behavior: "smooth", block: "start" });
     b?.click();
   };
   return (
@@ -631,15 +632,15 @@ function Review({ claim, rec, onDecided }: { claim: any; rec: any; onDecided: ()
 }
 
 /**
- * The claimed incident, unlocked with the receiving key. ONE boundary: swap RunDetail for the Robot page's
- * RunStory here when it lands (same inputs: run id, robot, unlock(), onFull).
+ * The claimed incident, unlocked with the receiving key, told as a RunStory (insurer mode).
  */
 function IncidentStory({ claim, rec, onFull, containerRef }: { claim: any; rec: any; onFull: (fc: FullCheck | null) => void; containerRef?: React.RefObject<HTMLDivElement | null> }) {
   return (
     <div className="ins-story" ref={containerRef}>
-      <h3 className="ins-story-title">The incident</h3>
-      <RunDetail
+      <RunStory
         episodeId={claim.episodeId}
+        mode="insurer"
+        titleAs="h3"
         device={claim.device}
         unlock={rec ? () => unwrapWith(claim.insurerKey, rec, claim.device, claim.episodeId) : null}
         lockedReason="Set up or restore your receiving key above to unlock this incident."

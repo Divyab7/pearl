@@ -9,7 +9,7 @@ import { useAccount, useInsurerSession } from "./lib/account";
 import { PAGE, ROBOT_LINK } from "./lib/words";
 import { Home } from "./pages/Home";
 import { Insurance } from "./pages/Insurance";
-import { MyRobot } from "./pages/MyRobot";
+import { Robot } from "./pages/Robot";
 import { Offline } from "./pages/Offline";
 import { Proof } from "./pages/Proof";
 import { Account } from "./pages/Account";
@@ -111,7 +111,7 @@ function Page({ route, live }: { route: Route; live: ReturnType<typeof useLive> 
     case "home":
       return <Home live={live} />;
     case "robot":
-      return route.runId || route.runs ? <MyRobot live={live} sub="runs" runId={route.runId} /> : <MyRobot live={live} sub="live" />;
+      return <Robot live={live} runId={route.runId} />;
     case "proof":
       return <Proof tick={live.tick} runId={route.runId} />;
     case "insurance":

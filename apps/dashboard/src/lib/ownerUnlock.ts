@@ -1,19 +1,37 @@
-// The owner's unlock for one run: their key (this browser) opens the run key the robot locked for them.
-// Same logic as MyRobot's useOwnerUnlock (kept separate so the Insurance page does not depend on the Robot page).
+// Owner unlock for a run, in this browser: the owner's private key (localStorage) opens the run key the robot locked
+// for them. Works while the robot is offline: then any robot linked to the account counts, and the run's key comes
+// from the copy the robot locked for the owner inside the stored file.
 import { get } from "../api";
 import { unwrapWith } from "./fullcheck";
-import { loadKey } from "./keys";
+import { loadKey, type KeyRecord } from "./keys";
 
-export function useOwnerUnlock(live: any, account: any, linked: boolean) {
+export interface OwnerUnlock {
+  /** Returns this run's key, or null when the viewer can't unlock (see `reason`). */
+  unlock: ((episodeId: string, device?: string | null) => Promise<Uint8Array>) | null;
+  /** Plain sentence: why unlocking isn't possible yet ("" when it is). */
+  reason: string;
+  /** What the owner should do next: "signin" | "setup" | null. */
+  next: "signin" | "setup" | null;
+  /** The robot address a run belongs to (explicit device, else the live robot, else the first linked robot). */
+  robotOf: (device?: string | null) => string;
+  /** The live robot is linked to this account. */
+  linked: boolean;
+  /** The owner's key record in this browser, if any. */
+  rec: KeyRecord | null;
+}
+
+/** `linked` overrides the computed "live robot is linked to this account" (kept for older callers). */
+export function ownerUnlock(live: any, account: any, linkedOverride?: boolean): OwnerUnlock {
+  const addr: string | undefined = live?.state?.deviceAddress;
+  const linked = linkedOverride ?? !!account?.robots?.some((r: any) => r.address.toLowerCase() === addr?.toLowerCase());
   const rec = account ? loadKey("owner", account.accountId) : null;
-  const robotOf = (device?: string | null): string => device || live.state?.deviceAddress || account?.robots?.[0]?.address || "";
-  // the robot may be offline (no live address): then any robot linked to the account counts
-  const offline = !live.state?.deviceAddress;
+  const robotOf = (device?: string | null): string => device || addr || account?.robots?.[0]?.address || "";
+  const offline = !addr;
   const owns = linked || (offline && !!account?.robots?.length);
   const ready = !!(account && account.key && rec && rec.kid === account.key.kid && owns);
-  const reason = !account ? "Sign in as the robot's owner first."
+  const reason = !account ? "Sign in as the robot's owner to unlock its runs."
     : !account.key ? "Set up your unlock key in Account first."
-      : !rec || rec.kid !== account.key.kid ? "Your unlock key is not on this browser. Restore it from your backup in Account."
+      : !rec || rec.kid !== account.key.kid ? "Your unlock key is not in this browser. Restore it from your backup in Account."
         : !owns ? "Link this robot to your account in Account first." : "";
   const unlock = ready
     ? async (episodeId: string, device?: string | null) => {
@@ -21,5 +39,8 @@ export function useOwnerUnlock(live: any, account: any, linked: boolean) {
       return unwrapWith(wrap, rec!, robotOf(device), episodeId);
     }
     : null;
-  return { unlock, reason, rec, robotOf };
+  return { unlock, reason, next: ready ? null : !account ? "signin" : "setup", robotOf, linked, rec };
 }
+
+/** Same as ownerUnlock (name used by the Insurance page). */
+export const useOwnerUnlock = (live: any, account: any, linked: boolean) => ownerUnlock(live, account, linked);
