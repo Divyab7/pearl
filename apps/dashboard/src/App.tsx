@@ -1,43 +1,77 @@
 import { useEffect, useState } from "react";
 import { useLive } from "./api";
-import { Claims } from "./panels/Claims";
-import { Account, useAccount } from "./panels/Account";
-import { Decisions } from "./panels/Decisions";
-import { Episodes } from "./panels/Episodes";
-import { Proof } from "./panels/Proof";
-import { Live } from "./panels/Live";
-import { Replay } from "./panels/Replay";
-import { Verify } from "./panels/Verify";
+import { href, useRoute } from "./router";
+import { Icon } from "./components/ui";
+import { Insurer } from "./pages/Insurer";
+import { MyRobot } from "./pages/MyRobot";
+import { Verify } from "./pages/Verify";
+import { Welcome } from "./pages/Welcome";
 import "./styles.css";
 
-export function App() {
-  const { tel, status, records, connected, tick, cut0g, state } = useLive();
-  const [selected, setSelected] = useState(null);
+const MOD_LABEL: Record<string, string> = { ogChainAnchor: "0G Chain anchor", indexArkiv: "Arkiv index", robotZerobot: "zerobot" };
+
+// ?demo=1 enlarges everything a little for screen recordings
+if (new URLSearchParams(location.search).has("demo")) document.documentElement.classList.add("demo");
+
+function useTheme() {
+  const [t, setT] = useState<string>(() => localStorage.getItem("pearl.theme") ?? "dark");
   useEffect(() => {
-    if (status?.episodeId && ["DONE", "ABORTED", "FAILSAFE_STOPPED", "TRIPPED"].includes(status.phase)) setSelected(status.episodeId);
-  }, [status?.phase, status?.episodeId]);
-  const mods = state?.modules ?? {};
-  const { account, refresh } = useAccount(tick);
+    document.documentElement.dataset.theme = t;
+    localStorage.setItem("pearl.theme", t);
+  }, [t]);
+  return [t, () => setT(t === "dark" ? "light" : "dark")] as const;
+}
+
+export function App() {
+  const live = useLive();
+  const route = useRoute();
+  const [theme, toggle] = useTheme();
+  const page = route[0] ?? "";
+  const nav = [
+    { id: "robot", label: "My robot" },
+    { id: "insurer", label: "Insurer" },
+    { id: "verify", label: "Verify" },
+  ];
+  const mods = live.state?.modules ?? {};
+  // show services only when one is degraded; "off" means switched off on purpose and is not shown
+  const degraded = Object.entries(mods).filter(([, v]) => v === "not_configured" || v === "failed");
+  useEffect(() => {
+    const names: Record<string, string> = { robot: "My robot", insurer: "Insurer", verify: "Verify" };
+    document.title = names[page] ? `${names[page]} · Pearl` : "Pearl";
+  }, [page]);
   return (
-    <div className="app">
-      <header className="top">
-        <h1>Pearl</h1>
-        <span className="muted">0G decides · the arm keeps people safe · every decision is provable</span>
-        <span className={`dot ${connected ? "on" : "off"}`}>{connected ? "live" : "offline"}</span>
-        <span className="mods">
-          {Object.entries(mods).map(([k, v]) => <span key={k} className={`badge mod-${v}`}>{k} {v}</span>)}
-        </span>
+    <div className="shell">
+      <a className="skip" href="#main">Skip to content</a>
+      <header className="topbar">
+        <a className="brand" href={href()} aria-label="Pearl home"><span className="brand-mark" aria-hidden />Pearl</a>
+        <nav className="nav" aria-label="Main">
+          {nav.map((n) => <a key={n.id} href={href(n.id)} className={page === n.id ? "on" : ""} aria-current={page === n.id ? "page" : undefined}>{n.label}</a>)}
+        </nav>
+        <div className="topbar-side">
+          <span className={`live-dot ${live.connected ? "on" : live.connected === false ? "off" : ""}`} role="status" title={live.state?.deviceAddress ? `Robot ${live.state.deviceAddress}` : undefined}>
+            {live.connected ? "Robot online" : live.connected === false ? "Robot offline" : "Connecting"}
+            {live.state?.deviceId && <span className="hide-sm"> · {live.state.deviceId}</span>}
+          </span>
+          <button type="button" className="btn ghost icon-only" onClick={toggle} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`} title="Theme">
+            <Icon name={theme === "dark" ? "sun" : "moon"} size={16} />
+          </button>
+        </div>
       </header>
-      <main className="grid">
-        <Live tel={tel} status={status} cut0g={cut0g} deviceKind={state?.deviceKind} cameraKind={state?.cameraKind} modules={state?.modules} />
-        <Decisions records={records} />
-        <Episodes tick={tick} selected={selected} onSelect={setSelected} />
-        <Replay episodeId={selected} />
-        <Verify episodeId={selected} tick={tick} />
-        <Proof episodeId={selected} tick={tick} />
-        <Account account={account} refresh={refresh} />
-        <Claims tick={tick} account={account} />
+      {degraded.length > 0 && page !== "" && (
+        <div className="modstrip" role="status">
+          <Icon name="alert" size={14} /> {degraded.map(([k, v]) => `${MOD_LABEL[k] ?? k} ${v === "failed" ? "is failing" : "is not set up"}`).join(" · ")}. Runs still work; that record is skipped.
+        </div>
+      )}
+      {live.connected === false && page === "robot" && (
+        <div className="banner" role="alert"><Icon name="alert" size={14} /> Live stream lost. Values below are frozen until the robot reconnects.</div>
+      )}
+      <main id="main" tabIndex={-1}>
+        {page === "robot" ? <MyRobot live={live} sub={route[1]} runId={route[2]} />
+          : page === "insurer" ? <Insurer tick={live.tick} claimId={route[1]} />
+            : page === "verify" ? <Verify tick={live.tick} runId={route[1]} />
+              : <Welcome />}
       </main>
+      {page === "" && <footer className="foot muted small">Pearl · locked on the robot, checkable by anyone</footer>}
     </div>
   );
 }

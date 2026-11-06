@@ -1,30 +1,30 @@
-// Thin client for the backend API (proxied by Vite to :8080) and the SSE live stream.
+// Thin client for the dashboard server (proxied by Vite to :8080) and the robot's live stream.
 import { useEffect, useRef, useState } from "react";
 
-export async function get(path) {
-  const r = await fetch(path);
+export async function get(path: string, init?: RequestInit) {
+  const r = await fetch(path, init);
   const body = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(body.error ?? `HTTP ${r.status}`);
+  if (!r.ok) throw Object.assign(new Error(body.error ?? `HTTP ${r.status}`), { status: r.status });
   return body;
 }
 
-export async function post(path, body = {}) {
+export async function post(path: string, body: unknown = {}) {
   const r = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const out = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(out.error ?? `HTTP ${r.status}`);
+  if (!r.ok) throw Object.assign(new Error(out.error ?? `HTTP ${r.status}`), { status: r.status });
   return out;
 }
 
-/** Live state: telemetry, orchestrator status, records of the running episode, and /api/state (refreshed on changes). */
+/** Live state: telemetry, orchestrator status, records of the running run, and /api/state (refreshed on changes). */
 export function useLive() {
-  const [tel, setTel] = useState(null);
-  const [status, setStatus] = useState(null);
-  const [records, setRecords] = useState([]);
-  const [connected, setConnected] = useState(false);
-  const [tick, setTick] = useState(0); // bumps when episodes, meta or zerobot change
-  const [state, setState] = useState(null);
+  const [tel, setTel] = useState<any>(null);
+  const [status, setStatus] = useState<any>(null);
+  const [records, setRecords] = useState<any[]>([]);
+  const [connected, setConnected] = useState<boolean | null>(null);
+  const [tick, setTick] = useState(0); // bumps when runs, meta or zerobot change
+  const [state, setState] = useState<any>(null);
   const [cut0g, setCut0g] = useState(false);
-  const episodeRef = useRef(null);
+  const episodeRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (tick > 0) get("/api/state").then(setState).catch(() => {});
@@ -36,7 +36,7 @@ export function useLive() {
       setTel(s.device ? { ...s.device, status: s.status, scene: s.scene } : null);
       setStatus(s.orchestrator);
       setCut0g(!!s.cut0g);
-    }).catch(() => {});
+    }).catch(() => setConnected(false));
     const es = new EventSource("/api/stream");
     es.onopen = () => setConnected(true);
     es.onerror = () => setConnected(false);
@@ -61,4 +61,36 @@ export function useLive() {
   return { tel, status, records, connected, tick, cut0g, state };
 }
 
-export const short = (s, n = 10) => (s ? (s.length > n + 2 ? `${s.slice(0, n)}…` : s) : "—");
+/** Public links (explorer, storage indexer, contract addresses). */
+export function useConfig() {
+  const [c, setC] = useState<any>({});
+  useEffect(() => {
+    get("/api/config").then(setC).catch(() => {});
+  }, []);
+  return c;
+}
+
+/** One shortening rule everywhere: 0x1234…abcd for hex, first n…last 4 otherwise. */
+export const short = (s?: string | null, n = 10) => {
+  if (!s) return "—";
+  if (/^0x[0-9a-fA-F]{12,}$/.test(s)) return `${s.slice(0, 6)}…${s.slice(-4)}`;
+  return s.length > n + 6 ? `${s.slice(0, n)}…${s.slice(-4)}` : s;
+};
+export const og = (wei?: string | number | bigint | null) => {
+  if (wei === null || wei === undefined) return "—";
+  const v = Number(BigInt(wei)) / 1e18;
+  return `${v.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 4 })} 0G`;
+};
+export const when = (iso?: string | number | null) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? "—" : d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+};
+export const ago = (iso?: string | number | null) => {
+  if (!iso) return "";
+  const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  return `${Math.floor(s / 86400)} d ago`;
+};
