@@ -6,6 +6,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 FW="$HERE/../.."
 MBED="$(brew --prefix mbedtls@3)"
 AJ="$FW/.pio/libdeps/serial/ArduinoJson/src"
+[ -d "$AJ" ] || AJ="$FW/.pio/libdeps/device/ArduinoJson/src"
 OUT="${TMPDIR:-/tmp}/pearl-host-tests"
 clang++ -std=c++17 -O1 -g -Wall -Wno-unused-function \
   -DVECTORS_PATH="\"$HERE/vectors.json\"" -DOUT_DIR="\"$HERE/out\"" \
@@ -15,4 +16,7 @@ clang++ -std=c++17 -O1 -g -Wall -Wno-unused-function \
 "$OUT"
 echo
 echo "TypeScript opens what the board locked:"
-cd "$FW/../../apps/backend" && npx tsx src/scripts/fw-crosscheck.ts
+(cd "$FW/../../apps/backend" && npx tsx src/scripts/fw-crosscheck.ts)
+echo
+echo "TypeScript (ethers) checks the bundle and ping the board built:"
+cd "$FW/../../apps/backend" && npx tsx src/scripts/fw-bundle-crosscheck.ts

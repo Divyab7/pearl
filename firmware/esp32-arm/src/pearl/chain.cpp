@@ -32,6 +32,85 @@ bool signEip1559(const eth::Key& k, const Eip1559Tx& tx, Bytes& raw, Bytes& txHa
   return true;
 }
 
+namespace {
+/** One RLP item at p (within end): its payload span and whether it is a list. */
+struct Item {
+  const uint8_t* p = nullptr;
+  size_t n = 0;
+  bool list = false;
+  const uint8_t* next = nullptr;
+};
+bool rlpItem(const uint8_t* p, const uint8_t* end, Item& it) {
+  if (p >= end) return false;
+  uint8_t b = *p;
+  size_t hdr = 1, len = 0;
+  if (b < 0x80) {
+    it = {p, 1, false, p + 1};
+    return true;
+  }
+  bool list = b >= 0xc0;
+  uint8_t base = list ? 0xc0 : 0x80;
+  if (b - base <= 55) len = b - base;
+  else {
+    size_t ll = b - base - 55;
+    if (ll > 4 || p + 1 + ll > end) return false;
+    for (size_t i = 0; i < ll; i++) len = len << 8 | p[1 + i];
+    hdr += ll;
+  }
+  if (len > static_cast<size_t>(end - p) - hdr) return false;
+  it = {p + hdr, len, list, p + hdr + len};
+  return true;
+}
+bool rlpU64(const Item& it, uint64_t& v) {
+  if (it.list || it.n > 8 || (it.n && it.p[0] == 0)) return false;
+  v = 0;
+  for (size_t i = 0; i < it.n; i++) v = v << 8 | it.p[i];
+  return true;
+}
+}  // namespace
+
+bool decodeEip1559(const Bytes& raw, DecodedTx& out) {
+  if (raw.size() < 2 || raw[0] != 0x02) return false;
+  const uint8_t* end = raw.data() + raw.size();
+  Item top;
+  if (!rlpItem(raw.data() + 1, end, top) || !top.list || top.next != end) return false;
+  std::vector<Item> f;
+  for (const uint8_t* p = top.p; p < top.p + top.n;) {
+    Item it;
+    if (!rlpItem(p, top.p + top.n, it)) return false;
+    f.push_back(it);
+    p = it.next;
+  }
+  if (f.size() != 12 || !f[8].list || f[8].n != 0) return false;
+  for (int i : {0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11})
+    if (f[i].list) return false;
+  Eip1559Tx& t = out.tx;
+  uint64_t v;
+  if (!rlpU64(f[0], t.chainId) || !rlpU64(f[1], t.nonce) || !rlpU64(f[4], t.gas) || !rlpU64(f[9], v) || v > 1) return false;
+  if (f[5].n != 20 || f[10].n > 32 || f[11].n > 32) return false;
+  t.maxPriorityFeePerGas.assign(f[2].p, f[2].p + f[2].n);
+  t.maxFeePerGas.assign(f[3].p, f[3].p + f[3].n);
+  t.to.assign(f[5].p, f[5].p + 20);
+  t.value.assign(f[6].p, f[6].p + f[6].n);
+  t.data.assign(f[7].p, f[7].p + f[7].n);
+  uint8_t r[32] = {0}, s[32] = {0};
+  memcpy(r + 32 - f[10].n, f[10].p, f[10].n);
+  memcpy(s + 32 - f[11].n, f[11].p, f[11].n);
+  // the signed payload: 0x02 ‖ rlp(first 9 fields), re-encoded exactly as the signer did
+  std::vector<Bytes> un = {
+      eth::rlpBytes(eth::uintBytes(t.chainId)), eth::rlpBytes(eth::uintBytes(t.nonce)), eth::rlpBytes(t.maxPriorityFeePerGas),
+      eth::rlpBytes(t.maxFeePerGas), eth::rlpBytes(eth::uintBytes(t.gas)), eth::rlpBytes(t.to), eth::rlpBytes(t.value),
+      eth::rlpBytes(t.data), eth::rlpList({}),
+  };
+  Bytes pre{0x02};
+  append(pre, eth::rlpList(un));
+  uint8_t h[32];
+  keccak256(pre.data(), pre.size(), h);
+  if (!eth::recoverAddress(h, r, s, static_cast<int>(v), out.from)) return false;
+  out.hash = keccak256(raw);
+  return true;
+}
+
 Bytes word(uint64_t v) {
   Bytes w(32, 0);
   for (int i = 0; i < 8; i++) w[31 - i] = static_cast<uint8_t>(v >> (8 * i));

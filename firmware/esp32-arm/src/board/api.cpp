@@ -8,6 +8,7 @@
 #include "board/device.h"
 #include "board/feed.h"
 #include "board/locallink.h"
+#include "board/outbox.h"
 #include "board/state_feed.h"
 #include "board/store.h"
 #include "pearl/json.h"
@@ -210,6 +211,7 @@ static void handle(NetworkClient& c, Req& r) {
     return reply(c, 200, s);
   }
   if (r.method == "GET" && p == "/api/episodes") return reply(c, 200, episodesJson());
+  if (r.method == "GET" && p == "/api/outbox") return reply(c, 200, outbox::statusJson());  // offline relay + mesh state
   if (r.method == "GET" && p.rfind("/api/episodes/", 0) == 0) {
     std::string rest = p.substr(14);
     std::string id = rest.substr(0, rest.find('/'));
