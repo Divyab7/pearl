@@ -99,6 +99,11 @@ function LiveTab({ live }: { live: any }) {
       .finally(() => setBusy(""));
   };
   const sim = state?.deviceKind === "sim" || state?.deviceKind === "mujoco";
+  const [access, setAccess] = useState<any>(null);
+  useEffect(() => {
+    get("/api/access").then(setAccess).catch(() => setAccess(null));
+  }, [live.tick]);
+  const locked = access && !access.allowed;
   const running = status?.episodeId && !["DONE", "ABORTED", "FAILSAFE_STOPPED", "TRIPPED", "IDLE"].includes(status.phase);
   const finished = status?.episodeId && ["DONE", "ABORTED", "FAILSAFE_STOPPED", "TRIPPED"].includes(status.phase);
   const ds = records.filter((r: any) => r.kind === "decision").slice().reverse();
@@ -129,7 +134,9 @@ function LiveTab({ live }: { live: any }) {
         </Card>
       </div>
       <div className="stack">
-        <Card title="Controls" sub="At the robot's site. The robot can refuse any request that is not safe.">
+        <Card title="Controls" sub={access?.as === "owner" ? "Signed in as the robot's owner. The robot can refuse any request that is not safe." : "At the robot's site. The robot can refuse any request that is not safe."}>
+          {locked && <Callout tone="neutral" title="View only">{access.why} <a href={href("robot", "setup")}>Owner sign-in</a></Callout>}
+          <fieldset className="plain" disabled={!!locked}>
           <button type="button" className="btn stop" onClick={() => act("Stop", "/api/control/stop")}><Icon name="x" size={18} /> Stop the robot</button>
           <div className="form-row">
             <Field label="Cube colour"><select value={color} onChange={(e) => setColor(e.target.value)}><option value="red">Red</option><option value="blue">Blue</option></select></Field>
@@ -155,6 +162,7 @@ function LiveTab({ live }: { live: any }) {
                 {state?.deviceKind === "mujoco" && <button type="button" className="btn" onClick={() => act("Reset table", "/api/sim/reset-table")}>Reset table</button>}
               </>}
             </div>
+          </fieldset>
           </fieldset>
           <div aria-live="polite">{msg && <Callout tone={msg.tone}>{msg.text}</Callout>}</div>
         </Card>

@@ -11,7 +11,6 @@
  * It never makes a decision, never signs device data, never holds an unlock key and never sends a motor command itself.
  * Express 5: https://expressjs.com/en/5x/api.html · fetch streaming: https://nodejs.org/api/globals.html#fetch
  */
-import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { arkivConfigFromEnv, arkivReaderConfigured, judgeCurl, listIndex, SCHEMA_NAME } from "../index/arkiv.js";
 import { galileoExplorer } from "../og/config.js";
@@ -33,7 +32,7 @@ import { AccountStore, Sessions, cookieValue, type Account } from "./accounts.js
 import { RewardDesk, type IdkitConfig, type RewardDeps } from "./rewards.js";
 import { WorldIdGate, worldIdConfigFromEnv, worldIdConfigured } from "../human/worldid.js";
 import type { HumanCheckResult, HumanGate } from "../human/gate.js";
-import { payReward, poolConfigFromEnv, poolConfigured } from "../og/anchor.js";
+import { payReward, poolConfigFromEnv, poolConfigured, readPool } from "../og/anchor.js";
 import { zerobotFromEnv } from "../zerobot/zerobot.js";
 import { errMsg } from "../shared/util.js";
 
@@ -47,6 +46,8 @@ export interface DashboardOptions {
   rewardDeps?: Partial<RewardDeps>;
   /** World ID Agent Pass gate override (tests); default: WorldIdGate when configured. */
   agentPass?: HumanGate | null;
+  /** Overrides the RewardPool read (tests). */
+  readPool?: () => Promise<import("../og/anchor.js").PoolInfo>;
   /** Overrides the relay's 0G Storage upload (tests). */
   relayUpload?: (bytes: Uint8Array) => Promise<import("../og/storage.js").UploadReceipt>;
 }
@@ -61,7 +62,7 @@ export function createDashboard(opts: DashboardOptions = {}) {
   const zbChain = zerobotFromEnv();
 
   const app = express();
-  app.use(cors());
+  // no CORS: the dashboard page is served same-origin (Vite proxy in development); other origins get nothing
   app.use(express.json({ limit: "64kb" }));
 
   const device = async <T>(path: string): Promise<T> => {
@@ -91,10 +92,39 @@ export function createDashboard(opts: DashboardOptions = {}) {
     }
   }
   const passthrough = (req: Request, res: Response, _next: NextFunction) => void forward(req, res);
+  // ---------------------------------------------------------------- who may operate the robot (owner decision 3)
+  // The robot's linked owner (signed in with World ID) may always operate it; anyone at the robot's site (a loopback
+  // or private-network address) may too, unless READ_ONLY=on, which a public deployment sets so that only the owner
+  // can. The robot itself can still refuse anything that is not safe.
+  const readOnly = envFlag("READ_ONLY", "off");
+  const isLocal = (req: Request) => {
+    const ip = (req.socket.remoteAddress ?? "").replace(/^::ffff:/, "");
+    return ip === "127.0.0.1" || ip === "::1" || /^10\./.test(ip) || /^192\.168\./.test(ip) || /^172\.(1[6-9]|2\d|3[01])\./.test(ip);
+  };
+  const controlAccess = async (req: Request): Promise<{ allowed: boolean; as: "owner" | "site" | null; why: string | null; readOnly: boolean }> => {
+    const a = accountOf(req);
+    if (a && a.robots.length) {
+      const addr = await deviceAddress().catch(() => process.env.DEVICE_ADDRESS ?? "");
+      if (addr && a.robots.some((r) => r.address.toLowerCase() === addr.toLowerCase())) return { allowed: true, as: "owner", why: null, readOnly };
+    }
+    if (!readOnly && isLocal(req)) return { allowed: true, as: "site", why: null, readOnly };
+    return {
+      allowed: false, as: null, readOnly,
+      why: readOnly ? "This dashboard is read-only: only the robot's signed-in owner can operate it." : "Operating the robot needs its signed-in owner, or a connection from the robot's site.",
+    };
+  };
+  const gate = (req: Request, res: Response, next: NextFunction) => {
+    void controlAccess(req).then((a) => (a.allowed ? next() : res.status(403).json({ error: a.why })));
+  };
+  app.get("/api/access", async (req, res) => {
+    res.json(await controlAccess(req));
+  });
+
   app.get("/api/state", passthrough);
-  app.post("/api/episode/start", passthrough);
-  app.use("/api/control", passthrough);
-  app.use("/api/sim", passthrough);
+  app.post("/api/episode/start", gate, passthrough);
+  app.use("/api/control", gate, passthrough);
+  app.use("/api/sim", gate, passthrough);
+  app.post("/api/zerobot/dispatch", gate, passthrough);
   app.use("/api/zerobot", passthrough);
   app.use("/api/camera", passthrough);
   app.use("/api/frames", passthrough);
@@ -255,7 +285,7 @@ export function createDashboard(opts: DashboardOptions = {}) {
     const rec = await relayEpisode(sealed, await deviceAddress(), relayUpload);
     return { status: "relayed", ...rec };
   };
-  app.post("/api/episodes/:id/relay", async (req, res) => {
+  app.post("/api/episodes/:id/relay", gate, async (req, res) => {
     try {
       res.json(await relay(String(req.params.id)));
     } catch (e) {
@@ -536,6 +566,20 @@ export function createDashboard(opts: DashboardOptions = {}) {
     ...opts.rewardDeps,
   };
   const desk = new RewardDesk(rewardDeps);
+
+  // the reward pool, from 0G Chain only (public facts: address, balance, max payout, recent payouts)
+  app.get("/api/pool", async (_req, res) => {
+    if (!opts.readPool && !ethers.isAddress(poolCfg.address)) {
+      res.json({ configured: false });
+      return;
+    }
+    try {
+      const p = await (opts.readPool ?? (() => readPool(poolCfg)))();
+      res.json({ configured: true, ...p, perSeverityWei: perSeverity.toString(), maxRewardWei: maxReward.toString() });
+    } catch (e) {
+      res.status(502).json({ configured: true, error: errMsg(e) });
+    }
+  });
   const claimsOn = envFlag("CLAIMS_WORLDID", "on");
 
   // incidents on my robots that could be claimed (labels from the robot's list; the anchor is checked when claiming)

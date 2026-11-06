@@ -29,7 +29,34 @@ export const POOL_ABI = [
   "function claimKey(address device, bytes32 episodeKey, bytes32 claimant) pure returns (bytes32)",
   "function maxPayout() view returns (uint256)",
   "function operator() view returns (address)",
+  "event Paid(address indexed device, bytes32 indexed episodeKey, bytes32 indexed claimant, address to, uint256 amount)",
 ];
+
+export interface PoolInfo {
+  address: string;
+  balanceWei: string;
+  maxPayoutWei: string;
+  paid: { txHash: string; to: string; amountWei: string; block: number }[];
+}
+
+/** The pool as 0G Chain sees it: balance, max payout and recent Paid events (read-only; no key). */
+export async function readPool(c: Pick<PoolConfig, "rpcUrl" | "address">, lookbackBlocks = 20_000): Promise<PoolInfo> {
+  const provider = new ethers.JsonRpcProvider(c.rpcUrl);
+  const pool = new ethers.Contract(c.address, POOL_ABI, provider);
+  const [balance, max] = await Promise.all([provider.getBalance(c.address), pool.getFunction("maxPayout")()]);
+  let paid: PoolInfo["paid"] = [];
+  try {
+    const head = await provider.getBlockNumber();
+    const logs = await pool.queryFilter(pool.filters.Paid!(), Math.max(0, head - lookbackBlocks), head);
+    paid = logs.slice(-10).reverse().map((l) => {
+      const a = (l as ethers.EventLog).args;
+      return { txHash: l.transactionHash, to: String(a?.to ?? ""), amountWei: String(a?.amount ?? 0n), block: l.blockNumber };
+    });
+  } catch {
+    // some RPCs cap log ranges: show the balance without history rather than fail
+  }
+  return { address: c.address, balanceWei: balance.toString(), maxPayoutWei: String(max), paid };
+}
 
 export const OUTCOME_CODE: Record<EpisodeOutcome, number> = { DONE: 0, ABORTED: 1, FAILSAFE: 2, TRIPPED: 3 };
 

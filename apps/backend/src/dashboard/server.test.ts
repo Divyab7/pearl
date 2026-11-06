@@ -188,4 +188,43 @@ describe("dashboard server (rev 5)", () => {
     delete process.env.INSURER_ADDRESS;
     s.close();
   });
+
+  it("operating the robot: allowed at the robot's site, refused when READ_ONLY=on unless the owner is signed in", async () => {
+    const d = await fakeDevice();
+    const { app } = createDashboard({ deviceUrl: "http://device.test", fetchImpl: d.f });
+    const s = await serve(app);
+    const json = { "content-type": "application/json" };
+    expect(await (await fetch(`${s.base}/api/access`)).json()).toMatchObject({ allowed: true, as: "site", readOnly: false });
+    expect((await fetch(`${s.base}/api/control/safe`, { method: "POST" })).status).toBe(200);
+    s.close();
+
+    process.env.READ_ONLY = "on";
+    const ro = createDashboard({ deviceUrl: "http://device.test", fetchImpl: d.f });
+    const s2 = await serve(ro.app);
+    expect(await (await fetch(`${s2.base}/api/access`)).json()).toMatchObject({ allowed: false, readOnly: true });
+    for (const path of ["/api/episode/start", "/api/control/stop", "/api/sim/inject", "/api/zerobot/dispatch", "/api/episodes/ep_dash_1/relay"]) {
+      const r = await fetch(`${s2.base}${path}`, { method: "POST", headers: json, body: "{}" });
+      expect(r.status, path).toBe(403);
+    }
+    // reading stays open: state, runs, the public check
+    expect((await fetch(`${s2.base}/api/state`)).status).toBe(200);
+    expect((await fetch(`${s2.base}/api/episodes`)).status).toBe(200);
+    delete process.env.READ_ONLY;
+    s2.close();
+  });
+
+  it("reward pool: read from 0G Chain, or 'not configured' without an address", async () => {
+    const d = await fakeDevice();
+    const none = createDashboard({ deviceUrl: "http://device.test", fetchImpl: d.f });
+    const s = await serve(none.app);
+    expect(await (await fetch(`${s.base}/api/pool`)).json()).toMatchObject({ configured: false });
+    s.close();
+    const withPool = createDashboard({
+      deviceUrl: "http://device.test", fetchImpl: d.f,
+      readPool: async () => ({ address: "0xPool", balanceWei: "500000000000000000", maxPayoutWei: "50000000000000000", paid: [{ txHash: "0xabc", to: "0xto", amountWei: "20000000000000000", block: 9 }] }),
+    });
+    const s2 = await serve(withPool.app);
+    expect(await (await fetch(`${s2.base}/api/pool`)).json()).toMatchObject({ configured: true, balanceWei: "500000000000000000", paid: [{ txHash: "0xabc" }] });
+    s2.close();
+  });
 });

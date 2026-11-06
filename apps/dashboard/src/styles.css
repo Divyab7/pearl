@@ -536,3 +536,11 @@ html.demo { zoom: 1.25; }
 .tick.cp { width: 2px; height: 10px; background: var(--text-2); }
 .btn.stop { min-height: 40px; }
 @media (max-width: 640px) { .chip { white-space: nowrap; } }
+
+/* ---------------------------------------------------------------- access + pool */
+fieldset.plain { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: var(--s3); }
+fieldset.plain:disabled .btn { opacity: .45; cursor: not-allowed; }
+.pool-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s4); }
+.pool-stats > div { display: grid; gap: 4px; }
+.pool-stats .amount { font-size: 20px; }
+@media (max-width: 760px) { .pool-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

@@ -5,7 +5,6 @@
  * Verification, accounts and claims live in the dashboard server (src/dashboard/server.ts), never here.
  * Express 5 API: https://expressjs.com/en/5x/api.html
  */
-import cors from "cors";
 import express, { type Request, type Response } from "express";
 import { cameraFromEnv, httpCamera } from "./camera/index.js";
 import { STATUS_TABLE, type ArmDevice } from "./device/ArmDevice.js";
@@ -151,7 +150,7 @@ export async function createApp(opts: AppOptions = {}) {
   });
 
   const app = express();
-  app.use(cors());
+  // no CORS: only the dashboard server (server-side) talks to the robot program
   app.use(express.json({ limit: "64kb" }));
 
   const state = () => ({

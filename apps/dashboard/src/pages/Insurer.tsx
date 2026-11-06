@@ -109,6 +109,7 @@ function Signed({ info, reload, tick, claimId }: { info: any; reload: () => void
           <KeySetup role="insurer" who={info.address} registeredKid={info.key?.kid ?? null} register={(publicJwk) => post("/api/insurer/key", { publicJwk }).then(reload)} />
         </Card>
       )}
+      <PoolCard />
       <div className="split">
         <Card title="Claims">
           <Tabs label="Claim queue" active={qtab} onChange={(t) => setQtab(t as any)} tabs={[{ id: "waiting", label: "Waiting", count: waiting.length }, { id: "decided", label: "Decided", count: done.length }]} />
@@ -254,4 +255,33 @@ function InsurerStatus({ status }: { status: string }) {
   };
   const [w, t] = m[status] ?? [status, "neutral"];
   return <Badge tone={t}>{w}</Badge>;
+}
+
+/** The reward pool as 0G Chain shows it: what is left to pay, the cap per claim, recent payouts. */
+function PoolCard() {
+  const cfg = useConfig();
+  const [pool, setPool] = useState<any>(null);
+  useEffect(() => {
+    get("/api/pool").then(setPool).catch((e) => setPool({ configured: true, error: e.message }));
+  }, []);
+  if (!pool) return null;
+  if (!pool.configured) return <Callout tone="neutral" title="Reward pool not deployed">Approved claims cannot be paid until the RewardPool contract is deployed (pnpm anchor:deploy).</Callout>;
+  if (pool.error) return <Callout tone="warn" title="Reward pool unreachable">{pool.error}</Callout>;
+  return (
+    <Card title="Reward pool" sub="Read from 0G Chain" actions={<Chip label="Contract" value={pool.address} href={cfg.explorer ? `${cfg.explorer}/address/${pool.address}` : null} />}>
+      <div className="pool-stats">
+        <div><span className="muted small">Balance</span><Amount wei={pool.balanceWei} /></div>
+        <div><span className="muted small">Pays per severity point</span><Amount wei={pool.perSeverityWei} /></div>
+        <div><span className="muted small">Largest single payout</span><Amount wei={pool.maxPayoutWei} /></div>
+        <div><span className="muted small">Recent payouts</span><b className="tabular">{pool.paid.length}</b></div>
+      </div>
+      {pool.paid.length > 0 && (
+        <ul className="list">
+          {pool.paid.slice(0, 3).map((p: any) => (
+            <li key={p.txHash} className="list-row"><Amount wei={p.amountWei} paid /><Chip label="Payout tx" value={p.txHash} href={cfg.explorer ? `${cfg.explorer}/tx/${p.txHash}` : null} /></li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
 }
