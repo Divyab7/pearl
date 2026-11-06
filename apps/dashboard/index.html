@@ -3,12 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Pearl: proof of what a robot did, checkable by anyone." />
+    <meta name="description" content="Pearl is a tamper-proof black box for robots: evidence insurers can check, sealed on the robot and recorded on 0G." />
     <meta name="theme-color" content="#f8f5ef" />
     <title>Pearl</title>
     <script>
-      // light by default; dark only when chosen with the toggle (set before paint, so there's no flash)
-      try { if (localStorage.getItem("pearl.theme.choice") === "dark") document.documentElement.dataset.theme = "dark"; } catch (e) {}
+      // before first paint: light by default, dark only when chosen with the toggle (no flash); on the landing page
+      // only, preload its hero image (LCP on #/) so app routes don't pay for it
+      try {
+        if (localStorage.getItem("pearl.theme") === "dark") document.documentElement.dataset.theme = "dark";
+        if (!location.hash || location.hash === "#" || location.hash === "#/") {
+          var l = document.createElement("link");
+          l.rel = "preload"; l.as = "image"; l.type = "image/webp"; l.href = "/img/factory-1600.webp";
+          l.setAttribute("imagesrcset", "/img/factory-800.webp 800w, /img/factory-1600.webp 1600w");
+          l.setAttribute("imagesizes", "(max-width: 900px) 100vw, 600px");
+          l.setAttribute("fetchpriority", "high");
+          document.head.appendChild(l);
+        }
+      } catch (e) {}
     </script>
   </head>
   <body>
