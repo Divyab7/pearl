@@ -92,3 +92,4 @@ button.rs-n:hover { border-color: var(--accent); color: var(--text); }
   .rs-photo { width: 100%; max-width: 280px; }
   .rs-time { margin-left: 0; width: 100%; }
 }
+@media (max-width: 860px) { .rs-locked-arm .arm3d { aspect-ratio: 16 / 7; } }

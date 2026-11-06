@@ -18,6 +18,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { get, short, useConfig } from "../api";
 import { fullCheck, type FullCheck } from "../lib/fullcheck";
+import { to } from "../router";
 import { outcomeWord, OUTCOME_TONE, TIP, VERDICT_WORDS } from "../lib/words";
 import { ArmView3D } from "./ArmView3D";
 import { ErrorState, InfoTip, Skeleton, StatusPill, TechDetails } from "./blocks";
@@ -346,7 +347,7 @@ export function RunStory({
       {incident && (
         <div className={`rs-alert tone-${severityTone(sev)}`}>
           <Icon name="alert" size={16} />
-          <span><b>Incident.</b> {incidentLine}{mode === "owner" && sev >= 2 ? <> · This run can be claimed. <a href="#/insurance/owner">Claim insurance</a></> : null}</span>
+          <span><b>Incident.</b> {incidentLine}{mode === "owner" && sev >= 2 ? <> · This run can be claimed. <a href={to.insurance("owner")}>Claim insurance</a></> : null}</span>
         </div>
       )}
 
@@ -474,7 +475,7 @@ function RecordedItem({ pub, meta, cfg, n }: { pub: any; meta: any; cfg: any; n?
   const relay = meta?.relay;
   const place = (label: string, ok: boolean | null, href: string | null, tip: string) => (
     <span className={`rs-place ${ok === false ? "miss" : ""}`}>
-      {ok === false ? <Icon name="minus" size={13} /> : <Icon name="check" size={13} />}
+      {ok === false ? <Icon name="minus" size={13} /> : ok ? <Icon name="check" size={13} /> : null}
       {href ? <a href={href} target="_blank" rel="noreferrer" aria-label={`${label} (opens in a new tab)`}>{label} <Icon name="ext" size={12} /></a> : label}
       <InfoTip text={tip} />
     </span>
@@ -487,7 +488,7 @@ function RecordedItem({ pub, meta, cfg, n }: { pub: any; meta: any; cfg: any; n?
         <div className="rs-places">
           {place("0G Chain", okChain, chainHref, TIP.ogChain)}
           {place("0G Storage", okStorage, storageHref, TIP.ogStorage)}
-          {place("Arkiv", meta ? arkivOk || null : null, arkivHref, TIP.arkiv)}
+          {place("Arkiv", meta ? arkivOk : null, arkivHref, TIP.arkiv)}
         </div>
         {relay?.via === "laptop" && <p className="rs-step-body rs-relay"><Icon name="offline" size={14} /> Delivered without internet (carried by the laptop)<InfoTip text={TIP.carried} /></p>}
         {relay?.via === "self" && <p className="rs-step-body rs-relay"><Icon name="offline" size={14} /> Kept on the robot while offline, sent once it was back online</p>}

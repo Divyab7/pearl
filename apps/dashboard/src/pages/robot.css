@@ -74,3 +74,5 @@
   .rb-sel select { width: 100%; }
   .btn.rb-stop { width: 100%; }
 }
+.rb-remote { display: inline-flex; align-items: center; }
+@media (max-width: 520px) { .rb-drills > summary .muted { display: none; } }

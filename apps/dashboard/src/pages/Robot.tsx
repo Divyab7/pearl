@@ -369,9 +369,10 @@ function TaskForm({ live, access, busy, act }: { live: Live; access: any; busy: 
       </label>
       <button type="submit" className="btn primary" disabled={!!busy || running}>{busy === "Start" ? <Spinner label="Starting" /> : null} {running ? "Running…" : "Start run"}</button>
       {state?.modules?.robotZerobot === "on" && (
-        <button type="button" className="btn ghost" disabled={!!busy || running} onClick={() => act("Start remotely", "/api/zerobot/dispatch", { color, from }, "Task sent on 0G Chain. The robot picks it up in a few seconds.")}>
-          Start remotely<InfoTip text="Sends the task as a signed command on 0G Chain; the robot picks it up from there, so it can be told what to do from anywhere." />
-        </button>
+        <span className="rb-remote">
+          <button type="button" className="btn ghost" disabled={!!busy || running} onClick={() => act("Start remotely", "/api/zerobot/dispatch", { color, from }, "Task sent on 0G Chain. The robot picks it up in a few seconds.")}>Start remotely</button>
+          <InfoTip text="Sends the task as a signed command on 0G Chain; the robot picks it up from there, so it can be told what to do from anywhere." />
+        </span>
       )}
     </form>
   );
