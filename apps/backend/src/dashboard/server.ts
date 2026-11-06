@@ -3,21 +3,27 @@
  *  - passes operator requests (start, stop, safe, reset, Cut 0G, sim faults) to the device, which may refuse them;
  *  - reads the device's public record: the episode list from Arkiv (entities owned by the device's address), logs from
  *    the device or from 0G Storage, the device's own anchor on 0G Chain;
- *  - verifies episodes (8 checks, including the device's signature);
- *  - accounts, robot linking and reward claims (World ID Agent Pass + IDKit, paid from the RewardPool).
- * It never makes a decision, never signs device data and never sends a motor command itself.
+ *  - checks episodes publicly (anchor, locked file on 0G Storage, header, robot signature) — it cannot read them:
+ *    runs are locked on the robot, and only the owner (and the insurer, for a claimed incident) can unlock them, in
+ *    their own browser (owner decisions 5–6 Nov 2026);
+ *  - accounts, robot linking and reward claims (World ID Agent Pass + IDKit), the insurer's review (wallet sign-in,
+ *    Approve/Deny) and the RewardPool payout after Approve.
+ * It never makes a decision, never signs device data, never holds an unlock key and never sends a motor command itself.
  * Express 5: https://expressjs.com/en/5x/api.html · fetch streaming: https://nodejs.org/api/globals.html#fetch
  */
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
-import { arkivConfigFromEnv, arkivReaderConfigured, judgeCurl, listIndex } from "../index/arkiv.js";
-import { downloadBytes, storageConfigFromEnv, storageConfigured, uploadWithRetry } from "../og/storage.js";
+import { arkivConfigFromEnv, arkivReaderConfigured, judgeCurl, listIndex, SCHEMA_NAME } from "../index/arkiv.js";
+import { galileoExplorer } from "../og/config.js";
+import { storageConfigFromEnv, storageConfigured, uploadWithRetry } from "../og/storage.js";
 import { loadArmConfig, type ArmConfig } from "../shared/armConfig.js";
-import { canonicalize } from "../shared/canonical.js";
-import { envFlag, loadEnv } from "../shared/env.js";
-import type { EpisodeLog } from "../shared/types.js";
+import { envFlag, loadEnv, REPO_ROOT } from "../shared/env.js";
 import type { EpisodeMeta } from "../orchestrator/meta.js";
-import { tamperedCopy, verifyEpisode, type VerifyDeps } from "../verify/verifier.js";
+import { editedSealedCopy, verifyPublic, type PublicVerifyDeps } from "../verify/verifier.js";
+import { isPublicJwk, keyId, parseSealed, type PublicJwk, type SealedEpisode, type WrappedKey } from "../shared/seal.js";
+import { readAnchor, anchorConfigFromEnv } from "../og/anchor.js";
+import { resolve } from "node:path";
+import { readJson, writeJson } from "../shared/util.js";
 import { readRelay, relayEpisode } from "./relay.js";
 import { randomBytes } from "node:crypto";
 import { ethers } from "ethers";
@@ -27,7 +33,7 @@ import { AccountStore, Sessions, cookieValue, type Account } from "./accounts.js
 import { RewardDesk, type IdkitConfig, type RewardDeps } from "./rewards.js";
 import { WorldIdGate, worldIdConfigFromEnv, worldIdConfigured } from "../human/worldid.js";
 import type { HumanCheckResult, HumanGate } from "../human/gate.js";
-import { incidentOf, payReward, poolConfigFromEnv, poolConfigured } from "../og/anchor.js";
+import { payReward, poolConfigFromEnv, poolConfigured } from "../og/anchor.js";
 import { zerobotFromEnv } from "../zerobot/zerobot.js";
 import { errMsg } from "../shared/util.js";
 
@@ -35,8 +41,8 @@ export interface DashboardOptions {
   deviceUrl?: string;
   arm?: ArmConfig;
   fetchImpl?: typeof fetch;
-  /** Overrides for the verifier's networked lookups (tests). */
-  verifyDeps?: Partial<VerifyDeps>;
+  /** Overrides for the public check's networked lookups (tests). */
+  verifyDeps?: Partial<PublicVerifyDeps>;
   /** Overrides for the reward-claim services (tests). */
   rewardDeps?: Partial<RewardDeps>;
   /** World ID Agent Pass gate override (tests); default: WorldIdGate when configured. */
@@ -92,8 +98,23 @@ export function createDashboard(opts: DashboardOptions = {}) {
   app.use("/api/zerobot", passthrough);
   app.use("/api/camera", passthrough);
   app.use("/api/frames", passthrough);
-  app.get("/api/episodes/:id", passthrough);
+  app.get("/api/episodes/:id", passthrough); // the robot's LOCKED copy (public header + locked data)
   app.get("/api/episodes/:id/meta", passthrough);
+  // arm calibration (not secret): the key holder's browser needs it to replay the policy over an unlocked log
+  app.get("/api/arm", (_req, res) => {
+    res.json(arm);
+  });
+  // public links for the pages: explorer, storage indexer, contract addresses (nothing secret)
+  app.get("/api/config", (_req, res) => {
+    const sc = storageConfigFromEnv();
+    res.json({
+      explorer: galileoExplorer(),
+      storageIndexer: sc.indexerUrl,
+      anchorAddress: process.env.OG_ANCHOR_ADDRESS ?? null,
+      poolAddress: process.env.OG_REWARD_POOL_ADDRESS ?? null,
+      arkivSchema: SCHEMA_NAME,
+    });
+  });
 
   // live stream: piped from the device's own feed
   app.get("/api/stream", async (req, res) => {
@@ -146,7 +167,7 @@ export function createDashboard(opts: DashboardOptions = {}) {
           query: r.query,
           blockNumber: r.blockNumber,
           curl: judgeCurl(kc, filter.armId ?? "arm-1"),
-          items: r.rows.map((x) => ({ ...x, n: x.nDecisions })),
+          items: r.rows.map((x) => ({ ...x, locked: true })),
         });
         return;
       } catch (e) {
@@ -168,60 +189,59 @@ export function createDashboard(opts: DashboardOptions = {}) {
     }
   });
 
-  // ---------------------------------------------------------------- verification (independent of the device)
-  const verifyDeps = async (): Promise<VerifyDeps> => ({
-    arm,
-    requireDeviceSignature: true,
-    expectedDevice: await deviceAddress().catch(() => undefined as unknown as string),
-    ...(zbChain ? { readZerobotReceipt: (n: number) => zbChain.receipt(n) } : {}),
-    ...opts.verifyDeps,
-  });
+  // ---------------------------------------------------------------- public check (independent of the device)
+  const robotAddress = async (): Promise<string> => {
+    try {
+      return await deviceAddress();
+    } catch {
+      return process.env.DEVICE_ADDRESS ?? "";
+    }
+  };
+  const robotCopy = (id: string) => () => device<SealedEpisode>(`/api/episodes/${encodeURIComponent(id)}`).then((x) => parseSealed(JSON.stringify(x)));
+  const publicDeps = async (id: string, dev?: string): Promise<PublicVerifyDeps> => {
+    const meta = await device<EpisodeMeta>(`/api/episodes/${encodeURIComponent(id)}/meta`).catch(() => null);
+    const own = meta?.storage?.status === "ok" ? meta.storage.rootHash : null;
+    return {
+      device: dev ?? (await robotAddress()),
+      fallbackRoot: own ?? readRelay(id)?.rootHash ?? null,
+      robotCopy: robotCopy(id),
+      ...(zbChain ? { readZerobotReceipt: (n: number) => zbChain.receipt(n) } : {}),
+      ...opts.verifyDeps,
+    };
+  };
   const relayUpload = opts.relayUpload ?? ((bytes: Uint8Array) => {
     const sc = storageConfigFromEnv(process.env.OG_OPERATOR_PRIVATE_KEY ?? "");
     if (!storageConfigured(sc)) throw new Error("no operator key for the relay (OG_OPERATOR_PRIVATE_KEY)");
     return uploadWithRetry(sc, bytes);
   });
-  const withRelay = async (episodeId: string) => ({ ...(await verifyDeps()), relayedRoot: readRelay(episodeId)?.rootHash ?? null });
-  const loadLog = async (id: string) => ({
-    log: await device<EpisodeLog>(`/api/episodes/${encodeURIComponent(id)}`),
-    meta: await device<EpisodeMeta>(`/api/episodes/${encodeURIComponent(id)}/meta`),
-  });
+  const validId = (id: string) => /^ep_[A-Za-z0-9_-]+$/.test(id);
 
+  // the public check: anyone can confirm a run is untouched; the response carries the locked file (useless without a key)
   app.get("/api/verify/:id", async (req, res) => {
-    try {
-      const { log, meta } = await loadLog(String(req.params.id));
-      res.json(await verifyEpisode(log, meta, await withRelay(log.episodeId)));
-    } catch (e) {
-      res.status((e as { status?: number }).status === 404 ? 404 : 502).json({ error: errMsg(e) });
+    const id = String(req.params.id);
+    if (!validId(id)) {
+      res.status(400).json({ error: "not a run id" });
+      return;
     }
-  });
-
-  // Edit log: verify a COPY with one changed byte
-  app.post("/api/verify/:id/tamper", async (req, res) => {
     try {
-      const { log, meta } = await loadLog(String(req.params.id));
-      const { copy, where } = tamperedCopy(log);
-      res.json({ tampered: where, ...(await verifyEpisode(copy, meta, await withRelay(log.episodeId))) });
+      res.json(await verifyPublic(id, await publicDeps(id)));
     } catch (e) {
       res.status(502).json({ error: errMsg(e) });
     }
   });
 
-  // Replay: the log comes from 0G Storage by the root the device recorded, not from the device's memory
-  app.get("/api/replay/:id", async (req, res) => {
+  // "Edit 1 byte": check a COPY of the locked file with one changed character
+  app.post("/api/verify/:id/tamper", async (req, res) => {
+    const id = String(req.params.id);
+    if (!validId(id)) {
+      res.status(400).json({ error: "not a run id" });
+      return;
+    }
     try {
-      const id = String(req.params.id);
-      const meta = await device<EpisodeMeta>(`/api/episodes/${encodeURIComponent(id)}/meta`);
-      const relay = readRelay(id);
-      const root = meta.storage?.status === "ok" ? meta.storage.rootHash : relay?.rootHash;
-      if (!root) {
-        res.status(409).json({ error: "no 0G Storage root for this episode", storage: meta.storage ?? null });
-        return;
-      }
-      const bytes = await downloadBytes(storageConfigFromEnv(), root);
-      const log = JSON.parse(Buffer.from(bytes).toString("utf8")) as EpisodeLog;
-      const verify = await verifyEpisode(log, meta, { ...(await withRelay(id)), downloadStorage: async () => bytes });
-      res.json({ source: meta.storage?.status === "ok" ? "0g-storage" : "0g-storage (relayed)", rootHash: root, log, verify, canonical: canonicalize(log).length });
+      const deps = await publicDeps(id);
+      const real = await verifyPublic(id, deps);
+      if (!real.sealed) throw new Error("no locked file to edit");
+      res.json(await verifyPublic(id, { ...deps, editedCopy: editedSealedCopy(real.sealed) }));
     } catch (e) {
       res.status(502).json({ error: errMsg(e) });
     }
@@ -229,9 +249,10 @@ export function createDashboard(opts: DashboardOptions = {}) {
 
   // ---------------------------------------------------------------- storage backup (R5)
   const relay = async (episodeId: string) => {
-    const { log, meta } = await loadLog(episodeId);
+    const meta = await device<EpisodeMeta>(`/api/episodes/${encodeURIComponent(episodeId)}/meta`);
     if (meta.storage?.status === "ok") return { status: "not needed: the device uploaded it", rootHash: meta.storage.rootHash };
-    const rec = await relayEpisode(log, await deviceAddress(), relayUpload);
+    const sealed = await robotCopy(episodeId)();
+    const rec = await relayEpisode(sealed, await deviceAddress(), relayUpload);
     return { status: "relayed", ...rec };
   };
   app.post("/api/episodes/:id/relay", async (req, res) => {
@@ -331,18 +352,57 @@ export function createDashboard(opts: DashboardOptions = {}) {
     }
   });
 
-  // link the robot this dashboard is connected to: the DEVICE must sign the link message with its own key
+  // the owner's PUBLIC unlock key (created in their browser; the private half stays there and in their backup file)
+  app.post("/api/account/key", (req, res) => {
+    const a = requireAccount(req, res);
+    if (!a) return;
+    const jwk = (req.body as { publicJwk?: unknown })?.publicJwk;
+    if (!isPublicJwk(jwk)) {
+      res.status(400).json({ error: "publicJwk must be a P-256 public key" });
+      return;
+    }
+    res.json(accounts.setKey(a.accountId, { kty: "EC", crv: "P-256", x: jwk.x, y: jwk.y }));
+  });
+
+  // link the robot this dashboard is connected to: the DEVICE signs the link message (naming the owner key) itself
   app.post("/api/robots/link", async (req, res) => {
     const a = requireAccount(req, res);
     if (!a) return;
+    if (!a.key) {
+      res.status(409).json({ error: "set up your unlock key first: the robot locks every run for it" });
+      return;
+    }
     try {
       const nonce = randomBytes(16).toString("hex");
-      const r = await postJson(`${deviceUrl}/api/link`, { accountId: a.accountId, nonce }, 35_000);
-      const d = (await r.json()) as { address?: string; deviceId?: string; signature?: string; error?: string };
+      const r = await postJson(`${deviceUrl}/api/link`, { accountId: a.accountId, nonce, ownerKey: a.key.publicJwk }, 35_000);
+      const d = (await r.json()) as { address?: string; deviceId?: string; signature?: string; ownerKid?: string; error?: string };
       if (!r.ok || !d.address || !d.signature) throw new Error(d.error ?? `device ${r.status}`);
-      res.json(accounts.linkRobot(a.accountId, { address: d.address, deviceId: d.deviceId ?? "", deviceUrl, linkSignature: d.signature }, nonce));
+      if (d.ownerKid !== a.key.kid) throw new Error("the robot linked a different owner key");
+      res.json(accounts.linkRobot(a.accountId, { address: d.address, deviceId: d.deviceId ?? "", deviceUrl, linkSignature: d.signature, ownerKid: d.ownerKid }, nonce));
     } catch (e) {
       res.status(409).json({ error: errMsg(e) });
+    }
+  });
+
+  // this run's key, locked by the robot for the signed-in owner's key; only their browser can open it
+  app.get("/api/episodes/:id/key", async (req, res) => {
+    const a = requireAccount(req, res);
+    if (!a) return;
+    const id = String(req.params.id);
+    try {
+      const dev = await deviceAddress();
+      if (!a.robots.some((r) => r.address.toLowerCase() === dev.toLowerCase())) {
+        res.status(403).json({ error: "this robot is not linked to your account" });
+        return;
+      }
+      const w = await device<WrappedKey>(`/api/episodes/${encodeURIComponent(id)}/key`);
+      if (!a.key || w.kid !== a.key.kid) {
+        res.status(409).json({ error: "the robot locks runs for a different key than your current one: link the robot again" });
+        return;
+      }
+      res.json(w);
+    } catch (e) {
+      res.status((e as { status?: number }).status === 404 ? 404 : 502).json({ error: errMsg(e) });
     }
   });
 
@@ -353,17 +413,111 @@ export function createDashboard(opts: DashboardOptions = {}) {
   const poolCfg = poolConfigFromEnv();
   const perSeverity = ethers.parseEther(process.env.REWARD_PER_SEVERITY_0G ?? "0.01");
   const maxReward = ethers.parseEther(process.env.REWARD_MAX_0G ?? "0.05");
+  // ---------------------------------------------------------------- the insurer: wallet sign-in and receiving key
+  // The insurance company's wallet (INSURER_ADDRESS, default: the RewardPool operator wallet) signs in by signing a
+  // one-time message; it moves no money. Its receiving key (public half) is what owners lock incident keys for.
+  const insurerAddress = (() => {
+    const env = process.env.INSURER_ADDRESS ?? "";
+    if (ethers.isAddress(env)) return ethers.getAddress(env);
+    try {
+      return poolCfg.operatorKey ? new ethers.Wallet(poolCfg.operatorKey).address : "";
+    } catch {
+      return "";
+    }
+  })();
+  const insurerKeyPath = process.env.INSURER_KEY_FILE ?? resolve(REPO_ROOT, "data", "insurer-key.json");
+  type InsurerKey = { publicJwk: PublicJwk; kid: string; setAt: string; by: string };
+  const insurerKey = () => readJson<InsurerKey | null>(insurerKeyPath, null);
+  const insurerSessions = new Sessions(8 * 3600_000);
+  const INSURER_COOKIE = "pearl_insurer";
+  const challenges = new Map<string, { message: string; expires: number }>();
+  const insurerOf = (req: Request): string | null => (insurerSessions.get(cookieValue(req.headers.cookie, INSURER_COOKIE)) ? insurerAddress : null);
+  const requireInsurer = (req: Request, res: Response): string | null => {
+    const who = insurerOf(req);
+    if (!who) res.status(401).json({ error: "sign in with the insurer wallet first" });
+    return who;
+  };
+
+  app.get("/api/insurer", (req, res) => {
+    const k = insurerKey();
+    res.json({
+      configured: !!insurerAddress,
+      address: insurerAddress || null,
+      signedIn: !!insurerOf(req),
+      key: k ? { publicJwk: k.publicJwk, kid: k.kid, setAt: k.setAt } : null,
+    });
+  });
+  app.post("/api/insurer/challenge", (_req, res) => {
+    if (!insurerAddress) {
+      res.status(503).json({ error: "no insurer wallet configured (INSURER_ADDRESS or OG_OPERATOR_PRIVATE_KEY)" });
+      return;
+    }
+    const nonce = randomBytes(16).toString("hex");
+    const message = `Pearl insurer sign-in\nWallet: ${insurerAddress}\nNonce: ${nonce}\nIssued: ${new Date().toISOString()}\nThis signature only signs you in. It moves no funds.`;
+    challenges.set(nonce, { message, expires: Date.now() + 5 * 60_000 });
+    res.json({ nonce, message, address: insurerAddress });
+  });
+  app.post("/api/insurer/signin", (req, res) => {
+    const b = (req.body ?? {}) as { nonce?: unknown; signature?: unknown };
+    const ch = typeof b.nonce === "string" ? challenges.get(b.nonce) : undefined;
+    if (!ch || ch.expires < Date.now() || typeof b.signature !== "string") {
+      res.status(400).json({ error: "sign-in request expired; try again" });
+      return;
+    }
+    challenges.delete(b.nonce as string); // one use
+    let who: string | null = null;
+    try {
+      who = ethers.verifyMessage(ch.message, b.signature);
+    } catch {
+      who = null;
+    }
+    if (!who || who.toLowerCase() !== insurerAddress.toLowerCase()) {
+      res.status(403).json({ error: `signed by ${who ?? "an invalid signature"}, not the insurer wallet ${insurerAddress}` });
+      return;
+    }
+    res.cookie(INSURER_COOKIE, insurerSessions.create(insurerAddress), { httpOnly: true, sameSite: "lax", maxAge: 8 * 3600_000 });
+    res.json({ ok: true, address: insurerAddress });
+  });
+  app.post("/api/insurer/logout", (req, res) => {
+    insurerSessions.end(cookieValue(req.headers.cookie, INSURER_COOKIE));
+    res.clearCookie(INSURER_COOKIE);
+    res.json({ ok: true });
+  });
+  app.post("/api/insurer/key", (req, res) => {
+    const who = requireInsurer(req, res);
+    if (!who) return;
+    const jwk = (req.body as { publicJwk?: unknown })?.publicJwk;
+    if (!isPublicJwk(jwk)) {
+      res.status(400).json({ error: "publicJwk must be a P-256 public key" });
+      return;
+    }
+    const pub: PublicJwk = { kty: "EC", crv: "P-256", x: jwk.x, y: jwk.y };
+    const k: InsurerKey = { publicJwk: pub, kid: keyId(pub), setAt: new Date().toISOString(), by: who };
+    writeJson(insurerKeyPath, k);
+    res.json({ publicJwk: k.publicJwk, kid: k.kid, setAt: k.setAt });
+  });
+
+  // ---------------------------------------------------------------- reward claims
+  const anchorCfg = anchorConfigFromEnv();
   const rewardDeps: RewardDeps = {
     verify: async (episodeId, dev) => {
-      const { log, meta } = await loadLog(episodeId);
-      const v = await verifyEpisode(log, meta, { ...(await withRelay(episodeId)), expectedDevice: dev });
+      const v = await verifyPublic(episodeId, await publicDeps(episodeId, dev));
       return { result: v.result, failed: v.failed };
     },
+    // incident facts come from the robot's own record on 0G Chain; the locked file's header only names the robot
     incident: async (episodeId) => {
-      const { log } = await loadLog(episodeId);
-      if (!log.device) throw new Error("the episode log is not device-signed");
-      return { device: log.device.address, outcome: log.outcome, ...incidentOf(log) };
+      const sealed = await robotCopy(episodeId)();
+      const dev = sealed.device.address;
+      if (opts.verifyDeps?.readAnchor || ethers.isAddress(anchorCfg.address)) {
+        const read = opts.verifyDeps?.readAnchor ?? ((d: string, id: string) => readAnchor(anchorCfg, d, id));
+        const a = await read(dev, episodeId);
+        if (!a) throw new Error("this run is not recorded on 0G Chain, so it cannot be claimed");
+        const outcome = (["DONE", "ABORTED", "FAILSAFE", "TRIPPED"][a.outcome] ?? "UNKNOWN") as string;
+        return { device: dev, incident: a.incident, severity: a.severity, outcome };
+      }
+      return { device: dev, incident: sealed.incident, severity: sealed.severity, outcome: sealed.outcome };
     },
+    insurerKid: () => insurerKey()?.kid ?? null,
     agentPass: () => agentPass,
     idkit,
     signRequest: (action) => signRequest({ signingKeyHex: process.env.WORLD_RP_SIGNING_KEY ?? "", action }),
@@ -372,11 +526,6 @@ export function createDashboard(opts: DashboardOptions = {}) {
       // forward the IDKit result unchanged (docs.world.org/world-id/idkit/integrate, Step 5)
       const r = await postJson(`https://developer.world.org/api/v4/verify/${encodeURIComponent(rpId)}`, result, 20_000);
       return { status: r.status, body: (await r.json().catch(() => ({}))) as Record<string, unknown> };
-    },
-    assess: async (body) => {
-      const r = await postJson(`${process.env.INSURER_URL ?? "http://localhost:8090"}/assess`, body, 5000);
-      if (!r.ok) throw new Error(`insurer HTTP ${r.status}`);
-      return (await r.json()) as { status: string; amount: number; reason: string };
     },
     pay: async (p) => {
       if (!poolConfigured(poolCfg)) throw new Error("RewardPool not configured (OG_REWARD_POOL_ADDRESS, OG_OPERATOR_PRIVATE_KEY)");
@@ -389,26 +538,24 @@ export function createDashboard(opts: DashboardOptions = {}) {
   const desk = new RewardDesk(rewardDeps);
   const claimsOn = envFlag("CLAIMS_WORLDID", "on");
 
-  // incidents on my robots that could be claimed
+  // incidents on my robots that could be claimed (labels from the robot's list; the anchor is checked when claiming)
   app.get("/api/claimable", async (req, res) => {
     const a = requireAccount(req, res);
     if (!a) return;
-    const out: unknown[] = [];
     const mine = new Set(a.robots.map((r) => r.address.toLowerCase()));
+    const out: unknown[] = [];
     if (mine.size) {
       try {
-        const list = await device<{ items: { episodeId: string }[] }>("/api/episodes");
-        for (const it of list.items.slice(0, 50)) {
-          const inc = await rewardDeps.incident(it.episodeId).catch(() => null);
-          if (inc && inc.incident && mine.has(inc.device.toLowerCase())) {
-            out.push({ episodeId: it.episodeId, device: inc.device, severity: inc.severity, outcome: inc.outcome, claimable: inc.severity >= 2 });
-          }
+        const list = await device<{ items: { episodeId: string; locked?: boolean; kind?: string; severity?: number; outcome?: string; device?: string; ts?: number }[] }>("/api/episodes");
+        for (const it of list.items) {
+          if (!it.locked || it.kind !== "incident" || !it.device || !mine.has(it.device.toLowerCase())) continue;
+          out.push({ episodeId: it.episodeId, device: it.device, severity: it.severity ?? 0, outcome: it.outcome, ts: it.ts, claimable: (it.severity ?? 0) >= 2 });
         }
       } catch {
         // robot offline: nothing listed
       }
     }
-    res.json({ items: out });
+    res.json({ items: out, amounts: { perSeverityWei: perSeverity.toString(), maxWei: maxReward.toString() } });
   });
 
   app.get("/api/claims", (req, res) => {
@@ -423,7 +570,8 @@ export function createDashboard(opts: DashboardOptions = {}) {
       return;
     }
     try {
-      res.json(await desk.start(a, String((req.body as { episodeId?: unknown })?.episodeId ?? "")));
+      const b = (req.body ?? {}) as { episodeId?: unknown; insurerKey?: unknown };
+      res.json(await desk.start(a, String(b.episodeId ?? ""), b.insurerKey as WrappedKey));
     } catch (e) {
       res.status(409).json({ error: errMsg(e) });
     }
@@ -458,6 +606,31 @@ export function createDashboard(opts: DashboardOptions = {}) {
     if (!a) return;
     try {
       res.json(await desk.idkitResult(String(req.params.id), a.accountId, (req.body ?? {}) as { error?: string; result?: Record<string, unknown> }));
+    } catch (e) {
+      res.status(409).json({ error: errMsg(e) });
+    }
+  });
+
+  // ---------------------------------------------------------------- the insurer's review queue
+  app.get("/api/insurer/claims", (req, res) => {
+    if (requireInsurer(req, res)) res.json(desk.listForInsurer());
+  });
+  app.get("/api/insurer/claims/:id", (req, res) => {
+    if (!requireInsurer(req, res)) return;
+    const c = desk.getForInsurer(String(req.params.id));
+    if (c) res.json(c);
+    else res.status(404).json({ error: "not found" });
+  });
+  app.post("/api/insurer/claims/:id/decision", async (req, res) => {
+    const who = requireInsurer(req, res);
+    if (!who) return;
+    const b = (req.body ?? {}) as { approve?: unknown; reason?: unknown };
+    if (typeof b.approve !== "boolean" || typeof b.reason !== "string") {
+      res.status(400).json({ error: "body must be {approve: true|false, reason: text}" });
+      return;
+    }
+    try {
+      res.json(await desk.decide(String(req.params.id), { approve: b.approve, reason: b.reason, by: who }));
     } catch (e) {
       res.status(409).json({ error: errMsg(e) });
     }

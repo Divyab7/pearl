@@ -1,6 +1,6 @@
 /**
- * Reward claims (rev 5, R7). After an incident on a robot you linked, you can claim a reward. Claiming is the protected
- * action, so it needs two human checks, both validated here on the backend:
+ * Reward claims (rev 5, R7; owner decisions 6 Nov 2026). After an incident on a robot you linked, you can claim a
+ * reward. Claiming is the protected action, so it needs two human checks, both validated here on the backend:
  *
  *  1. World ID Agent Pass (World IdP OIDC, device grant; human/worldid.ts): a FRESH verification by the account owner
  *     right now. The validated ID token's pairwise subject must equal the account's subject.
@@ -8,13 +8,14 @@
  *     `claim:<episodeId>` with signal = the payout wallet. The backend signs the request (signRequest), checks the
  *     returned environment, action and signal hash, forwards the proof unchanged to
  *     POST https://developer.world.org/api/v4/verify/{rp_id}, then stores the nullifier per action: one claim per human
- *     per incident. Proof of Human is the minimum sufficient credential: the product needs "one real person, once",
- *     not nationality, age or a document.
+ *     per incident.
  *
- * Only then: the mock insurer assesses, and the RewardPool contract on 0G Chain pays test 0G to the wallet. The pool
- * itself re-checks that the device anchored this incident with severity ≥ 2 and pays each (incident, nullifier) once.
- * Denied, cancelled, expired, wrong person, replayed proof, failed verification: the claim fails, nothing is paid, and
- * the claim's history says why.
+ * With the claim, the owner's browser hands over this one run's key, locked for the insurer's key (the dashboard only
+ * carries it). After both checks the claim WAITS FOR THE INSURER: a person on the Insurer page unlocks the incident,
+ * runs the full check, watches the replay and approves or denies with a reason. Only after Approve does the dashboard
+ * call the RewardPool on 0G Chain, for the amount fixed by severity; the pool itself re-checks that the device anchored
+ * this incident with severity ≥ 2 and pays each (incident, nullifier) once. Denied, cancelled, expired, wrong person,
+ * replayed proof, failed verification: nothing is paid, and the claim's history says why.
  */
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
@@ -22,13 +23,23 @@ import { REPO_ROOT } from "../shared/env.js";
 import type { HumanCheckPrompt, HumanCheckResult, HumanGate } from "../human/gate.js";
 import type { Account } from "./accounts.js";
 import { errMsg, readJson, writeJson } from "../shared/util.js";
+import { runContext, type WrappedKey } from "../shared/seal.js";
 
 export type ClaimStatus =
   | "AGENT_PASS" // waiting for the fresh World ID Agent Pass verification
   | "IDKIT" // waiting for the IDKit Proof of Human
+  | "INSURER_REVIEW" // both human checks passed; waiting for a person at the insurer
   | "PAYING"
   | "PAID"
+  | "DENIED" // the insurer said no, with a reason
   | "FAILED";
+
+export interface InsurerReview {
+  decision: "APPROVED" | "DENIED";
+  reason: string;
+  by: string; // the insurer wallet that signed in
+  at: string;
+}
 
 export interface RewardClaim {
   claimId: string;
@@ -42,7 +53,11 @@ export interface RewardClaim {
   failure: string | null;
   agentPass: { prompt: HumanCheckPrompt | null; subject?: string; acr?: string | null; idTokenSha256?: string } | null;
   nullifier: string | null;
-  insurer: { status: string; amount: number; reason: string } | null;
+  /** The amount the pool pays if the insurer approves: fixed by severity (owner decision 6 Nov 2026). */
+  amountWei: string;
+  /** This run's key, locked for the insurer's key by the owner's browser; only the insurer can open it. */
+  insurerKey: WrappedKey;
+  review: InsurerReview | null;
   payout: { amountWei: string; txHash: string } | null;
   history: { ts: string; status: ClaimStatus; note: string }[];
   createdAt: string;
@@ -55,17 +70,18 @@ export interface IdkitConfig {
 }
 
 export interface RewardDeps {
-  /** Episode verification (all checks, device signature required, expected device = the linked robot). */
+  /** The public check of the locked run (anchor, 0G Storage, header, robot signature); needs no key. */
   verify: (episodeId: string, device: string) => Promise<{ result: "VALID" | "REJECTED"; failed: number[] }>;
-  /** Incident facts for the episode (from the device-signed log). */
+  /** Incident facts: the robot and its anchored incident flag, severity and outcome (public; no key needed). */
   incident: (episodeId: string) => Promise<{ device: string; incident: boolean; severity: number; outcome: string }>;
+  /** The insurer's public receiving key; claims cannot start until the insurer has set one up. */
+  insurerKid: () => string | null;
   agentPass: () => HumanGate | null;
   idkit: IdkitConfig | null;
   signRequest: (action: string) => { sig: string; nonce: string; createdAt: number; expiresAt: number };
   hashSignal: (signal: string) => string;
   /** Forwards the IDKit result unchanged to World's verify API; returns its JSON body and HTTP status. */
   verifyProof: (rpId: string, result: unknown) => Promise<{ status: number; body: Record<string, unknown> }>;
-  assess: (body: { claimId: string; episodeId: string; severity: number; outcome: string; verified: boolean }) => Promise<{ status: string; amount: number; reason: string }>;
   pay: (p: { device: string; episodeId: string; claimant: string; to: string; amountWei: bigint }) => Promise<{ txHash: string }>;
   amountWeiFor: (severity: number) => bigint;
   requireValid: boolean;
@@ -110,15 +126,27 @@ export class RewardDesk {
     return this.step(c, "FAILED", why, { failure: why });
   }
 
+  /** Claims the insurer may see: those that passed both human checks (or were withdrawn while it reviewed). */
+  listForInsurer() {
+    return this.store.all().filter((c) => c.status !== "AGENT_PASS" && c.status !== "IDKIT" && (c.status !== "FAILED" || c.history.some((h) => h.status === "INSURER_REVIEW")));
+  }
+  getForInsurer(claimId: string) {
+    return this.listForInsurer().find((c) => c.claimId === claimId);
+  }
+
   /** Starts a claim and the Agent Pass verification. Throws (no claim created) when the claim is not admissible. */
-  async start(account: Account, episodeId: string): Promise<RewardClaim> {
+  async start(account: Account, episodeId: string, insurerKey: WrappedKey): Promise<RewardClaim> {
     if (!account.wallet) throw new Error("set a payout wallet first");
     const inc = await this.deps.incident(episodeId);
     if (!account.robots.some((r) => r.address.toLowerCase() === inc.device.toLowerCase())) {
       throw new Error("this episode belongs to a robot that is not linked to your account");
     }
     if (!inc.incident || inc.severity < 2) throw new Error(`not a claimable incident (severity ${inc.severity}; needs ≥ 2)`);
-    const open = this.store.all().find((c) => c.accountId === account.accountId && c.episodeId === episodeId && c.status !== "FAILED");
+    const insurerKid = this.deps.insurerKid();
+    if (!insurerKid) throw new Error("the insurer has not set up its receiving key yet, so it could not read this incident");
+    if (!insurerKey || insurerKey.kid !== insurerKid) throw new Error("the incident key was not locked for the insurer's current key");
+    if (insurerKey.context !== runContext(inc.device, episodeId)) throw new Error("the incident key belongs to a different robot or run");
+    const open = this.store.all().find((c) => c.accountId === account.accountId && c.episodeId === episodeId && c.status !== "FAILED" && c.status !== "DENIED");
     if (open) throw new Error(`you already have a claim for this incident (${open.claimId}, ${open.status})`);
     if (this.deps.requireValid) {
       const v = await this.deps.verify(episodeId, inc.device);
@@ -132,7 +160,8 @@ export class RewardDesk {
     let c: RewardClaim = this.store.put({
       claimId: `rc_${randomBytes(6).toString("hex")}`, accountId: account.accountId, episodeId, device: inc.device,
       severity: inc.severity, wallet: account.wallet, action: `claim:${episodeId}`, status: "AGENT_PASS", failure: null,
-      agentPass: { prompt: null }, nullifier: null, insurer: null, payout: null, createdAt: now,
+      agentPass: { prompt: null }, nullifier: null, amountWei: this.deps.amountWeiFor(inc.severity).toString(), insurerKey,
+      review: null, payout: null, createdAt: now,
       history: [{ ts: now, status: "AGENT_PASS", note: "claim opened; fresh World ID Agent Pass verification requested" }],
     });
     const claimId = c.claimId;
@@ -163,13 +192,35 @@ export class RewardDesk {
     });
   }
 
-  /** Cancels a pending claim (Agent Pass or IDKit step): nothing is paid. */
+  /** Cancels a pending claim (Agent Pass, IDKit or while the insurer reviews): nothing is paid. */
   cancel(claimId: string, accountId: string): RewardClaim {
     const c = this.get(claimId, accountId);
     if (!c) throw new Error("no such claim");
     if (c.status === "AGENT_PASS" && c.agentPass?.prompt) this.deps.agentPass()?.cancel(c.agentPass.prompt.attemptId);
-    if (c.status === "AGENT_PASS" || c.status === "IDKIT") return this.fail(this.store.get(claimId)!, "cancelled by the user");
+    if (c.status === "AGENT_PASS" || c.status === "IDKIT") return this.fail(this.store.get(claimId)!, "cancelled by the owner");
+    if (c.status === "INSURER_REVIEW") return this.fail(c, "withdrawn by the owner before the insurer decided");
     return c;
+  }
+
+  /** The insurer's decision (a person on the Insurer page). Approve pays the fixed severity amount from the pool. */
+  async decide(claimId: string, d: { approve: boolean; reason: string; by: string }): Promise<RewardClaim> {
+    const c = this.store.get(claimId);
+    if (!c) throw new Error("no such claim");
+    if (c.status !== "INSURER_REVIEW") throw new Error(`claim is ${c.status}, not waiting for the insurer`);
+    const reason = d.reason.trim();
+    if (!reason) throw new Error("give a reason; the owner sees it");
+    if (reason.length > 500) throw new Error("keep the reason under 500 characters");
+    const review: InsurerReview = { decision: d.approve ? "APPROVED" : "DENIED", reason, by: d.by, at: new Date().toISOString() };
+    if (!d.approve) return this.step(c, "DENIED", `insurer denied: ${reason}`, { review, failure: `insurer denied: ${reason}` });
+    const paying = this.step(c, "PAYING", `insurer approved: ${reason}; paying from the RewardPool`, { review });
+    try {
+      const claimant = `0x${BigInt(c.nullifier!).toString(16).padStart(64, "0").slice(-64)}`;
+      const amountWei = BigInt(c.amountWei);
+      const p = await this.deps.pay({ device: c.device, episodeId: c.episodeId, claimant, to: c.wallet, amountWei });
+      return this.step(paying, "PAID", `RewardPool paid ${amountWei} wei of test 0G (tx ${p.txHash})`, { payout: { amountWei: amountWei.toString(), txHash: p.txHash } });
+    } catch (e) {
+      return this.fail(paying, `payout failed: ${errMsg(e)}`);
+    }
   }
 
   /** What the browser needs to open the IDKit request: a fresh backend RP signature, never the signing key. */
@@ -212,21 +263,6 @@ export class RewardDesk {
     const nullifier = String(v.body.nullifier ?? responses[0]!.nullifier ?? "");
     if (!/^0x[0-9a-fA-F]+$/.test(nullifier)) return this.fail(c, "verify response has no nullifier");
     if (this.store.nullifierUsed(nullifier, c.action)) return this.fail(c, "this person already claimed this incident (nullifier replayed)");
-    c = this.step(c, "PAYING", "IDKit Proof of Human verified by World; one claim per human per incident", { nullifier });
-
-    const inc = await this.deps.incident(c.episodeId);
-    const a = await this.deps.assess({ claimId: c.claimId, episodeId: c.episodeId, severity: c.severity, outcome: inc.outcome, verified: true })
-      .catch((e) => ({ status: "ERROR", amount: 0, reason: String(e) }));
-    if (a.status !== "APPROVED") return this.fail({ ...c, insurer: a }, `insurer ${a.status}: ${a.reason}`);
-    const amountWei = this.deps.amountWeiFor(c.severity);
-    try {
-      const claimant = `0x${BigInt(nullifier).toString(16).padStart(64, "0").slice(-64)}`;
-      const p = await this.deps.pay({ device: c.device, episodeId: c.episodeId, claimant, to: c.wallet, amountWei });
-      return this.step(c, "PAID", `RewardPool paid ${amountWei} wei of test 0G (tx ${p.txHash})`, {
-        insurer: a, payout: { amountWei: amountWei.toString(), txHash: p.txHash },
-      });
-    } catch (e) {
-      return this.fail({ ...c, insurer: a }, `payout failed: ${errMsg(e)}`);
-    }
+    return this.step(c, "INSURER_REVIEW", "IDKit Proof of Human verified by World (one claim per human per incident); waiting for the insurer's review", { nullifier });
   }
 }

@@ -11,6 +11,7 @@ import { ethers } from "ethers";
 import { REPO_ROOT } from "../shared/env.js";
 import { linkMessage, recoverDevice } from "../shared/deviceKey.js";
 import { readJson, writeJson } from "../shared/util.js";
+import { keyId, type PublicJwk } from "../shared/seal.js";
 
 export interface LinkedRobot {
   address: string; // the device's own key
@@ -18,6 +19,15 @@ export interface LinkedRobot {
   deviceUrl: string;
   linkedAt: string;
   linkSignature: string;
+  /** The owner key the robot locks run keys for (named in the signed link message). */
+  ownerKid: string;
+}
+
+/** The owner's PUBLIC unlock key; the private half never leaves the owner's browser (and their backup file). */
+export interface OwnerPublicKey {
+  publicJwk: PublicJwk;
+  kid: string;
+  setAt: string;
 }
 
 export interface Account {
@@ -27,6 +37,7 @@ export interface Account {
   createdAt: string;
   wallet: string | null; // where approved rewards are paid
   robots: LinkedRobot[];
+  key?: OwnerPublicKey;
 }
 
 export const accountIdOf = (issuer: string, subject: string) =>
@@ -67,9 +78,13 @@ export class AccountStore {
     if (!ethers.isAddress(wallet)) throw new Error("not a valid wallet address");
     return this.update(accountId, (a) => ({ ...a, wallet: ethers.getAddress(wallet) }));
   }
-  /** Adds a robot after checking the device's own signature over the link message. */
+  /** Stores the owner's public unlock key. Robots linked under an older key keep using it until linked again. */
+  setKey(accountId: string, publicJwk: PublicJwk): Account {
+    return this.update(accountId, (a) => ({ ...a, key: { publicJwk, kid: keyId(publicJwk), setAt: new Date().toISOString() } }));
+  }
+  /** Adds a robot after checking the device's own signature over the link message (which names the owner key). */
   linkRobot(accountId: string, r: Omit<LinkedRobot, "linkedAt">, nonce: string): Account {
-    const who = recoverDevice(linkMessage(accountId, nonce), r.linkSignature);
+    const who = recoverDevice(linkMessage(accountId, nonce, r.ownerKid), r.linkSignature);
     if (!who || who.toLowerCase() !== r.address.toLowerCase()) throw new Error("the device did not sign this link");
     return this.update(accountId, (a) => ({
       ...a,
