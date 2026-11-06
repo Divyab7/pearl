@@ -743,6 +743,37 @@ export function createDashboard(opts: DashboardOptions = {}) {
   });
 
   // the reward pool, from 0G Chain only (public facts: address, balance, max payout, recent payouts)
+  // Home counters, from the public record only: runs and incidents from the robot's Arkiv entries, claims paid from
+  // the RewardPool's Paid events on 0G Chain. Cached 30 s; each part reports null when it can't be read.
+  let statsCache: { at: number; body: unknown } | null = null;
+  app.get("/api/stats", async (req, res) => {
+    if (statsCache && Date.now() - statsCache.at < 30_000) {
+      res.json(statsCache.body);
+      return;
+    }
+    const robots = accountOf(req)?.robots?.map((r) => r.address) ?? [];
+    const addr = (await robotAddress()) || robots[0] || "";
+    const kc = { ...arkivConfigFromEnv(), writer: addr };
+    const read = opts.listIndex ?? listIndex;
+    const [all, inc, pool] = await Promise.all([
+      arkivReaderConfigured(kc) ? read(kc, {}, 100).catch(() => null) : Promise.resolve(null),
+      arkivReaderConfigured(kc) ? read(kc, { kind: "incident" }, 100).catch(() => null) : Promise.resolve(null),
+      opts.readPool || ethers.isAddress(poolCfg.address) ? (opts.readPool ?? (() => readPool(poolCfg)))().catch(() => null) : Promise.resolve(null),
+    ]);
+    const body = {
+      robot: addr || null,
+      runs: all ? all.rows.length : null,
+      runsCapped: !!all && all.rows.length >= 100,
+      incidents: inc ? inc.rows.length : null,
+      lastRunAt: all?.rows[0]?.ts ?? null,
+      claimsPaid: pool ? pool.paid.length : null,
+      paidWei: pool ? pool.paid.reduce((t, p) => t + BigInt(p.amountWei), 0n).toString() : null,
+      source: { runs: "arkiv", claimsPaid: "0g-chain" },
+    };
+    statsCache = { at: Date.now(), body };
+    res.json(body);
+  });
+
   app.get("/api/pool", async (_req, res) => {
     if (!opts.readPool && !ethers.isAddress(poolCfg.address)) {
       res.json({ configured: false });

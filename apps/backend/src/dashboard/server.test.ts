@@ -257,6 +257,21 @@ describe("dashboard server (rev 5)", () => {
     s.close();
   });
 
+  it("home counters: runs and incidents from Arkiv, claims paid from the pool", async () => {
+    process.env.INDEX_ARKIV = "on";
+    const d = await fakeDevice();
+    const row = (kind: string, ts: number) => ({ entityKey: "0x1", kind, armId: "arm-1", episodeId: `ep_${ts}`, outcome: "DONE", ts, severity: kind === "incident" ? 2 : 0, headHash: "h", rootHash: null, anchorTx: null });
+    const { app } = createDashboard({
+      deviceUrl: "http://device.test", fetchImpl: d.f,
+      listIndex: (async (_c: unknown, f: { kind?: string }) => ({ query: "q", blockNumber: "1", skipped: 0, rows: f.kind ? [row("incident", 2)] : [row("incident", 2), row("episode", 1)] })) as never,
+      readPool: async () => ({ address: "0xp", balanceWei: "1", maxPayoutWei: "1", paid: [{ txHash: "0xa", to: "0xb", amountWei: "20", block: 1 }, { txHash: "0xc", to: "0xd", amountWei: "30", block: 2 }] }),
+    });
+    const s = await serve(app);
+    const r = await (await fetch(`${s.base}/api/stats`)).json();
+    expect(r).toMatchObject({ robot: d.wallet.address, runs: 2, incidents: 1, lastRunAt: 2, claimsPaid: 2, paidWei: "50", runsCapped: false });
+    s.close();
+  });
+
   it("a robot link not signed by the device is refused", async () => {
     const { AccountStore } = await import("./accounts.js");
     const { mkdtempSync } = await import("node:fs");
