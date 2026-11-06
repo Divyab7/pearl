@@ -3,6 +3,8 @@
 //  /runs/<id>.sealed.json  the locked copy (what 0G Storage holds and the robot serves)
 //  /runs/<id>.meta.json    where it went (storage, anchor, Arkiv, frames)
 //  /runs/<id>/f<idx>.lock  locked camera frames
+//  /outbox/<bundleId>.json (+ .st) the robot's own sealed bundles waiting for a way out (offline relay)
+//  /carry/<bundleId>.json (+ .st)  other robots' bundles carried for them (mesh), /carry/receipts.json
 //  NVS "pearl": dev (the robot's secp256k1 key), owner (the linked owner's P-256 public key JSON), run keys "r<hash>"
 #pragma once
 #include <string>
@@ -26,4 +28,12 @@ bool saveRunKey(const std::string& episodeId, const pearl::Bytes& key);
 bool loadRunKey(const std::string& episodeId, pearl::Bytes& key);
 bool saveOwner(const std::string& json);
 bool loadOwner(std::string& json);
+/** Small NVS strings (the offline nonce/fee cache) and a persistent counter (outbox order). */
+bool putStr(const char* key, const std::string& v);
+std::string getStr(const char* key);
+uint64_t nextSeq();
+bool removeFile(const std::string& path);
+/** Names (not paths) of the files in a directory. */
+std::vector<std::string> listDir(const std::string& dir);
+size_t freeBytes();
 }  // namespace store

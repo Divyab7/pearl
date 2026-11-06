@@ -40,11 +40,11 @@ bool refreshCache(orch::Platform& p, const publish::Config& c, const eth::Key& k
                   uint64_t minOg = 0, uint64_t minArkiv = 0);
 
 // ---------------------------------------------------------------- building
-struct Limits {
-  uint64_t gasStorage = 1000000, gasAnchor = 400000, gasArkiv = 2000000;  // generous fixed limits per purpose
-  uint64_t ogFloorWei = 4000000000ULL;      // maxFeePerGas floors
-  uint64_t arkivFloorWei = 1000000000ULL;
-  uint64_t ogDefaultTipWei = 2000000000ULL;  // 2 gwei on Galileo when no tip is cached
+struct Limits {  // same constants as the TS relay side (6 Nov 2026)
+  uint64_t gasStorage = 800000, gasAnchor = 400000, gasArkiv = 600000;  // generous fixed limits per purpose
+  uint64_t ogFloorWei = 10000000000ULL;     // maxFeePerGas floors: 10 gwei Galileo, 2 gwei Arkiv
+  uint64_t arkivFloorWei = 2000000000ULL;
+  uint64_t ogDefaultTipWei = 2000000000ULL;  // Galileo tip ≥ 2 gwei
 };
 struct Built {
   std::string bundleId, sig, json;  // json: canonical, with sig

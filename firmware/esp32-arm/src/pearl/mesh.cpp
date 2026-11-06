@@ -123,6 +123,7 @@ bool verify(JsonVariantConst b, const Chains& chains, Verified& out, std::string
 const char* admitName(Admit a) {
   switch (a) {
     case Admit::OK: return "ok";
+    case Admit::INVALID: return "invalid";
     case Admit::DUPLICATE: return "duplicate";
     case Admit::DELIVERED: return "already delivered";
     case Admit::OWN: return "own bundle";
@@ -229,6 +230,7 @@ Admit Carry::admit(const Carried& c, uint64_t now, const std::string& self, std:
 void Carry::add(const Carried& c) {
   remove(c.bundleId);
   items.push_back(c);
+  if (c.hops >= pol.maxHops) items.back().forward = false;  // last hop: kept (and submitted when online), not forwarded
 }
 bool Carry::remove(const std::string& id) {
   auto it = std::remove_if(items.begin(), items.end(), [&](const Carried& c) { return c.bundleId == id; });

@@ -121,7 +121,7 @@ TEST(bundle_builds_signed_txs_with_exact_fields) {
       // padded sectors × price × 1.2
       uint64_t want = 30733644962ULL * chain::paddedChunks(files[i].size()) * 12 / 10;
       CHECK(dt.tx.value == eth::uintBytes(want));
-      CHECK_EQ(dt.tx.gas, uint64_t(1000000));
+      CHECK_EQ(dt.tx.gas, uint64_t(800000));
       CHECK(dt.tx.maxFeePerGas == eth::uintBytes(12000000021ULL));  // 3 × cached gas price
       CHECK(dt.tx.maxPriorityFeePerGas == eth::uintBytes(4000000007ULL));
       if (i == 0) storageTx = t["hash"] | "";
@@ -166,6 +166,12 @@ TEST(bundle_refuses_without_cached_nonce) {
   std::string err;
   CHECK(!buildOne(b, vectorKey(), sampleRun(), c, err));
   CHECK(err.find("nonce") != std::string::npos);
+  // storage configured but its price never cached: refuse rather than anchor a run without its file
+  c = cache();
+  c.pricePerSector.clear();
+  CHECK(!buildOne(b, vectorKey(), sampleRun(), c, err));
+  CHECK(err.find("Storage price") != std::string::npos);
+  CHECK_EQ(c.og.nonce, uint64_t(41));  // nothing consumed
 }
 
 TEST(bundle_cache_roundtrips) {
@@ -402,6 +408,12 @@ TEST(carry_store_policy) {
   CHECK(cs.admit(carried('2', "0xSELF", 0, now, 10), now, self, ev) == mesh::Admit::OWN);
   CHECK(cs.admit(carried('2', B, 0, now, 10, 9), now, self, ev) == mesh::Admit::HOPS);
   CHECK(cs.admit(carried('2', B, 0, now, 10, 8), now, self, ev) == mesh::Admit::OK);
+  {
+    mesh::Carry last;
+    last.add(carried('2', B, 0, now, 10, 8));  // arrived at 8 hops: kept, not forwarded
+    CHECK(!last.items[0].forward);
+    CHECK_EQ(last.forwardable(), size_t(0));
+  }
   CHECK(cs.admit(carried('2', B, 0, now - 7 * day, 10), now, self, ev) == mesh::Admit::EXPIRED);
   CHECK(cs.admit(carried('2', B, 0, now, (1u << 20) + 1), now, self, ev) == mesh::Admit::TOO_BIG);
   // per-origin cap 1 MB: A has 400 KB; another 400 KB fits, a third only if it outranks one of A's

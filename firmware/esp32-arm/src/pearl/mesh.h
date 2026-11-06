@@ -48,7 +48,7 @@ struct Policy {
   uint64_t ttlMs = 7ULL * 24 * 3600 * 1000;
   int maxHops = 8;
 };
-enum class Admit { OK, DUPLICATE, DELIVERED, OWN, EXPIRED, HOPS, TOO_BIG, NO_ROOM };
+enum class Admit { OK, INVALID, DUPLICATE, DELIVERED, OWN, EXPIRED, HOPS, TOO_BIG, NO_ROOM };
 const char* admitName(Admit a);
 
 std::string carriedJson(const Carried& c);

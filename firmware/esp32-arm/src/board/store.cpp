@@ -101,5 +101,30 @@ bool loadOwner(std::string& json) {
   return !json.empty();
 }
 
+bool putStr(const char* key, const std::string& v) { return prefs.putString(key, v.c_str()) == v.size(); }
+
+std::string getStr(const char* key) {
+  if (!prefs.isKey(key)) return "";
+  return prefs.getString(key).c_str();
+}
+
+uint64_t nextSeq() {
+  uint64_t n = prefs.getULong64("seq", 0) + 1;
+  prefs.putULong64("seq", n);
+  return n;
+}
+
+bool removeFile(const std::string& path) { return LittleFS.remove(path.c_str()); }
+
+std::vector<std::string> listDir(const std::string& path) {
+  std::vector<std::string> out;
+  File dir = LittleFS.open(path.c_str());
+  if (!dir || !dir.isDirectory()) return out;
+  for (File f = dir.openNextFile(); f; f = dir.openNextFile()) out.push_back(f.name());
+  return out;
+}
+
+size_t freeBytes() { return LittleFS.totalBytes() - LittleFS.usedBytes(); }
+
 }  // namespace store
 #endif

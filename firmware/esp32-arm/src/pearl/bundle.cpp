@@ -109,7 +109,7 @@ bool refreshCache(orch::Platform& p, const publish::Config& c, const eth::Key& k
 
 // ---------------------------------------------------------------- building
 static void fees(const ChainCache& cc, uint64_t floor, uint64_t defaultTip, chain::Eip1559Tx& tx) {
-  uint64_t tip = cc.tip ? cc.tip : defaultTip;
+  uint64_t tip = std::max(cc.tip, defaultTip);  // Galileo needs ≥ 2 gwei; Arkiv: no minimum
   uint64_t maxFee = std::max(cc.fee * 3, floor);
   maxFee = std::max(maxFee, tip);
   tx.maxPriorityFeePerGas = eth::uintBytes(tip);
@@ -137,11 +137,20 @@ static bool addTx(const eth::Key& k, chain::Eip1559Tx& tx, const char* chainName
 
 bool build(const publish::Config& c, const eth::Key& k, const orch::Result& r, const std::vector<std::pair<size_t, Bytes>>& frames,
            const std::string& createdAt, const Bytes& salt16, Cache& cache, const Limits& lim, Built& out, std::string& err) {
-  bool storage = c.storageOn && !c.storageNodes.empty() && !cache.flow.empty() && !cache.pricePerSector.empty();
+  bool storage = c.storageOn && !c.storageNodes.empty();
   bool anchor = c.anchorOn && !c.anchorAddress.empty();
-  bool arkiv = c.arkivOn && !c.arkivRpc.empty() && cache.arkiv.known;
+  bool arkiv = c.arkivOn && !c.arkivRpc.empty();
+  // never pre-sign a partial run (e.g. an anchor without its file): wait until the cache has what is configured
   if ((storage || anchor) && !cache.og.known) {
     err = "no cached 0G nonce (the robot has not been online since it was flashed)";
+    return false;
+  }
+  if (storage && (cache.flow.empty() || cache.pricePerSector.empty())) {
+    err = "no cached 0G Storage price (storage nodes not reached while online)";
+    return false;
+  }
+  if (arkiv && !cache.arkiv.known) {
+    err = "no cached Arkiv nonce (Arkiv not reached while online)";
     return false;
   }
   Bytes log = utf8(r.sealedCanonical);
@@ -209,7 +218,7 @@ bool build(const publish::Config& c, const eth::Key& k, const orch::Result& r, c
     chain::Eip1559Tx tx;
     tx.chainId = c.arkivChainId;
     tx.nonce = arkivNonce++;
-    fees(cache.arkiv, lim.arkivFloorWei, 0, tx);
+    fees(cache.arkiv, lim.arkivFloorWei, 0, tx);  // tip as cached (viem)
     tx.gas = lim.gasArkiv;
     fromHex(chain::ARKIV_PROCESSOR, tx.to);
     tx.data = publish::arkivData(c, r, root, storageTx, anchorTx, salt16);
