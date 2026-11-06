@@ -365,6 +365,7 @@ export function createDashboard(opts: DashboardOptions = {}) {
   };
 
   // the public check: anyone can confirm a run is untouched; the response carries the locked file (useless without a key)
+  const verifyCache = new Map<string, { at: number; v: Awaited<ReturnType<typeof verifyPublic>> }>();
   app.get("/api/verify/:id", async (req, res) => {
     const id = String(req.params.id);
     if (!validId(id)) {
@@ -372,7 +373,21 @@ export function createDashboard(opts: DashboardOptions = {}) {
       return;
     }
     try {
-      res.json(await verifyPublic(id, await publicDeps(id, devParam(req))));
+      // a run that passed from 0G Storage can't change (its record on 0G Chain and its stored file are immutable):
+      // remember it for 10 min so lists and pages don't re-download the file each time; anything else is re-checked
+      const dev = devParam(req);
+      const key = `${id}|${(dev ?? "").toLowerCase()}`;
+      const hit = verifyCache.get(key);
+      if (hit && Date.now() - hit.at < 600_000) {
+        res.json(hit.v);
+        return;
+      }
+      const v = await verifyPublic(id, await publicDeps(id, dev));
+      if (v.result === "VALID" && v.source === "0g-storage") {
+        verifyCache.set(key, { at: Date.now(), v });
+        if (verifyCache.size > 500) verifyCache.delete(verifyCache.keys().next().value!);
+      }
+      res.json(v);
     } catch (e) {
       res.status(502).json({ error: errMsg(e) });
     }
