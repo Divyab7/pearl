@@ -2,10 +2,18 @@
 import { createDashboard } from "./dashboard/server.js";
 import { envFlag } from "./shared/env.js";
 import { advertiseRelay } from "./relay/mdns.js";
+import { mountDemo } from "./demo/mount.js";
 
 const port = Number(process.env.PORT ?? 8080);
 const { app, deviceUrl, watchForRelays, relayQueue } = createDashboard();
 if (envFlag("STORAGE_RELAY", "off")) watchForRelays();
+// the demo workspace (sample data, fake networks) at /demo-api; DEMO_WORKSPACES=off leaves it out
+if (envFlag("DEMO_WORKSPACES", "on")) {
+  mountDemo(app).then(
+    (d) => console.log(`demo workspace at /demo-api (sample robot ${d.world.device.address}, files in ${d.world.dir})`),
+    () => {},
+  );
+}
 // bundles a restart interrupted carry on; robots on this Wi-Fi find the relay by mDNS (RELAY_MDNS=off to stop it)
 relayQueue.resume();
 let stopMdns = () => {};
