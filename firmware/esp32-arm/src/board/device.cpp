@@ -557,6 +557,14 @@ void begin() {
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   for (int i = 0; i < 80 && WiFi.status() != WL_CONNECTED; i++) delay(250);
   Serial.printf("[pearl] Wi-Fi %s %s\n", WiFi.status() == WL_CONNECTED ? "connected," : "NOT connected", WiFi.localIP().toString().c_str());
+  if (WiFi.status() != WL_CONNECTED) {
+    // say why: which networks this board can see (2.4 GHz only), so a wrong name or a 5 GHz-only network is obvious
+    int n = WiFi.scanNetworks();
+    Serial.printf("[pearl] looking for \"%s\"; %d network(s) visible on 2.4 GHz:\n", WIFI_SSID, n);
+    for (int i = 0; i < n && i < 15; i++) Serial.printf("[pearl]   \"%s\"  ch %d  %d dBm\n", WiFi.SSID(i).c_str(), WiFi.channel(i), WiFi.RSSI(i));
+    WiFi.scanDelete();
+    WiFi.begin(WIFI_SSID, WIFI_PASS);  // keep trying in the background
+  }
   configTime(0, 0, "pool.ntp.org", "time.google.com", "time.cloudflare.com");  // UTC
   std::string last4 = keyOk ? devKey.address.substr(devKey.address.size() - 4) : "0000";
   for (char& ch : last4) ch = static_cast<char>(tolower(static_cast<unsigned char>(ch)));
