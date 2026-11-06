@@ -1,18 +1,19 @@
-import { href } from "../router";
+import { to } from "../router";
+import { PRODUCT_SHORT, PRODUCT_TAIL } from "../lib/words";
 import { Icon } from "../components/ui";
 
 const DOORS = [
-  { to: href("robot"), icon: "robot", title: "My robot", body: "Operate the arm at its site. Owners sign in with World ID to unlock their robot's runs and claim after incidents." },
-  { to: href("insurer"), icon: "wallet", title: "Insurer", body: "Review claimed incidents and approve or deny them. Sign in with the insurance company's wallet." },
-  { to: href("verify"), icon: "shield", title: "Verify", body: "Check that any run is untouched. Public, no sign-in. Its contents stay locked." },
+  { to: to.robot(), icon: "robot", title: "I own a robot", body: "Operate the arm at its site. Owners sign in with World ID to unlock their robot's runs and claim after incidents." },
+  { to: to.insurance("insurer"), icon: "wallet", title: "I'm an insurer", body: "Review claimed incidents and approve or deny them. Sign in with the insurance company's wallet." },
+  { to: to.proof(), icon: "shield", title: "Check a record", body: "Check that any run is untouched. Public, no sign-in. Its contents stay locked." },
 ];
 
 export function Welcome() {
   return (
     <div className="page welcome">
       <div className="hero">
-        <h1>A flight recorder for robots.</h1>
-        <p className="lead">The robot decides with an AI model on 0G, keeps people safe, and signs and locks its own record. Anyone can check the record is untouched. Only its owner can read it.</p>
+        <h1>{PRODUCT_SHORT}</h1>
+        <p className="lead">{PRODUCT_TAIL}</p>
       </div>
       <nav className="doors" aria-label="Choose where to go">
         {DOORS.map((d) => (

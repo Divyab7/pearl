@@ -16,9 +16,9 @@ export interface FullCheck {
 export async function fullCheck(pub: any, runKey: Uint8Array, arm: any): Promise<FullCheck> {
   if (!pub?.sealed) throw new Error("No locked file to unlock: the public check could not read it.");
   const log = await openEpisode(pub.sealed, runKey);
-  const checks = contentChecks(log, { headerHead: pub.sealed.headHash, anchoredRequestIdsHash: pub.anchor?.requestIdsHash ?? null, arm });
+  const checks = contentChecks(log as any, { headerHead: pub.sealed.headHash, anchoredRequestIdsHash: pub.anchor?.requestIdsHash ?? null, arm });
   const frames: Record<number, string> = {};
-  const fs = framesOf(log);
+  const fs = framesOf(log as any);
   const bad: string[] = [];
   let fromStorage = 0;
   for (const f of fs) {
@@ -28,7 +28,7 @@ export async function fullCheck(pub: any, runKey: Uint8Array, arm: any): Promise
       if (r.headers.get("x-frame-source") === "0g-storage") fromStorage++;
       const jpeg = await unlockFrame(runKey, new Uint8Array(await r.arrayBuffer()));
       if (sha256HexPure(jpeg) !== f.hash) bad.push(`photo at record #${f.idx} differs from its fingerprint`);
-      else frames[f.idx] = URL.createObjectURL(new Blob([jpeg], { type: "image/jpeg" }));
+      else frames[f.idx] = URL.createObjectURL(new Blob([jpeg as BlobPart], { type: "image/jpeg" }));
     } catch (e: any) {
       bad.push(`photo at record #${f.idx}: ${e.message}`);
     }

@@ -2,13 +2,15 @@
 import { useEffect, useRef, useState } from "react";
 import { IDKit, proofOfHuman } from "@worldcoin/idkit-core";
 import { get, og, post, short, useConfig, when } from "../api";
-import { go, href } from "../router";
+import { to, to as toR } from "../router";
 import { ringClass } from "../components/ArmView";
 import { ArmView3D, type ArmProps } from "../components/ArmView3D";
 import { KeySetup, WorldPrompt } from "../components/KeySetup";
 import { DecisionCard, IndexBadge, RunDetail, RunList, Severity, shortWhen, useRuns } from "../components/run";
 import { Amount, Badge, Callout, Card, Chip, Dl, DotLabel, Empty, Field, Icon, Spinner, Stepper, Tabs, type Step } from "../components/ui";
 import { loadKey } from "../lib/keys";
+import { useAccount } from "../lib/account";
+export { useAccount };
 import { runContext, wrapRunKey } from "../lib/core";
 import { unwrapWith } from "../lib/fullcheck";
 import { ArkivRecord, ClaimBadge } from "../components/claims";
@@ -17,22 +19,25 @@ const DEVICE_LABEL: Record<string, string> = { sim: "Simulated arm", mujoco: "Mu
 const STATE_TONE: Record<string, any> = { IDLE: "neutral", MOVING: "accent", WAITING: "accent", FROZEN_HAND: "warn", SAFE: "bad", TRIPPED: "bad" };
 const STATE_WORD: Record<string, string> = { IDLE: "Idle", MOVING: "Moving", WAITING: "Waiting for 0G", FROZEN_HAND: "Frozen: hand in zone", SAFE: "Safe pose", TRIPPED: "Tripped" };
 
-export function useAccount(tick: number) {
-  const [account, setAccount] = useState<any>(undefined);
-  const refresh = () => get("/api/account").then(setAccount).catch(() => setAccount(null));
-  useEffect(() => {
-    refresh();
-  }, [tick]);
-  return { account, refresh };
-}
-
-export function MyRobot({ live, sub, runId }: { live: any; sub?: string; runId?: string }) {
+/** Interim host for the Robot, Insurance (owner side) and Account places. `bare` renders one section without the page
+ *  header and tabs (used by #/insurance and #/account until their own pages replace it). */
+export function MyRobot({ live, sub, runId, bare = false }: { live: any; sub?: string; runId?: string; bare?: boolean }) {
   const { account, refresh } = useAccount(live.tick);
   const tab = sub && ["live", "runs", "claims", "setup"].includes(sub) ? sub : "live";
   const st = live.state;
   const tel = live.tel;
   const linked = !!account?.robots?.some((r: any) => r.address.toLowerCase() === st?.deviceAddress?.toLowerCase());
   const setupDone = !!(account && account.key && account.wallet && linked);
+  const panel = (
+    <>
+      {tab === "live" && <LiveTab live={live} />}
+      {tab === "runs" && <RunsTab live={live} account={account} linked={linked} runId={runId} />}
+      {tab === "claims" && <ClaimsTab live={live} account={account} linked={linked} />}
+      {tab === "setup" && <SetupTab live={live} account={account} refresh={refresh} linked={linked} />}
+    </>
+  );
+  if (bare) return panel;
+  const TAB_HREF: Record<string, string> = { live: to.robot(), runs: to.runs(), claims: to.insurance("owner"), setup: to.account() };
   return (
     <div className="page">
       <div className="page-head">
@@ -50,25 +55,20 @@ export function MyRobot({ live, sub, runId }: { live: any; sub?: string; runId?:
             ? (
               <div className="account-ctl">
                 <span className="signed-in"><Icon name="check" size={14} /> Signed in · World ID</span>
-                {!setupDone && <a className="small" href={href("robot", "setup")}>Finish setup</a>}
+                {!setupDone && <a className="small" href={to.account()}>Finish setup</a>}
                 <button type="button" className="btn ghost small-btn" onClick={() => post("/api/auth/logout").then(refresh)}>Sign out</button>
               </div>
             )
-            : account === null ? <a className="btn" href={href("robot", "setup")}>Owner sign-in</a> : null}
+            : account === null ? <a className="btn" href={to.account()}>Owner sign-in</a> : null}
         </div>
       </div>
       <Tabs
         label="My robot sections"
         active={tab}
-        onChange={(t) => go("robot", t)}
+        onChange={(t) => (location.hash = TAB_HREF[t] ?? to.robot())}
         tabs={[{ id: "live", label: "Live" }, { id: "runs", label: "Runs" }, { id: "claims", label: "Claims" }, { id: "setup", label: setupDone || !account ? "Setup" : <>Setup <span className="dot-warn" role="img" aria-label="not finished" title="Setup not finished" /></> }]}
       />
-      <div role="tabpanel">
-        {tab === "live" && <LiveTab live={live} />}
-        {tab === "runs" && <RunsTab live={live} account={account} linked={linked} runId={runId} />}
-        {tab === "claims" && <ClaimsTab live={live} account={account} linked={linked} />}
-        {tab === "setup" && <SetupTab live={live} account={account} refresh={refresh} linked={linked} />}
-      </div>
+      <div role="tabpanel">{panel}</div>
     </div>
   );
 }
@@ -234,7 +234,7 @@ function LiveTab({ live }: { live: any }) {
       </div>
       <div className="stack">
         <Card title="Controls" sub={access?.as === "owner" ? "Signed in as the robot's owner. The robot can refuse any request that is not safe." : "At the robot's site. The robot can refuse any request that is not safe."}>
-          {locked && <Callout tone="neutral" title="View only">{access.why} <a href={href("robot", "setup")}>Owner sign-in</a></Callout>}
+          {locked && <Callout tone="neutral" title="View only">{access.why} <a href={to.account()}>Owner sign-in</a></Callout>}
           <fieldset className="plain" disabled={!!locked}>
           <button type="button" className="btn stop" onClick={() => act("Stop", "/api/control/stop")}><Icon name="x" size={18} /> Stop the robot</button>
           <div className="form-row">
@@ -269,7 +269,7 @@ function LiveTab({ live }: { live: any }) {
         <Card
           title="Decisions"
           sub={status?.episodeId ? <>Run <code className="mono">{status.episodeId}</code></> : "Each 0G decision appears here as it is made."}
-          actions={finished ? <a className="btn primary" href={href("robot", "runs", status.episodeId)}>Open run <Icon name="arrow" /></a> : null}
+          actions={finished ? <a className="btn primary" href={to.run(status.episodeId)}>Open run <Icon name="arrow" /></a> : null}
         >
           {ds.length === 0 && (
             <Empty title="Waiting for a run">
@@ -324,7 +324,7 @@ function RunsTab({ live, account, linked, runId }: { live: any; account: any; li
         actions={<label className="toggle"><input type="checkbox" checked={incidents} onChange={(e) => setIncidents(e.target.checked)} /> Incidents only</label>}
       >
         {runs.err && <Callout tone="bad">{runs.err}</Callout>}
-        <RunList items={runs.items} selected={selected} onSelect={(id) => go("robot", "runs", id)} source={runs.source} />
+        <RunList items={runs.items} selected={selected} onSelect={(id) => (location.hash = to.run(id))} source={runs.source} />
         {runs.query && (
           <details className="disclosure">
             <summary>Arkiv query</summary>
@@ -334,7 +334,7 @@ function RunsTab({ live, account, linked, runId }: { live: any; account: any; li
       </Card>
       <div>
         {selected
-          ? <RunDetail episodeId={selected} device={runs.device || null} unlock={unlock ? () => unlock(selected, runs.device) : null} lockedReason={reason} lockedAction={!account ? <a className="btn" href={href("robot", "setup")}>Owner sign-in</a> : !unlock ? <a className="btn" href={href("robot", "setup")}>Go to Setup</a> : null} unlockLabel="Unlock with my key" tick={live.tick} />
+          ? <RunDetail episodeId={selected} device={runs.device || null} unlock={unlock ? () => unlock(selected, runs.device) : null} lockedReason={reason} lockedAction={!account ? <a className="btn" href={to.account()}>Owner sign-in</a> : !unlock ? <a className="btn" href={to.account()}>Go to Setup</a> : null} unlockLabel="Unlock with my key" tick={live.tick} />
           : <Card><Empty title="Pick a run">Select a run to check it and, as the owner, unlock its contents.</Empty></Card>}
       </div>
     </div>
@@ -416,7 +416,7 @@ function ClaimsTab({ live, account, linked }: { live: any; account: any; linked:
   }, [claims.map((c) => c.status).join()]);
 
   if (account === undefined) return <Card><p className="muted"><Spinner /> Loading…</p></Card>;
-  if (!account) return <Card><Empty title="Sign in to claim" action={<a className="btn primary" href={href("robot", "setup")}>Go to owner sign-in</a>}>Claims are for the robot's owner, after an incident of severity 2 or more.</Empty></Card>;
+  if (!account) return <Card><Empty title="Sign in to claim" action={<a className="btn primary" href={to.account()}>Go to owner sign-in</a>}>Claims are for the robot's owner, after an incident of severity 2 or more.</Empty></Card>;
 
   const amountFor = (sev: number) => {
     if (!claimable.amounts) return null;
@@ -661,7 +661,7 @@ export function RunRef({ id, ts, to = "robot", label }: { id: string; ts?: numbe
   const m = id.match(/^ep_(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})_/);
   const t = ts ?? (m ? Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!, +m[4]!, +m[5]!, +m[6]!) : undefined);
   return (
-    <a className="runref" href={to === "verify" ? href("verify", id) : href("robot", "runs", id)} title={`Open run ${id}`}>
+    <a className="runref" href={to === "verify" ? toR.proof(id) : toR.run(id)} title={`Open run ${id}`}>
       {label && <span>{label}</span>}
       {label && t ? <span aria-hidden>·</span> : null}
       {t ? <span className="tabular">{shortWhen(t)}</span> : null}
