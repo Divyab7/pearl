@@ -136,7 +136,7 @@ export async function buildDemoWorld(): Promise<DemoWorld> {
   const P = (x: unknown) => x as never;
 
   // A: normal run, DONE, with camera photos
-  await build("a1c4", T0, async (rec, t, k) => {
+  await build("a1c4", T0 + 52 * 60_000, async (rec, t, k) => {
     const plan = await withFrame(decision("PLAN", { action: "PICK", slot: "A2", reason: "Red cube clearly visible at slot A2; path to the bin is clear.", confidence: 0.94 }, t()), rec, k, planJpeg);
     addDecision(rec, plan, policyPlan(P(plan), task, poses));
     const g = await withFrame(decision("VERIFY_GRASP", { action: "CONTINUE", grasped: true, reason: "Gripper closed on the red cube; cube lifted off A2.", confidence: 0.91 }, t()), rec, k, graspJpeg);
@@ -181,7 +181,7 @@ export async function buildDemoWorld(): Promise<DemoWorld> {
     return "TRIPPED";
   });
   // C: 0G cut → failsafe; its 0G Storage upload failed (the public check shows the failure honestly)
-  await build("c5b1", T0 + 46 * 60_000, async (rec, t) => {
+  await build("c5b1", T0 - 20 * 60_000, async (rec, t) => {
     const d = failsafe("PLAN", t());
     addDecision(rec, d, policyPlan(P(d), task, poses));
     return "FAILSAFE";
@@ -330,6 +330,9 @@ export async function buildDemoWorld(): Promise<DemoWorld> {
         return Response.json({
           episodeId: r.id,
           storage: r.root ? { status: "ok", rootHash: r.root, txHash: ek(`${r.id}/storage`), txSeq: 1, url: "demo", ms: 900 } : { status: "failed", error: "insufficient funds for gas" },
+          // like a real robot's meta: its own 0G Chain record and Arkiv entry (sample hashes)
+          anchor: { status: "ok", txHash: ek(`${r.id}/anchor`), address: "0x5FbDB2315678afecb367f032d93F642f64180aa3", device: device.address },
+          arkiv: { status: "ok", entityKey: ek(`${r.id}/arkiv`), txHash: ek(`${r.id}/arkiv-tx`) },
         });
       }
       if (m[2] === "/key") return Response.json(await seal.wrapRunKey(r.runKey, ownerKey, ctxOf(r.id)));
