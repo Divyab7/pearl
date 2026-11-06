@@ -151,7 +151,7 @@ function CheckRecord({ latestId }: { latestId?: string }) {
       <span className="rolecard-icon" aria-hidden><Icon name="shield" size={22} /></span>
       <span className="home-check-main">
         <span className="rolecard-title" id="home-check-title">Check a record</span>
-        <span className="rolecard-body">Anyone, no sign-in. See if a run was altered; its contents stay locked.</span>
+        <span className="rolecard-body">Was a run altered? Anyone can check.</span>
         <span className="home-check-row">
           <a className="btn primary" href={latestId ? to.proof(latestId) : to.proof()}><Icon name="shield" size={15} /> Verify the latest run</a>
           {!paste && <button type="button" className="linkish small" onClick={() => setPaste(true)} aria-expanded={false}>or paste a run ID</button>}

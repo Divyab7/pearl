@@ -690,7 +690,7 @@ a.spill:hover { text-decoration: none; filter: brightness(1.08); }
   .menu-btn { padding-right: 4px; }
   .brand { gap: 8px; }
   .nav { overflow-x: auto; order: 3; flex-basis: 100%; margin: 0 calc(var(--s4) * -1); padding: 0 var(--s2); }
-  .nav a { padding: 10px 12px; font-size: 15px; border-radius: 0; background: transparent; box-shadow: inset 0 -2px 0 transparent; }
+  .nav a { padding: 10px 9px; font-size: 15px; border-radius: 0; background: transparent; box-shadow: inset 0 -2px 0 transparent; }
   .nav a.on { background: transparent; box-shadow: inset 0 -2px 0 var(--accent); }
   .pagehead-title { font-size: 26px; }
   .pagehead.display .pagehead-title { font-size: 30px; }
