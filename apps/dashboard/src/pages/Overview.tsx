@@ -39,7 +39,6 @@ export function Overview({ live }: { live: Live }) {
       <PageHeader
         title="Overview"
         description="Your robot right now, its latest sealed runs, and the totals."
-        actions={<a className="btn" href={to.robot()}><Icon name="robot" size={15} /> Open the robot</a>}
       />
       <Counters stats={stats} tick={live.tick} lastCheck={lastCheck} />
 
