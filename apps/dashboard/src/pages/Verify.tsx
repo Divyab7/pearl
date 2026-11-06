@@ -89,17 +89,14 @@ export function Verify({ tick, runId }: { tick: number; runId?: string }) {
               <RunHeader id={runId} sealed={v?.sealed} />
               {busy === "check" && <p className="muted"><Spinner /> Checking 0G Chain and 0G Storage…</p>}
               {v && <PublicResult v={v} />}
-              {v && (
-                <div className="row">
-                  <span className="muted small"><Icon name="lock" size={12} /> Contents stay locked: this check reads fingerprints only.</span>
-                  {v.sealed && (edited
-                    ? <button type="button" className="btn push" onClick={() => setEdited(null)}>Reset the demo</button>
-                    : <button type="button" className="btn push" onClick={edit} disabled={!!busy}>{busy === "edit" ? <Spinner /> : null} Edit 1 byte of a copy</button>)}
-                </div>
-              )}
+              {v && <p className="muted small"><Icon name="lock" size={12} /> Contents stay locked: this check reads fingerprints only.</p>}
             </Card>
           )}
-          {runId && v && <RunClaimsOnArkiv episodeId={runId} tick={tick} />}
+          {runId && v?.sealed && !edited && (
+            <Card title="Try tampering" sub="Change one character in a copy of the stored file, then check that copy the same way.">
+              <button type="button" className="btn primary" onClick={edit} disabled={!!busy}>{busy === "edit" ? <Spinner /> : <Icon name="alert" size={14} />} Edit 1 byte of a copy</button>
+            </Card>
+          )}
           {edited && v && (
             <div ref={editedRef}>
               <Card title="What if someone edits it?" sub={`We changed ${edited.tampered} in a copy of the locked file and checked it again.`}>
@@ -108,9 +105,11 @@ export function Verify({ tick, runId }: { tick: number; runId?: string }) {
                   <Verdict kind={verdictOf(edited)} compact title="Edited copy" label="Its fingerprint changed completely, so it no longer matches 0G Chain." />
                 </div>
                 {v.rootHash && edited.editedRoot && <FingerprintDiff a={v.rootHash} b={edited.editedRoot} />}
+                <div className="row"><button type="button" className="btn push" onClick={() => setEdited(null)}>Reset the demo</button></div>
               </Card>
             </div>
           )}
+          {runId && v && <RunClaimsOnArkiv episodeId={runId} tick={tick} />}
         </div>
       </div>
     </div>

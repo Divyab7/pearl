@@ -360,7 +360,7 @@ function ClaimsTab({ live, account, linked }: { live: any; account: any; linked:
                 <li key={i.episodeId} className="list-row">
                   <div>
                     <div className="row"><Severity value={i.severity} incident /></div>
-                    <RunRef id={i.episodeId} ts={i.ts} />
+                    <RunRef id={i.episodeId} ts={i.ts} label="Incident" />
                   </div>
                   <div className="list-side">
                     {i.claimable && !open.has(i.episodeId) ? (
@@ -368,7 +368,7 @@ function ClaimsTab({ live, account, linked }: { live: any; account: any; linked:
                         <Amount wei={amountFor(i.severity)} />
                         <button type="button" className="btn primary" disabled={!!busy} onClick={() => start(i.episodeId, i.device)}>{busy === i.episodeId ? <><Spinner /> Preparing…</> : "Claim"}</button>
                       </>
-                    ) : i.claimable ? <button type="button" className="btn ghost small-btn" onClick={() => { const el = document.getElementById(`claim-${i.episodeId}`); el?.scrollIntoView({ behavior: "smooth", block: "center" }); el?.classList.add("flash"); setTimeout(() => el?.classList.remove("flash"), 1600); }}>Claimed · view</button> : <span className="muted small">Below severity 2</span>}
+                    ) : i.claimable ? <button type="button" className="row-link small" onClick={() => { const el = document.getElementById(`claim-${i.episodeId}`); el?.scrollIntoView({ behavior: "smooth", block: "center" }); el?.classList.add("flash"); setTimeout(() => el?.classList.remove("flash"), 1600); }}>Claimed · view</button> : <span className="muted small">Below severity 2</span>}
                   </div>
                 </li>
               ))}
@@ -409,7 +409,7 @@ function ClaimsTab({ live, account, linked }: { live: any; account: any; linked:
                 </details>
                 {c.status === "INSURER_REVIEW" && (withdraw === c.claimId
                   ? <span className="row push"><span className="small muted">Withdraw this claim? Nothing is paid.</span><button type="button" className="btn danger small-btn" onClick={() => { setWithdraw(""); void cancel(c.claimId); }}>Withdraw</button><button type="button" className="btn ghost small-btn" onClick={() => setWithdraw("")}>Keep</button></span>
-                  : <button type="button" className="btn ghost small-btn push" onClick={() => setWithdraw(c.claimId)}>Withdraw claim…</button>)}
+                  : <button type="button" className="btn danger small-btn push" onClick={() => setWithdraw(c.claimId)}>Withdraw claim…</button>)}
               </div>
             </article>
           ))}
@@ -482,7 +482,7 @@ function SetupTab({ live, account, refresh, linked }: { live: any; account: any;
       done: !!account.wallet, title: "Payout wallet",
       body: (
         <div className="stack">
-          {account.wallet && !editWallet && <div className="row"><Chip label="Wallet" value={account.wallet} /><button type="button" className="btn small-btn" onClick={() => setEditWallet(true)}>Change</button></div>}
+          {account.wallet && !editWallet && <div className="row"><Chip label="Wallet" value={account.wallet} /><button type="button" className="btn" onClick={() => setEditWallet(true)}>Change</button></div>}
           {(!account.wallet || editWallet) && <>
           <div className="form-row">
             <Field label={account.wallet ? "Change wallet" : "Wallet address"}>
@@ -566,7 +566,7 @@ export function RunRef({ id, ts, to = "robot", label }: { id: string; ts?: numbe
       {label && <span>{label}</span>}
       {label && t ? <span aria-hidden>·</span> : null}
       {t ? <span className="tabular">{shortWhen(t)}</span> : null}
-      <code className="mono">…{id.slice(-4)}</code>
+      {!label && <code className="mono">…{id.slice(-4)}</code>}
     </a>
   );
 }

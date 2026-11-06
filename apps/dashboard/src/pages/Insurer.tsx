@@ -85,6 +85,15 @@ function SignIn({ address, onDone }: { address: string; onDone: () => void }) {
   );
 }
 
+/** "10:52" (or "6 Nov 10:52" on another day) from the run id's start time. */
+const incidentTime = (id: string) => {
+  const m = id.match(/^ep_(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})_/);
+  if (!m) return id.slice(-4);
+  const d = new Date(Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!, +m[4]!, +m[5]!, +m[6]!));
+  const today = d.toDateString() === new Date().toDateString();
+  return d.toLocaleString(undefined, today ? { hour: "2-digit", minute: "2-digit" } : { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+};
+
 function Signed({ info, reload, tick, claimId }: { info: any; reload: () => void; tick: number; claimId?: string }) {
   const [claims, setClaims] = useState<any[]>([]);
   const [err, setErr] = useState("");
@@ -102,6 +111,10 @@ function Signed({ info, reload, tick, claimId }: { info: any; reload: () => void
   // open the first waiting claim when none is chosen, so there is never an empty pane while work is waiting
   const sel = claims.find((c) => c.claimId === claimId) ?? (claimId ? null : waiting[0] ?? null);
   const selected = sel;
+  // the queue tab follows the open claim (a decided claim opens on the Decided tab)
+  useEffect(() => {
+    if (sel) setQtab(sel.status === "INSURER_REVIEW" ? "waiting" : "decided");
+  }, [sel?.claimId, sel?.status]);
 
   return (
     <div className="stack">
@@ -125,7 +138,7 @@ function Signed({ info, reload, tick, claimId }: { info: any; reload: () => void
                     <tr key={c.claimId} className={sel?.claimId === c.claimId ? "sel" : ""}>
                       <td>
                         <button type="button" className="row-link cell-stack" onClick={() => go("insurer", c.claimId)} title={c.episodeId} aria-current={sel?.claimId === c.claimId ? "true" : undefined}>
-                          <Severity value={c.severity} incident />
+                          <span className="row"><span>Incident · {incidentTime(c.episodeId)}</span><Severity value={c.severity} incident /></span>
                           {qtab === "decided" && <InsurerStatus status={c.status} />}
                         </button>
                       </td>
@@ -180,9 +193,9 @@ function Review({ claim, rec, onDecided }: { claim: any; rec: any; onDecided: ()
     <div className="stack">
       <Card title="Claim" sub={<>Submitted {when(claim.createdAt)}</>} actions={<InsurerStatus status={claim.status} />}>
         <Dl rows={[
-          ["Incident", <RunRef id={claim.episodeId} to="verify" />],
+          ["Incident", <RunRef id={claim.episodeId} to="verify" label="Incident" />],
           ["Severity", <Severity value={claim.severity} incident />],
-          ["Pays if approved", <Amount wei={claim.amountWei} />],
+          [claim.status === "PAID" ? "Paid" : claim.status === "DENIED" || claim.status === "FAILED" ? "Would have paid" : "Pays if approved", <Amount wei={claim.payout?.amountWei ?? claim.amountWei} paid={claim.status === "PAID"} />],
           ["Payout wallet", <span className="row"><code className="mono" title={claim.wallet}>{claim.wallet.slice(0, 6)}…{claim.wallet.slice(-4)}</code><CopyButton value={claim.wallet} label="Copy payout wallet" /></span>],
           ["Identity", <span className="row small"><DotLabel tone="ok">Robot owner confirmed</DotLabel><DotLabel tone="ok">Unique person (World ID)</DotLabel></span>],
         ]} />
@@ -276,7 +289,7 @@ function PoolCard() {
         <div><span className="muted small">Balance</span><Amount wei={pool.balanceWei} /></div>
         <div><span className="muted small">Pays per severity point</span><Amount wei={pool.perSeverityWei} /></div>
         <div><span className="muted small">Largest single payout</span><Amount wei={pool.maxPayoutWei} /></div>
-        <div><span className="muted small">Recent payouts</span><b className="tabular">{pool.paid.length}</b></div>
+        <div><span className="muted small">Paid out</span><span className="tabular">{pool.paid.length} claim{pool.paid.length === 1 ? "" : "s"} · <Amount wei={pool.paid.reduce((t: bigint, p: any) => t + BigInt(p.amountWei), 0n).toString()} paid={pool.paid.length > 0} /></span></div>
       </div>
       {pool.paid.length > 0 && (
         <ul className="list">

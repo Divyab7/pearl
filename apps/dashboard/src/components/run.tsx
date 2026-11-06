@@ -100,11 +100,12 @@ export function DecisionCard({ r, frame }: { r: any; frame?: string | null }) {
       <header>
         <b>{CP_WORD[r.checkpoint] ?? r.checkpoint}</b>
         <Badge tone={failsafe ? "bad" : "accent"}>{failsafe ? "Failsafe" : "0G decision"}</Badge>
-        {parsed.action && <Badge><span className={r.override ? "struck" : ""}>{parsed.action}</span></Badge>}
-        {r.override && <Badge tone="bad">Overridden: {r.override}</Badge>}
+        {parsed.action && <Badge title={r.override ? `Not followed: ${r.override}` : undefined}>0G said “{String(parsed.action).toLowerCase()}”</Badge>}
+        {r.override && <Badge tone="bad" title={r.override}>Overridden by safety rule</Badge>}
         <span className="muted small push tabular">decided in {(r.latencyMs / 1000).toFixed(2)} s</span>
       </header>
       {parsed.reason && <p className="decision-reason">“{parsed.reason}”</p>}
+      {r.override && <p className="small decision-error">The arm's safety rule kept it stopped: {String(r.override).replace(/^hard trip: /, "")}.</p>}
       {r.error && <p className="decision-error">{r.error}</p>}
       <div className="decision-body">
         <Dl rows={[
@@ -226,7 +227,7 @@ export function Replay({ log, frames, startAtIncident = false }: { log: any; fra
               {kf.map((k, n) => (n > 1 && kf[n - 1]!.idx !== k.idx ? <span key={`d${n}`} className="tick cp" style={{ left: `${((n - 1) / last) * 100}%` }} title={CP_WORD[k.cp] ?? k.cp} /> : null))}
               {marks.map((e: any) => <span key={e.idx} className={`tick ${e.ev === "hand_clear" ? "ok" : sevCls}`} style={{ left: `${(stepOf(e.idx) / last) * 100}%` }} title={EVENT_WORD[e.ev]} />)}
             </div>
-            <span className="small tabular">Step {Math.min(i + 1, kf.length - 1)} of {kf.length - 1} · <b>{CP_WORD[kf[Math.min(i + 1, kf.length - 1)]?.cp ?? ""] ?? ""}</b></span>
+            <span className="small tabular">Step {Math.min(i + 1, kf.length - 1)} of {kf.length - 1} · <b>{atIncident ? "Incident" : CP_WORD[kf[Math.min(i + 1, kf.length - 1)]?.cp ?? ""] ?? ""}</b></span>
             {incident && <button type="button" className="btn small-btn jump" onClick={() => { pause(); setPos(stepOf(incident.idx)); }}>Go to the incident (step {stepOf(incident.idx)})</button>}
           </div>
           {marks.length > 0 && (
@@ -333,11 +334,11 @@ export function RunDetail({ episodeId, device, unlock, lockedReason, lockedActio
         <RunHeader id={episodeId} sealed={pub?.sealed} />
         {loading && <p className="muted"><Spinner /> Checking 0G Chain and 0G Storage…</p>}
         {combined && <Verdict kind={combined} label={summary} />}
-        {contentsLine && <p className="contents-line"><Icon name="lock" size={14} /> {contentsLine}</p>}
+        {contentsLine && unlock && <p className="contents-line"><Icon name="lock" size={14} /> {contentsLine}</p>}
       </Card>
       <Card title="Public check" sub="Anyone can run this. It needs no key and reveals nothing inside the run." className="inset">
         {pubErr && <Callout tone="bad" title="Could not check this run">{pubErr}</Callout>}
-        {pub && <><CheckList checks={pub.checks} collapse /><PublicResult v={pub} noVerdict compact={false} /></>}
+        {pub && <><CheckList checks={pub.checks} /><PublicResult v={pub} noVerdict compact={false} /></>}
       </Card>
 
       <Card

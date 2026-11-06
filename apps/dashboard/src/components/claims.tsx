@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { get, og, short, useConfig, when } from "../api";
 import { Amount, Badge, Card, Chip, Icon, Spinner } from "./ui";
+import { Severity } from "./run";
 
 export const ARKIV_EXPLORER = "https://rabdi.explorer.arkiv.network";
 
@@ -21,7 +22,7 @@ export function ArkivRecord({ arkiv }: { arkiv?: { entityKey: string | null; sta
     <div className="stack-tight">
       {arkiv.entityKey && (
         <div className="row">
-          <span className="muted small"><Icon name="db" size={12} /> Public record on Arkiv: <ClaimBadge status={arkiv.status ?? ""} /> · {arkiv.writes.length} update{arkiv.writes.length === 1 ? "" : "s"}</span>
+          <span className="muted small nowrap"><Icon name="db" size={12} /> Public record on Arkiv · {arkiv.writes.length} update{arkiv.writes.length === 1 ? "" : "s"}</span>
           <Chip label="Arkiv record" value={arkiv.entityKey} href={`${ARKIV_EXPLORER}/entity/${arkiv.entityKey}`} />
         </div>
       )}
@@ -55,7 +56,8 @@ export function RunClaimsOnArkiv({ episodeId, tick }: { episodeId: string; tick?
           <div className="row">
             <ClaimBadge status={c.status} />
             <Amount wei={c.amountWei} paid={c.status === "PAID"} />
-            <span className="muted small" title={og(c.amountWei)}>severity {c.severity} · updated {when(c.ts)}</span>
+            <Severity value={c.severity} incident />
+            <span className="muted small" title={og(c.amountWei)}>updated {when(c.ts)}</span>
           </div>
           <div className="row">
             <Chip label="Arkiv record" value={c.entityKey} href={`${ARKIV_EXPLORER}/entity/${c.entityKey}`} />
