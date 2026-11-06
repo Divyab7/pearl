@@ -72,8 +72,11 @@ export interface IdkitConfig {
 export interface RewardDeps {
   /** The public check of the locked run (anchor, 0G Storage, header, robot signature); needs no key. */
   verify: (episodeId: string, device: string) => Promise<{ result: "VALID" | "REJECTED"; failed: number[] }>;
-  /** Incident facts: the robot and its anchored incident flag, severity and outcome (public; no key needed). */
-  incident: (episodeId: string) => Promise<{ device: string; incident: boolean; severity: number; outcome: string }>;
+  /**
+   * Incident facts from the robot's own 0G Chain record (public; no key needed), looked up among `devices` (the
+   * account's linked robots), so a claim works while the robot is offline.
+   */
+  incident: (episodeId: string, devices: string[]) => Promise<{ device: string; incident: boolean; severity: number; outcome: string }>;
   /** The insurer's public receiving key; claims cannot start until the insurer has set one up. */
   insurerKid: () => string | null;
   agentPass: () => HumanGate | null;
@@ -137,7 +140,7 @@ export class RewardDesk {
   /** Starts a claim and the Agent Pass verification. Throws (no claim created) when the claim is not admissible. */
   async start(account: Account, episodeId: string, insurerKey: WrappedKey): Promise<RewardClaim> {
     if (!account.wallet) throw new Error("set a payout wallet first");
-    const inc = await this.deps.incident(episodeId);
+    const inc = await this.deps.incident(episodeId, account.robots.map((r) => r.address));
     if (!account.robots.some((r) => r.address.toLowerCase() === inc.device.toLowerCase())) {
       throw new Error("this episode belongs to a robot that is not linked to your account");
     }

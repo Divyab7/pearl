@@ -293,8 +293,10 @@ export class Orchestrator {
     }
     // lock the log with this run's key; the public header carries only what 0G Chain and Arkiv already show
     const origin = zerobotOriginOf(log);
+    // the owner's copy of the run key travels inside the locked file: readable by the owner from 0G Storage alone
+    const ownerWrap = log.device ? await this.keys.wrapForOwner(log.device.address, log.episodeId).catch(() => null) : null;
     const sealed = log.device
-      ? await sealEpisode(log, this.runKey!, { ...incidentOf(log), origin: origin ? { kind: "zerobot", ...origin } : null })
+      ? await sealEpisode(log, this.runKey!, { ...incidentOf(log), origin: origin ? { kind: "zerobot", ...origin } : null, ...(ownerWrap ? { keys: [ownerWrap] } : {}) })
       : null;
     this.setPhase(OUTCOME_PHASE[outcome]);
     if (this.deps.writeFiles !== false) {

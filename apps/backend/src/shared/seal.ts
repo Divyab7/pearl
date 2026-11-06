@@ -183,6 +183,12 @@ export interface SealedHeader {
   severity: number;
   /** The zerobot command this run answers (already public on 0G Chain); null for local starts. */
   origin: { kind: "zerobot"; robotId: string; nonce: number } | null;
+  /**
+   * The run key wrapped for the robot's linked owner at the time of the run (only that owner's private key opens it).
+   * It travels with the locked file, so the owner can unlock the run from 0G Storage alone, even if the robot is gone.
+   * Bound to the locked data like every header field. Absent on runs made before an owner was linked.
+   */
+  keys?: WrappedKey[];
 }
 
 export interface SealedEpisode extends SealedHeader {
@@ -218,12 +224,13 @@ interface LogLike {
 export async function sealEpisode(
   log: LogLike,
   runKey: Uint8Array,
-  labels: { incident: boolean; severity: number; origin: SealedHeader["origin"] },
+  labels: { incident: boolean; severity: number; origin: SealedHeader["origin"]; keys?: WrappedKey[] },
 ): Promise<SealedEpisode> {
   if (!log.device) throw new Error("only a device-signed log can be sealed");
   const header: SealedHeader = {
     v: 1, type: "pearl.sealed-episode", episodeId: log.episodeId, armId: log.armId, device: log.device, headHash: log.headHash,
-    outcome: log.outcome, startedAt: log.startedAt, endedAt: log.endedAt, ...labels,
+    outcome: log.outcome, startedAt: log.startedAt, endedAt: log.endedAt, incident: labels.incident, severity: labels.severity,
+    origin: labels.origin, ...(labels.keys && labels.keys.length ? { keys: labels.keys } : {}),
   };
   const cipher = await lockBytes(runKey, utf8(canonicalize(log)), headerAad(header));
   return { ...header, cipher: { alg: "A256GCM", ...cipher } };

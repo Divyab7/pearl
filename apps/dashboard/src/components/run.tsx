@@ -262,7 +262,9 @@ export function RunHeader({ id, sealed }: { id: string; sealed?: any }) {
  * One run in full. Everyone sees the public check; a key holder can unlock it in this browser and re-check its
  * content. `unlock` returns this run's key (owner: from the robot; insurer: from the claim).
  */
-export function RunDetail({ episodeId, unlock, lockedReason, lockedAction, unlockLabel = "Unlock and check", tick, onPublic, onFull, startAtIncident = false }: {
+export function RunDetail({ episodeId, device, unlock, lockedReason, lockedAction, unlockLabel = "Unlock and check", tick, onPublic, onFull, startAtIncident = false }: {
+  /** The robot whose record to check (lets the check run while that robot is offline). */
+  device?: string | null;
   /** Shown in the locked box when the viewer can't unlock (e.g. an owner sign-in button). */
   lockedAction?: React.ReactNode;
   startAtIncident?: boolean;
@@ -289,14 +291,14 @@ export function RunDetail({ episodeId, unlock, lockedReason, lockedAction, unloc
     setFc(null);
     onFull?.(null);
     setErr("");
-    get(`/api/verify/${encodeURIComponent(episodeId)}`)
+    get(`/api/verify/${encodeURIComponent(episodeId)}${device ? `?device=${encodeURIComponent(device)}` : ""}`)
       .then((v) => live && (setPub(v), onPublic?.(v)))
       .catch((e) => live && (setPub(null), setPubErr(e.message)))
       .finally(() => live && setLoading(false));
     return () => {
       live = false;
     };
-  }, [episodeId, tick]);
+  }, [episodeId, device, tick]);
 
   const doUnlock = async () => {
     if (!unlock) return;

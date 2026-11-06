@@ -14,7 +14,7 @@
 import express, { type NextFunction, type Request, type Response } from "express";
 import { arkivConfigFromEnv, arkivReaderConfigured, judgeCurl, listIndex, SCHEMA_NAME } from "../index/arkiv.js";
 import { galileoExplorer } from "../og/config.js";
-import { storageConfigFromEnv, storageConfigured, uploadWithRetry } from "../og/storage.js";
+import { downloadBytes, storageConfigFromEnv, storageConfigured, uploadWithRetry } from "../og/storage.js";
 import { loadArmConfig, type ArmConfig } from "../shared/armConfig.js";
 import { envFlag, loadEnv, REPO_ROOT } from "../shared/env.js";
 import type { EpisodeMeta } from "../orchestrator/meta.js";
@@ -50,6 +50,8 @@ export interface DashboardOptions {
   readPool?: () => Promise<import("../og/anchor.js").PoolInfo>;
   /** Overrides the relay's 0G Storage upload (tests). */
   relayUpload?: (bytes: Uint8Array) => Promise<import("../og/storage.js").UploadReceipt>;
+  /** Overrides the Arkiv index read (tests). */
+  listIndex?: typeof listIndex;
 }
 
 export function createDashboard(opts: DashboardOptions = {}) {
@@ -70,7 +72,13 @@ export function createDashboard(opts: DashboardOptions = {}) {
     if (!r.ok) throw Object.assign(new Error(`device ${r.status}`), { status: r.status });
     return (await r.json()) as T;
   };
-  const deviceAddress = async (): Promise<string> => (await device<{ deviceAddress: string }>("/api/state")).deviceAddress;
+  // the last robot address seen, so its public record (Arkiv, 0G Chain, 0G Storage) stays readable if it goes offline
+  let lastAddress = "";
+  const deviceAddress = async (): Promise<string> => {
+    const a = (await device<{ deviceAddress: string }>("/api/state")).deviceAddress;
+    if (ethers.isAddress(a)) lastAddress = a;
+    return a;
+  };
 
   // ---------------------------------------------------------------- pass-through to the device
   async function forward(req: Request, res: Response) {
@@ -127,7 +135,33 @@ export function createDashboard(opts: DashboardOptions = {}) {
   app.post("/api/zerobot/dispatch", gate, passthrough);
   app.use("/api/zerobot", passthrough);
   app.use("/api/camera", passthrough);
-  app.use("/api/frames", passthrough);
+  // a LOCKED camera photo: from 0G Storage by the root recorded in the log (works with the robot offline), else the robot
+  const download = opts.verifyDeps?.downloadStorage ?? ((root: string) => downloadBytes(storageConfigFromEnv(), root));
+  const dlCache = new Map<string, Promise<Uint8Array>>();
+  const fromStorage = (root: string) => {
+    let p = dlCache.get(root);
+    if (!p) {
+      p = download(root);
+      p.catch(() => dlCache.delete(root));
+      dlCache.set(root, p);
+      if (dlCache.size > 64) dlCache.delete(dlCache.keys().next().value!);
+    }
+    return p;
+  };
+  const isRoot = (s: unknown): s is string => typeof s === "string" && /^0x[0-9a-fA-F]{64}$/.test(s);
+  app.get("/api/frames/:id/:idx", async (req, res) => {
+    if (isRoot(req.query.root)) {
+      try {
+        const bytes = await fromStorage(req.query.root.toLowerCase());
+        res.setHeader("X-Frame-Source", "0g-storage");
+        res.type("application/octet-stream").send(Buffer.from(bytes));
+        return;
+      } catch {
+        // not on 0G Storage (yet): the robot's copy
+      }
+    }
+    void forward(req, res);
+  });
   app.get("/api/episodes/:id", passthrough); // the robot's LOCKED copy (public header + locked data)
   app.get("/api/episodes/:id/meta", passthrough);
   // arm calibration (not secret): the key holder's browser needs it to replay the policy over an unlocked log
@@ -184,13 +218,15 @@ export function createDashboard(opts: DashboardOptions = {}) {
     try {
       addr = await deviceAddress();
     } catch {
-      // device offline: the Arkiv index is still readable if we know the address from the environment
-      addr = process.env.DEVICE_ADDRESS ?? "";
+      // robot offline: its Arkiv index is still readable: the signed-in owner's linked robot, else DEVICE_ADDRESS
+      const want = typeof (req.query as { device?: unknown }).device === "string" ? String((req.query as { device?: unknown }).device).toLowerCase() : "";
+      const robots = accountOf(req)?.robots ?? [];
+      addr = (robots.find((r) => r.address.toLowerCase() === want) ?? robots[0])?.address || lastAddress || process.env.DEVICE_ADDRESS || "";
     }
     const kc = { ...arkivConfigFromEnv(), writer: addr };
     if (envFlag("INDEX_ARKIV", "on") && arkivReaderConfigured(kc)) {
       try {
-        const r = await listIndex(kc, filter);
+        const r = await (opts.listIndex ?? listIndex)(kc, filter);
         res.json({
           source: "arkiv",
           device: addr,
@@ -224,7 +260,7 @@ export function createDashboard(opts: DashboardOptions = {}) {
     try {
       return await deviceAddress();
     } catch {
-      return process.env.DEVICE_ADDRESS ?? "";
+      return lastAddress || (process.env.DEVICE_ADDRESS ?? "");
     }
   };
   const robotCopy = (id: string) => () => device<SealedEpisode>(`/api/episodes/${encodeURIComponent(id)}`).then((x) => parseSealed(JSON.stringify(x)));
@@ -235,6 +271,7 @@ export function createDashboard(opts: DashboardOptions = {}) {
       device: dev ?? (await robotAddress()),
       fallbackRoot: own ?? readRelay(id)?.rootHash ?? null,
       robotCopy: robotCopy(id),
+      downloadStorage: fromStorage,
       ...(zbChain ? { readZerobotReceipt: (n: number) => zbChain.receipt(n) } : {}),
       ...opts.verifyDeps,
     };
@@ -245,6 +282,11 @@ export function createDashboard(opts: DashboardOptions = {}) {
     return uploadWithRetry(sc, bytes);
   });
   const validId = (id: string) => /^ep_[A-Za-z0-9_-]+$/.test(id);
+  // ?device=0x… names the robot whose record to check, so a run can be checked while that robot is offline
+  const devParam = (req: Request) => {
+    const d = (req.query as { device?: unknown }).device;
+    return typeof d === "string" && ethers.isAddress(d) ? ethers.getAddress(d) : undefined;
+  };
 
   // the public check: anyone can confirm a run is untouched; the response carries the locked file (useless without a key)
   app.get("/api/verify/:id", async (req, res) => {
@@ -254,7 +296,7 @@ export function createDashboard(opts: DashboardOptions = {}) {
       return;
     }
     try {
-      res.json(await verifyPublic(id, await publicDeps(id)));
+      res.json(await verifyPublic(id, await publicDeps(id, devParam(req))));
     } catch (e) {
       res.status(502).json({ error: errMsg(e) });
     }
@@ -268,7 +310,7 @@ export function createDashboard(opts: DashboardOptions = {}) {
       return;
     }
     try {
-      const deps = await publicDeps(id);
+      const deps = await publicDeps(id, devParam(req));
       const real = await verifyPublic(id, deps);
       if (!real.sealed) throw new Error("no locked file to edit");
       res.json(await verifyPublic(id, { ...deps, editedCopy: editedSealedCopy(real.sealed) }));
@@ -419,21 +461,47 @@ export function createDashboard(opts: DashboardOptions = {}) {
     const a = requireAccount(req, res);
     if (!a) return;
     const id = String(req.params.id);
+    if (!validId(id)) {
+      res.status(400).json({ error: "not a run id" });
+      return;
+    }
+    if (!a.key) {
+      res.status(409).json({ error: "set up your unlock key first" });
+      return;
+    }
+    const mine = (addr: string) => a.robots.some((r) => r.address.toLowerCase() === addr.toLowerCase());
+    // 1) the robot, if it is up and linked to this account
+    let robotErr: unknown = null;
     try {
       const dev = await deviceAddress();
-      if (!a.robots.some((r) => r.address.toLowerCase() === dev.toLowerCase())) {
-        res.status(403).json({ error: "this robot is not linked to your account" });
-        return;
+      if (mine(dev)) {
+        const w = await device<WrappedKey>(`/api/episodes/${encodeURIComponent(id)}/key`);
+        if (w.kid === a.key.kid) {
+          res.json({ ...w, source: "robot" });
+          return;
+        }
+        robotErr = new Error("the robot locks runs for a different key than your current one: link the robot again");
       }
-      const w = await device<WrappedKey>(`/api/episodes/${encodeURIComponent(id)}/key`);
-      if (!a.key || w.kid !== a.key.kid) {
-        res.status(409).json({ error: "the robot locks runs for a different key than your current one: link the robot again" });
-        return;
-      }
-      res.json(w);
     } catch (e) {
-      res.status((e as { status?: number }).status === 404 ? 404 : 502).json({ error: errMsg(e) });
+      robotErr = e;
     }
+    // 2) robot offline: the copy the robot locked for the owner inside the sealed file (0G Storage, at the anchored root)
+    for (const r of a.robots) {
+      try {
+        const v = await verifyPublic(id, { ...(await publicDeps(id, r.address)), robotCopy: async () => null });
+        // only from a stored file that matches the robot's own record and signature
+        if (!v.sealed || v.checks.some((c) => (c.id === 2 || c.id === 4) && c.status !== "PASS")) continue;
+        const w = v.sealed?.keys?.find((k) => k.kid === a.key!.kid);
+        if (w) {
+          res.json({ ...w, source: "0g-storage" });
+          return;
+        }
+      } catch {
+        // next robot
+      }
+    }
+    const st = (robotErr as { status?: number } | null)?.status;
+    res.status(st === 404 ? 404 : 502).json({ error: robotErr ? `${errMsg(robotErr)}; and no key for you was found in this run's stored file` : "no key for you was found for this run" });
   });
 
   // ---------------------------------------------------------------- reward claims (World ID Agent Pass + IDKit)
@@ -534,18 +602,17 @@ export function createDashboard(opts: DashboardOptions = {}) {
       const v = await verifyPublic(episodeId, await publicDeps(episodeId, dev));
       return { result: v.result, failed: v.failed };
     },
-    // incident facts come from the robot's own record on 0G Chain; the locked file's header only names the robot
-    incident: async (episodeId) => {
-      const sealed = await robotCopy(episodeId)();
-      const dev = sealed.device.address;
-      if (opts.verifyDeps?.readAnchor || ethers.isAddress(anchorCfg.address)) {
-        const read = opts.verifyDeps?.readAnchor ?? ((d: string, id: string) => readAnchor(anchorCfg, d, id));
+    // incident facts come from the robot's own record on 0G Chain (no robot needed): the first linked robot with a record
+    incident: async (episodeId, devices) => {
+      const read = opts.verifyDeps?.readAnchor ?? (ethers.isAddress(anchorCfg.address) ? (d: string, id: string) => readAnchor(anchorCfg, d, id) : null);
+      if (!read) throw new Error("no EpisodeAnchor contract is configured, so the incident cannot be confirmed on 0G Chain");
+      for (const dev of devices) {
         const a = await read(dev, episodeId);
-        if (!a) throw new Error("this run is not recorded on 0G Chain, so it cannot be claimed");
+        if (!a) continue;
         const outcome = (["DONE", "ABORTED", "FAILSAFE", "TRIPPED"][a.outcome] ?? "UNKNOWN") as string;
-        return { device: dev, incident: a.incident, severity: a.severity, outcome };
+        return { device: ethers.getAddress(dev), incident: a.incident, severity: a.severity, outcome };
       }
-      return { device: dev, incident: sealed.incident, severity: sealed.severity, outcome: sealed.outcome };
+      throw new Error("none of your robots recorded this run on 0G Chain, so it cannot be claimed");
     },
     insurerKid: () => insurerKey()?.kid ?? null,
     agentPass: () => agentPass,
@@ -582,24 +649,43 @@ export function createDashboard(opts: DashboardOptions = {}) {
   });
   const claimsOn = envFlag("CLAIMS_WORLDID", "on");
 
-  // incidents on my robots that could be claimed (labels from the robot's list; the anchor is checked when claiming)
+  // incidents on my robots that could be claimed: from Arkiv (each linked robot's own entities; works with the robot
+  // offline), else the robot's list. The 0G Chain record is checked again when claiming.
+  const listIndexFn = opts.listIndex ?? listIndex;
   app.get("/api/claimable", async (req, res) => {
     const a = requireAccount(req, res);
     if (!a) return;
     const mine = new Set(a.robots.map((r) => r.address.toLowerCase()));
-    const out: unknown[] = [];
-    if (mine.size) {
+    const out = new Map<string, unknown>();
+    const notes: string[] = [];
+    let source: "arkiv" | "device" | "none" = "none";
+    for (const r of a.robots) {
+      const kc = { ...arkivConfigFromEnv(), writer: r.address };
+      if (!envFlag("INDEX_ARKIV", "on") || !arkivReaderConfigured(kc)) break;
       try {
-        const list = await device<{ items: { episodeId: string; locked?: boolean; kind?: string; severity?: number; outcome?: string; device?: string; ts?: number }[] }>("/api/episodes");
-        for (const it of list.items) {
-          if (!it.locked || it.kind !== "incident" || !it.device || !mine.has(it.device.toLowerCase())) continue;
-          out.push({ episodeId: it.episodeId, device: it.device, severity: it.severity ?? 0, outcome: it.outcome, ts: it.ts, claimable: (it.severity ?? 0) >= 2 });
+        const page = await listIndexFn(kc, { kind: "incident" });
+        source = "arkiv";
+        for (const it of page.rows) {
+          out.set(it.episodeId, { episodeId: it.episodeId, device: r.address, severity: it.severity, outcome: it.outcome, ts: it.ts, claimable: it.severity >= 2 });
         }
-      } catch {
-        // robot offline: nothing listed
+      } catch (e) {
+        notes.push(`Arkiv read failed for ${r.address.slice(0, 10)}…: ${errMsg(e)}`);
       }
     }
-    res.json({ items: out, amounts: { perSeverityWei: perSeverity.toString(), maxWei: maxReward.toString() } });
+    if (mine.size && source === "none") {
+      try {
+        const list = await device<{ items: { episodeId: string; locked?: boolean; kind?: string; severity?: number; outcome?: string; device?: string; ts?: number }[] }>("/api/episodes");
+        source = "device";
+        for (const it of list.items) {
+          if (!it.locked || it.kind !== "incident" || !it.device || !mine.has(it.device.toLowerCase())) continue;
+          out.set(it.episodeId, { episodeId: it.episodeId, device: it.device, severity: it.severity ?? 0, outcome: it.outcome, ts: it.ts, claimable: (it.severity ?? 0) >= 2 });
+        }
+      } catch {
+        notes.push("robot offline");
+      }
+    }
+    const items = [...out.values()].sort((x, y) => ((y as { ts?: number }).ts ?? 0) - ((x as { ts?: number }).ts ?? 0));
+    res.json({ items, source, ...(notes.length ? { note: notes.join("; ") } : {}), amounts: { perSeverityWei: perSeverity.toString(), maxWei: maxReward.toString() } });
   });
 
   app.get("/api/claims", (req, res) => {

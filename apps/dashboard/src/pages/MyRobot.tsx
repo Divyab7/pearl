@@ -192,18 +192,23 @@ function LiveTab({ live }: { live: any }) {
 // ---------------------------------------------------------------- Runs
 function useOwnerUnlock(live: any, account: any, linked: boolean) {
   const rec = account ? loadKey("owner", account.accountId) : null;
-  const ready = !!(account && account.key && rec && rec.kid === account.key.kid && linked);
+  const robotOf = (device?: string | null): string => device || live.state?.deviceAddress || account?.robots?.[0]?.address || "";
+  // the robot may be offline (no live address): then any robot linked to the account counts, and the run's key comes
+  // from the copy the robot locked for the owner inside the stored file
+  const offline = !live.state?.deviceAddress;
+  const owns = linked || (offline && !!account?.robots?.length);
+  const ready = !!(account && account.key && rec && rec.kid === account.key.kid && owns);
   const reason = !account ? "Sign in as the robot's owner to unlock its runs."
     : !account.key ? "Set up your unlock key in Setup first."
       : !rec || rec.kid !== account.key.kid ? "Your unlock key is not on this browser. Restore it from your backup in Setup."
-        : !linked ? "Link this robot to your account in Setup first." : "";
+        : !owns ? "Link this robot to your account in Setup first." : "";
   const unlock = ready
-    ? async (episodeId: string) => {
+    ? async (episodeId: string, device?: string | null) => {
       const wrap = await get(`/api/episodes/${encodeURIComponent(episodeId)}/key`);
-      return unwrapWith(wrap, rec!, live.state.deviceAddress, episodeId);
+      return unwrapWith(wrap, rec!, robotOf(device), episodeId);
     }
     : null;
-  return { unlock, reason, rec };
+  return { unlock, reason, rec, robotOf };
 }
 
 function RunsTab({ live, account, linked, runId }: { live: any; account: any; linked: boolean; runId?: string }) {
@@ -229,7 +234,7 @@ function RunsTab({ live, account, linked, runId }: { live: any; account: any; li
       </Card>
       <div>
         {selected
-          ? <RunDetail episodeId={selected} unlock={unlock ? () => unlock(selected) : null} lockedReason={reason} lockedAction={!account ? <a className="btn" href={href("robot", "setup")}>Owner sign-in</a> : !unlock ? <a className="btn" href={href("robot", "setup")}>Go to Setup</a> : null} unlockLabel="Unlock with my key" tick={live.tick} />
+          ? <RunDetail episodeId={selected} device={runs.device || null} unlock={unlock ? () => unlock(selected, runs.device) : null} lockedReason={reason} lockedAction={!account ? <a className="btn" href={href("robot", "setup")}>Owner sign-in</a> : !unlock ? <a className="btn" href={href("robot", "setup")}>Go to Setup</a> : null} unlockLabel="Unlock with my key" tick={live.tick} />
           : <Card><Empty title="Pick a run">Select a run to check it and, as the owner, unlock its contents.</Empty></Card>}
       </div>
     </div>
@@ -297,7 +302,7 @@ function ClaimsTab({ live, account, linked }: { live: any; account: any; linked:
   const [busy, setBusy] = useState("");
   const [withdraw, setWithdraw] = useState("");
   const timer = useRef<any>(null);
-  const { unlock, reason } = useOwnerUnlock(live, account, linked);
+  const { unlock, reason, robotOf } = useOwnerUnlock(live, account, linked);
   const load = () => {
     if (!account) return;
     get("/api/claims").then(setClaims).catch(() => {});
@@ -319,7 +324,7 @@ function ClaimsTab({ live, account, linked }: { live: any; account: any; linked:
     const max = BigInt(claimable.amounts.maxWei);
     return v > max ? max : v;
   };
-  const start = async (episodeId: string) => {
+  const start = async (episodeId: string, device?: string) => {
     setBusy(episodeId);
     setMsg(null);
     try {
@@ -328,8 +333,8 @@ function ClaimsTab({ live, account, linked }: { live: any; account: any; linked:
       const ins = await get("/api/insurer");
       if (!ins.key) throw new Error("The insurer has not set up its receiving key yet, so it could not read this incident. Try again later.");
       // this run's key: unlocked here with your key, then locked for the insurer — for this one incident only
-      const runKey = await unlock(episodeId);
-      const insurerKey = await wrapRunKey(runKey, ins.key.publicJwk, runContext(live.state.deviceAddress, episodeId));
+      const runKey = await unlock(episodeId, device);
+      const insurerKey = await wrapRunKey(runKey, ins.key.publicJwk, runContext(robotOf(device), episodeId));
       await post("/api/claims", { episodeId, insurerKey });
       load();
     } catch (e: any) {
@@ -360,7 +365,7 @@ function ClaimsTab({ live, account, linked }: { live: any; account: any; linked:
                     {i.claimable && !open.has(i.episodeId) ? (
                       <>
                         <Amount wei={amountFor(i.severity)} />
-                        <button type="button" className="btn primary" disabled={!!busy} onClick={() => start(i.episodeId)}>{busy === i.episodeId ? <><Spinner /> Preparing…</> : "Claim"}</button>
+                        <button type="button" className="btn primary" disabled={!!busy} onClick={() => start(i.episodeId, i.device)}>{busy === i.episodeId ? <><Spinner /> Preparing…</> : "Claim"}</button>
                       </>
                     ) : i.claimable ? <button type="button" className="btn ghost small-btn" onClick={() => { const el = document.getElementById(`claim-${i.episodeId}`); el?.scrollIntoView({ behavior: "smooth", block: "center" }); el?.classList.add("flash"); setTimeout(() => el?.classList.remove("flash"), 1600); }}>Claimed · view</button> : <span className="muted small">Below severity 2</span>}
                   </div>

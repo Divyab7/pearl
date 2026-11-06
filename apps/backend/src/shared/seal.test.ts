@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { randomBytes } from "node:crypto";
 import { sha256Hex } from "./hash.js";
 import { sha256HexPure } from "./sha256.js";
-import { keyId, lockFrame, newRecipientKey, newRunKey, runContext, unlockFrame, unwrapRunKey, wrapRunKey } from "./seal.js";
+import { keyId, lockFrame, newRecipientKey, newRunKey, openEpisode, runContext, sealEpisode, unlockFrame, unwrapRunKey, wrapRunKey } from "./seal.js";
+import { EpisodeRecorder } from "../orchestrator/log.js";
 import { RobotKeys } from "./runKeys.js";
 
 const ROBOT = "0x1111111111111111111111111111111111111111";
@@ -67,5 +68,22 @@ describe("run keys: owner → insurer handover", () => {
     expect(w2.kid).toBe(keyId(second.publicJwk));
     expect(Buffer.from(await unwrapRunKey(w2, second.privateJwk, runContext(ROBOT, "ep_9"))).equals(Buffer.from(k))).toBe(true);
     await expect(unwrapRunKey(w2, first.privateJwk, runContext(ROBOT, "ep_9"))).rejects.toThrow();
+  });
+
+  it("the owner's key copy travels inside the stored file, bound to its header (swapping it breaks the file)", async () => {
+    const rec = new EpisodeRecorder("ep_keys_1", "sim-arm-01", "arm-1", { task: "pick", color: "red", from: "A2", to: "BIN" });
+    rec.addEvent({ ts: "2026-11-06T06:00:00.000Z", ev: "episode_start", data: {} });
+    const log = rec.close("TRIPPED");
+    log.device = { address: ROBOT, signature: "0x" };
+    const runKey = newRunKey();
+    const owner = await newRecipientKey();
+    const ctx = runContext(ROBOT, log.episodeId);
+    const sealed = await sealEpisode(log, runKey, { incident: true, severity: 2, origin: null, keys: [await wrapRunKey(runKey, owner.publicJwk, ctx)] });
+    expect(sealed.keys?.[0]?.kid).toBe(owner.kid);
+    const k = await unwrapRunKey(sealed.keys![0]!, owner.privateJwk, ctx);
+    expect((await openEpisode<typeof log>(sealed, k)).headHash).toBe(log.headHash);
+    const other = await newRecipientKey();
+    const swapped = { ...sealed, keys: [await wrapRunKey(runKey, other.publicJwk, ctx)] };
+    await expect(openEpisode(swapped, runKey)).rejects.toThrow();
   });
 });

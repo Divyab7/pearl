@@ -197,6 +197,7 @@ function Review({ claim, rec, onDecided }: { claim: any; rec: any; onDecided: ()
       </Card>
       <RunDetail
         episodeId={claim.episodeId}
+        device={claim.device}
         unlock={rec ? () => unwrapWith(claim.insurerKey, rec, claim.device, claim.episodeId) : null}
         lockedReason="Set up or restore your receiving key to unlock this incident."
         startAtIncident

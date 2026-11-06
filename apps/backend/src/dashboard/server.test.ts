@@ -136,6 +136,103 @@ describe("dashboard server (rev 5)", () => {
     s.close();
   });
 
+  it("robot offline: owners find incidents on Arkiv, the key comes from the stored file, the check and the claim use 0G Chain", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    process.env.ACCOUNTS_FILE = join(mkdtempSync(join(tmpdir(), "pearl-acc-")), "a.json");
+    process.env.INDEX_ARKIV = "on";
+    const owner = await newRecipientKey();
+    const wallet = ethers.Wallet.createRandom();
+    const rec = new EpisodeRecorder("ep_off_1", "sim-arm-01", "arm-1", { task: "pick", color: "red", from: "A2", to: "BIN" });
+    rec.addEvent({ ts: "2026-11-05T21:00:00.000Z", ev: "episode_start", data: {} });
+    const log = rec.close("TRIPPED");
+    log.device = { address: wallet.address, signature: await wallet.signMessage(headMessage(log.episodeId, log.headHash)) };
+    const runKey = newRunKey();
+    // the robot locked the run key for its owner INSIDE the stored file (bound into the header)
+    const ownerWrap = await wrapRunKey(runKey, owner.publicJwk, runContext(wallet.address, log.episodeId));
+    const sealed = await sealEpisode(log, runKey, { incident: true, severity: 2, origin: null, keys: [ownerWrap] });
+    const bytes = sealedBytes(sealed);
+    const root = `0x${sha256Hex(bytes)}`;
+    const frameRoot = `0x${"ab".repeat(32)}`;
+    const anchor = { headHash: log.headHash, rootHash: root, requestIdsHash: "0x", anchoredAt: 1_762_380_000, outcome: 3, severity: 2, incident: true };
+    let online = true;
+    const f = (async (url: string, init?: RequestInit) => {
+      if (!online) throw new TypeError("fetch failed (robot offline)");
+      const path = new URL(url).pathname;
+      if (init?.method === "POST" && path === "/api/link") {
+        const b = JSON.parse(String(init.body)) as { accountId: string; nonce: string; ownerKey: PublicJwk };
+        const kid = keyId(b.ownerKey);
+        return Response.json({ address: wallet.address, deviceId: "sim-arm-01", ownerKid: kid, signature: await wallet.signMessage(linkMessage(b.accountId, b.nonce, kid)) });
+      }
+      if (path === "/api/state") return Response.json({ deviceAddress: wallet.address, deviceKind: "sim" });
+      return new Response("{}", { status: 404 });
+    }) as unknown as typeof fetch;
+    const gate = {
+      provider: "World ID",
+      cancel: () => true,
+      verify: async (_r: unknown, onPrompt: (p: never) => void) => {
+        onPrompt({ attemptId: "att-off", provider: "World ID", verificationUri: "https://world.example", userCode: "WXYZ", expiresAt: "t" } as never);
+        return { ok: true, attemptId: "att-off", provider: "World ID", issuer: "https://auth.world.org", subject: "sub-off", acr: null, amr: ["pop"], authTime: 1, idTokenSha256: "h" } as never;
+      },
+    };
+    const arkivReads: string[] = [];
+    const { app } = createDashboard({
+      deviceUrl: "http://device.test", fetchImpl: f, agentPass: gate as never,
+      verifyDeps: {
+        anchorOn: true, anchorAddress: "0x5FbDB2315678afecb367f032d93F642f64180aa3", zerobotOn: false,
+        readAnchor: async (dev: string, id: string) => (dev.toLowerCase() === wallet.address.toLowerCase() && id === log.episodeId ? anchor : null),
+        downloadStorage: async (r: string) => (r === root ? bytes : r === frameRoot ? new Uint8Array([1, 2, 3]) : Promise.reject(new Error("not found"))),
+        rootOf: async (b: Uint8Array) => `0x${sha256Hex(b)}`,
+      },
+      listIndex: (async (kc: { writer: string }, filter: { kind?: string }) => {
+        arkivReads.push(`${kc.writer}:${filter.kind ?? ""}`);
+        return {
+          query: "q", blockNumber: "1", skipped: 0,
+          rows: [{ entityKey: "0x1", kind: "incident", armId: "arm-1", episodeId: log.episodeId, outcome: "TRIPPED", ts: 1, severity: 2, headHash: log.headHash, rootHash: root, anchorTx: null }],
+        };
+      }) as never,
+    });
+    const s = await serve(app);
+    await (await fetch(`${s.base}/api/auth/start`, { method: "POST" })).json();
+    await new Promise((r) => setTimeout(r, 20));
+    const st = await fetch(`${s.base}/api/auth/status/att-off`);
+    const H = { cookie: st.headers.get("set-cookie")!.split(";")[0]!, "content-type": "application/json" };
+    await fetch(`${s.base}/api/account/wallet`, { method: "POST", headers: H, body: JSON.stringify({ address: ethers.Wallet.createRandom().address }) });
+    await fetch(`${s.base}/api/account/key`, { method: "POST", headers: H, body: JSON.stringify({ publicJwk: owner.publicJwk }) });
+    expect((await (await fetch(`${s.base}/api/robots/link`, { method: "POST", headers: H })).json()).robots[0].address).toBe(wallet.address);
+
+    online = false; // the robot goes down after the incident
+
+    // the run list and the claimable incidents come from Arkiv (the linked robot's own entities)
+    const list = await (await fetch(`${s.base}/api/episodes`, { headers: H })).json();
+    expect(list).toMatchObject({ source: "arkiv", device: wallet.address });
+    const cl = await (await fetch(`${s.base}/api/claimable`, { headers: H })).json();
+    expect(cl).toMatchObject({ source: "arkiv", items: [{ episodeId: log.episodeId, device: wallet.address, severity: 2, claimable: true }] });
+    expect(arkivReads).toContain(`${wallet.address}:incident`);
+
+    // the public check names the robot by address: anchor on 0G Chain, file on 0G Storage, robot signature
+    const v = await (await fetch(`${s.base}/api/verify/${log.episodeId}?device=${wallet.address}`)).json();
+    expect(v).toMatchObject({ result: "VALID", source: "0g-storage", device: wallet.address });
+
+    // the owner's key: the copy inside the stored file; only the owner's browser can open it
+    const kr = await fetch(`${s.base}/api/episodes/${log.episodeId}/key`, { headers: H });
+    const w = (await kr.json()) as WrappedKey & { source: string };
+    expect(w.source).toBe("0g-storage");
+    const k = await unwrapRunKey(w, owner.privateJwk, runContext(wallet.address, log.episodeId));
+    expect((await openEpisode<typeof log>(v.sealed, k)).headHash).toBe(log.headHash);
+
+    // locked photos straight from 0G Storage
+    const fr = await fetch(`${s.base}/api/frames/${log.episodeId}/0?root=${frameRoot}`);
+    expect(fr.headers.get("x-frame-source")).toBe("0g-storage");
+    expect([...new Uint8Array(await fr.arrayBuffer())]).toEqual([1, 2, 3]);
+
+    // a claim reads the incident from 0G Chain: it gets past the incident checks (stops only at the missing insurer key)
+    const c = await fetch(`${s.base}/api/claims`, { method: "POST", headers: H, body: JSON.stringify({ episodeId: log.episodeId, insurerKey: ownerWrap }) });
+    expect((await c.json()).error).toMatch(/insurer/);
+    s.close();
+  });
+
   it("a robot link not signed by the device is refused", async () => {
     const { AccountStore } = await import("./accounts.js");
     const { mkdtempSync } = await import("node:fs");
@@ -215,7 +312,11 @@ describe("dashboard server (rev 5)", () => {
 
   it("reward pool: read from 0G Chain, or 'not configured' without an address", async () => {
     const d = await fakeDevice();
+    createDashboard({ deviceUrl: "http://device.test", fetchImpl: d.f }); // loads .env once, so it cannot refill the address below
+    const saved = process.env.OG_REWARD_POOL_ADDRESS;
+    delete process.env.OG_REWARD_POOL_ADDRESS;
     const none = createDashboard({ deviceUrl: "http://device.test", fetchImpl: d.f });
+    if (saved !== undefined) process.env.OG_REWARD_POOL_ADDRESS = saved;
     const s = await serve(none.app);
     expect(await (await fetch(`${s.base}/api/pool`)).json()).toMatchObject({ configured: false });
     s.close();
