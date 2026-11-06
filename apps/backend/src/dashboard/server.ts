@@ -366,6 +366,43 @@ export function createDashboard(opts: DashboardOptions = {}) {
 
   // the public check: anyone can confirm a run is untouched; the response carries the locked file (useless without a key)
   const verifyCache = new Map<string, { at: number; v: Awaited<ReturnType<typeof verifyPublic>> }>();
+  const checkAndRemember = async (id: string, dev?: string) => {
+    const v = await verifyPublic(id, await publicDeps(id, dev));
+    if (v.result === "VALID" && v.source === "0g-storage") {
+      // same answer whether the page named the robot (?device=) or not
+      const e = { at: Date.now(), v };
+      verifyCache.set(`${id}|${(dev ?? "").toLowerCase()}`, e);
+      verifyCache.set(`${id}|${v.device.toLowerCase()}`, e);
+      if (verifyCache.size > 500) verifyCache.delete(verifyCache.keys().next().value!);
+    }
+    return v;
+  };
+  // warm-up: check the robot's latest runs in the background (one at a time) so the first visitor doesn't wait
+  // for 0G Storage downloads; off in tests (VERIFY_WARMUP=off) and whenever Arkiv can't be read
+  if (envFlag("VERIFY_WARMUP", "on") && !opts.fetchImpl) {
+    let warming = false;
+    const warm = async () => {
+      if (warming) return;
+      warming = true;
+      try {
+        const addr = await robotAddress();
+        const kc = { ...arkivConfigFromEnv(), writer: addr };
+        if (!arkivReaderConfigured(kc)) return;
+        const page = await (opts.listIndex ?? listIndex)(kc, {}, 12);
+        for (const r of page.rows) {
+          const fresh = verifyCache.get(`${r.episodeId}|`);
+          if (fresh && Date.now() - fresh.at < 540_000) continue;
+          await checkAndRemember(r.episodeId).catch(() => null);
+        }
+      } catch {
+        // best effort
+      } finally {
+        warming = false;
+      }
+    };
+    setTimeout(() => void warm(), 3000).unref?.();
+    setInterval(() => void warm(), 120_000).unref?.();
+  }
   app.get("/api/verify/:id", async (req, res) => {
     const id = String(req.params.id);
     if (!validId(id)) {
@@ -382,12 +419,7 @@ export function createDashboard(opts: DashboardOptions = {}) {
         res.json(hit.v);
         return;
       }
-      const v = await verifyPublic(id, await publicDeps(id, dev));
-      if (v.result === "VALID" && v.source === "0g-storage") {
-        verifyCache.set(key, { at: Date.now(), v });
-        if (verifyCache.size > 500) verifyCache.delete(verifyCache.keys().next().value!);
-      }
-      res.json(v);
+      res.json(await checkAndRemember(id, dev));
     } catch (e) {
       res.status(502).json({ error: errMsg(e) });
     }
