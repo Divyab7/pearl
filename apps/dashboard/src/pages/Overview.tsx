@@ -38,7 +38,7 @@ export function Overview({ live }: { live: Live }) {
     <div className="page home">
       <PageHeader
         title="Overview"
-        description="Your robot right now, its latest sealed runs, and the totals."
+        description="Your robot right now, its latest sealed runs and the totals. The AI deciding each move runs on 0G; every run is sealed on 0G and listed on Arkiv."
       />
       <Counters stats={stats} tick={live.tick} lastCheck={lastCheck} />
 
@@ -55,15 +55,15 @@ export function Overview({ live }: { live: Live }) {
             : runsLoading
               ? <Skeleton lines={4} label="Loading runs" />
               : latest.length === 0
-                ? <EmptyState title="No runs yet" icon="robot" plain>Start a run and it shows up here, sealed.</EmptyState>
+                ? <EmptyState title="No runs yet" icon="robot" plain>Start your first run and it shows up here, sealed on 0G and listed on Arkiv.</EmptyState>
                 : (
                   <ul className="rrows home-rrows">
                     {latest.map((r, i) => <li key={r.episodeId}><HomeRunRow run={r} onVerdict={i === 0 ? setLastCheck : undefined} /></li>)}
                   </ul>
                 )}
           <p className="home-source small">
-            {runs.source === "arkiv" ? "Found through public labels on Arkiv" : runs.source ? "Read from the robot" : " "}
-            {runs.source && <InfoTip text={TIP.arkiv} label="Where this list comes from" />}
+            {runs.source === "arkiv" ? "A live Arkiv query of the robot's own entries" : runs.source ? "Read from the robot (Arkiv isn't reachable right now)" : " "}
+            {runs.source && <InfoTip text={runs.source === "arkiv" ? TIP.arkivQuery : TIP.arkiv} label="Where this list comes from" />}
           </p>
         </section>
       </div>
@@ -143,8 +143,8 @@ function LivePanel({ live, latestId }: { live: Live; latestId?: string }) {
         ) : (
           <StatusPill tone="neutral" title={access?.why ?? undefined}>View only</StatusPill>
         )}
-        {latestId && <a className="btn" href={to.verify(latestId, { tamper: true })} title="Opens the latest run's proof and changes one byte of a copy, so you can watch it get caught"><Icon name="alert" size={15} /> Try tampering</a>}
-        <a className="home-more push" href={to.robot()}>Open the robot <Icon name="arrow" size={14} /></a>
+        {latestId && <a className="btn" href={to.run(latestId)}><Icon name="doc" size={15} /> Open the latest run</a>}
+        <a className="home-more push" href={to.robot()}>Robot controls <Icon name="arrow" size={14} /></a>
       </div>
       {!task && canStart && !running && <p className="small muted">No cube on the table. Put one back from the Robot page.</p>}
       <div aria-live="polite" className="small">{msg && <span className={msg.bad ? "home-msg bad" : "home-msg"}>{msg.text}</span>}</div>
@@ -214,10 +214,10 @@ function Counters({ stats, tick, lastCheck }: { stats: Stats | null | undefined;
   const verified = lastCheck?.kind === "ok" ? `last verified ${hhmm(lastCheck.at)} ✓` : undefined;
   return (
     <div className="home-stats stats" aria-label="Totals">
-      {stats.runs != null && <Stat size="sm" value={`${stats.runs}${stats.runsCapped ? "+" : ""}`} label="runs recorded" hint={verified ?? (stats.lastRunAt ? `last ${ago(stats.lastRunAt)}` : undefined)} />}
-      {stats.incidents != null && <Stat size="sm" value={stats.incidents} label="incidents" tone={stats.incidents > 0 ? "warn" : undefined} />}
+      {stats.runs != null && <Stat size="sm" value={`${stats.runs}${stats.runsCapped ? "+" : ""}`} label={stats.runs === 1 && !stats.runsCapped ? "run recorded" : "runs recorded"} hint={verified ?? (stats.lastRunAt ? `last ${ago(stats.lastRunAt)}` : undefined)} />}
+      {stats.incidents != null && <Stat size="sm" value={stats.incidents} label={stats.incidents === 1 ? "incident" : "incidents"} tone={stats.incidents > 0 ? "warn" : undefined} />}
       {stats.claimsPaid != null && stats.claimsPaid > 0
-        ? <Stat size="sm" value={stats.claimsPaid} label="claims paid" hint={balance ? `${balance} left in the pool` : paid} info={TIP.pool} />
+        ? <Stat size="sm" value={stats.claimsPaid} label={stats.claimsPaid === 1 ? "claim paid" : "claims paid"} hint={balance ? `${balance} left in the pool` : paid} info={TIP.pool} />
         : balance ? <Stat size="sm" value={balance} label="insurance pool" hint="ready to pay claims" info={TIP.pool} /> : null}
     </div>
   );

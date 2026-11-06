@@ -5,7 +5,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { IDKit, proofOfHuman } from "@worldcoin/idkit-core";
 import { ago, get, post, useConfig, when } from "../api";
 import { to } from "../router";
-import { EmptyState, ErrorState, InfoTip, PageHeader, PlainError, Section, Skeleton, Stat, StatusPill, StepStrip, TechDetails } from "../components/blocks";
+import { EmptyState, InfoTip, PageHeader, PlainError, Section, ShareProofButton, Skeleton, Stat, StatusPill, StepStrip, TechDetails } from "../components/blocks";
 import { Amount, Callout, Chip, CopyButton, Dl, DotLabel, Field, Icon, Spinner, Stepper, Tabs, type Step, type Tone } from "../components/ui";
 import { KeySetup, WorldPrompt } from "../components/KeySetup";
 import { Severity, shortWhen } from "../components/run";
@@ -35,7 +35,7 @@ export function OwnerClaimsPage({ live }: { live: Live }) {
     <div className="page ins">
       <PageHeader
         title="Claims"
-        description="After an incident, claim an insurance payout. World ID proves it's really you, and one unique human. The insurer checks the incident and the pool pays out."
+        description="After an incident, claim an insurance payout. World ID proves it's really you, and one person. Arkiv keeps a live public record of each claim, the insurer checks the incident, and the pool on 0G Chain pays."
         actions={<PoolPill pool={pool.data} />}
       />
       <OwnerSide live={live} />
@@ -50,7 +50,7 @@ export function InsurerClaimsPage({ live, claimId }: { live: Live; claimId?: str
     <div className="page ins">
       <PageHeader
         title="Claims"
-        description="Claims from robot owners who passed both World ID checks. Open one, check the sealed incident, then approve or decline."
+        description="Claims from robot owners who passed both World ID checks, each tracked live on Arkiv. Open one, check the sealed incident, then approve or decline."
         actions={<a className="ins-pool-link" href={to.pool()}><PoolPill pool={pool.data} /></a>}
       />
       <InsurerGate tick={live.tick}>
@@ -65,7 +65,7 @@ export function InsurerPoolPage({ live }: { live: Live }) {
   const pool = usePool(live.tick);
   return (
     <div className="page ins">
-      <PageHeader title="Pool" description="The insurance pool on 0G Chain pays approved claims straight to the owner's payout wallet." />
+      <PageHeader title="Pool" description="The insurance pool on 0G Chain pays approved claims straight to the owner's payout wallet, in test 0G tokens." />
       <PoolCard pool={pool.data} />
       <Payouts pool={pool.data} />
     </div>
@@ -199,9 +199,9 @@ function PublicRecord({ arkiv }: { arkiv: any }) {
   return (
     <span className="ins-rec">
       <Icon name="db" size={14} />
-      {arkiv.entityKey ? <>Public record · {arkiv.writes.length} update{arkiv.writes.length === 1 ? "" : "s"}</> : "Public record pending"}
-      <InfoTip text={INS_TIP.publicRecord} label="What is the public record?" />
-      {arkiv.entityKey && <a href={`${ARKIV_EXPLORER}/entity/${arkiv.entityKey}`} target="_blank" rel="noreferrer">View<span className="sr-only"> the public record (opens a new tab)</span></a>}
+      {arkiv.entityKey ? <>Live record on Arkiv · {arkiv.writes.length} update{arkiv.writes.length === 1 ? "" : "s"}</> : "Arkiv record pending"}
+      <InfoTip text={INS_TIP.publicRecord} label="What is the Arkiv record?" />
+      {arkiv.entityKey && <a href={`${ARKIV_EXPLORER}/entity/${arkiv.entityKey}`} target="_blank" rel="noreferrer">View on Arkiv<span className="sr-only"> (opens a new tab)</span></a>}
       {arkiv.error && <span className="warn-text" title={arkiv.error}><Icon name="alert" size={12} /> {plainError(arkiv.error, "The latest update hasn't reached Arkiv yet; it retries by itself.")}</span>}
     </span>
   );
@@ -353,7 +353,7 @@ function OwnerClaims({ live, account, linked, claims, setClaims }: { live: any; 
   return (
     <>
       {loadErr && <PlainError title="Couldn't load your claims" raw={loadErr} fallback="The claims service didn't answer. Your claims are safe." onRetry={load} />}
-      <Section title="Incidents you can claim" info={INS_TIP.shareOne} description="From robots linked to your account. The payout is fixed by severity.">
+      <Section title="Incidents you can claim" info={INS_TIP.shareOne} description={<>A live Arkiv query of your linked robots' runs, so it works even when the robot is offline<InfoTip text={TIP.arkivQuery} label="Where this list comes from" />. The payout is fixed by severity.</>}>
         {blockers.length > 0 && (
           <Callout tone="warn" title="Before you can claim">
             <ul className="ins-blockers">{blockers.map((b) => <li key={b}>{b}</li>)}</ul>
@@ -363,7 +363,7 @@ function OwnerClaims({ live, account, linked, claims, setClaims }: { live: any; 
         {!linked && account.robots?.length === 0 && <p className="muted small">No robot is linked to your account yet.</p>}
         {msg && <PlainError title="Couldn't start the claim" raw={msg.text} fallback="Something went wrong while preparing the claim. Try again." />}
         {!claimable ? <Skeleton lines={2} label="Loading incidents" /> : items.length === 0 ? (
-          <EmptyState plain title="No incidents" icon="shield">When the robot records an incident of severity 2 or more, it appears here.</EmptyState>
+          <EmptyState plain title="No incidents to claim" icon="shield">Good news: nothing has gone wrong. If your robot records an incident of severity 2 or more, you can claim it here.</EmptyState>
         ) : (
           <ul className="ins-rows">
             {items.map((i: any) => {
@@ -395,7 +395,7 @@ function OwnerClaims({ live, account, linked, claims, setClaims }: { live: any; 
         )}
       </Section>
 
-      <Section title="Your claims" description={claims?.length ? "This page updates by itself as each claim moves." : undefined}>
+      <Section title="Your claims" description={claims?.length ? "Each claim is a live record on Arkiv. This page updates by itself as it moves." : undefined}>
         {!claims ? <Skeleton lines={3} label="Loading your claims" /> : claims.length === 0 ? (
           <EmptyState plain title="No claims yet" icon="doc">Pick an incident above and press Claim.</EmptyState>
         ) : (
@@ -466,6 +466,7 @@ function ClaimCard({ claim: c, incident, onChange, cancel }: { claim: any; incid
 
       <footer className="ins-claim-foot">
         <PublicRecord arkiv={c.arkiv} />
+        <ShareProofButton episodeId={c.episodeId} small />
         {c.status === "INSURER_REVIEW" && (withdraw ? (
           <span className="ins-withdraw" role="group" aria-label="Confirm withdrawal">
             <span className="small">Withdraw this claim? Nothing is paid.</span>
@@ -478,7 +479,7 @@ function ClaimCard({ claim: c, incident, onChange, cancel }: { claim: any; incid
         <Dl rows={[
           ["Claim", <code className="mono">{c.claimId}</code>],
           ["Run", <a href={to.verify(c.episodeId)}><code className="mono">{c.episodeId}</code></a>],
-          ["Checks", "World ID Agent Pass (owner) · IDKit Proof of Human (unique person)"],
+          ["Checks", "World ID Agent Pass (owner) · World IDKit Proof of Human (unique person)"],
         ]} />
         {c.arkiv?.entityKey && <Chip label="Arkiv record" value={c.arkiv.entityKey} href={`${ARKIV_EXPLORER}/entity/${c.arkiv.entityKey}`} />}
         {c.payout && <Chip label="Payout on 0G Chain" value={c.payout.txHash} href={cfg.explorer ? `${cfg.explorer}/tx/${c.payout.txHash}` : null} tone="ok" />}
@@ -549,7 +550,7 @@ function InsurerGate({ tick, children }: { tick: number; children: (info: any, r
 
   if (err) return <PlainError title="Couldn't open the insurer desk" raw={err} fallback="The insurer desk didn't answer." onRetry={load} />;
   if (!info) return <Skeleton lines={4} label="Loading the insurer desk" />;
-  if (!info.configured) return <EmptyState title="No insurer is set up here" icon="wallet">Whoever runs this dashboard needs to name the insurer's wallet before claims can be reviewed.</EmptyState>;
+  if (!info.configured) return <EmptyState title="No insurer is connected yet" icon="wallet" action={<a className="btn primary" href={to.demo("insurer")}>Explore the insurer demo</a>}>Claims can be reviewed here once your insurance company's wallet is connected to Pearl. Until then, try the insurer desk on sample data.</EmptyState>;
   if (!info.signedIn) return <SignIn address={info.address} onDone={load} />;
   return <>{children(info, load)}</>;
 }
@@ -642,12 +643,12 @@ function Desk({ info, reload, tick, claimId, reloadPool }: { info: any; reload: 
       )}
       <div className="ins-desk">
         <aside className="ins-desk-side">
-          <Section boxed title="Claims" className="ins-queue">
+          <Section boxed title="Queue" className="ins-queue">
             <Tabs label="Claim queue" active={qtab} onChange={(t) => setQtab(t as any)} tabs={[{ id: "waiting", label: "Waiting", count: waiting.length }, { id: "decided", label: "Decided", count: done.length }]} />
             {err && <PlainError title="Couldn't load claims" raw={err} fallback="The claims list didn't load." onRetry={loadClaims} />}
             {!claims && !err ? <Skeleton lines={3} label="Loading claims" /> : rows.length === 0 ? (
               <EmptyState plain icon={qtab === "waiting" ? "check" : "doc"} title={qtab === "waiting" ? "Nothing waiting" : "No decisions yet"}>
-                {qtab === "waiting" ? "New claims appear here after the owner passes both World ID checks." : "Claims you approve or decline appear here."}
+                {qtab === "waiting" ? "You're all caught up. New claims appear here after the owner passes both World ID checks." : "Claims you approve or decline appear here."}
               </EmptyState>
             ) : (
               <ul className="ins-q" aria-label={qtab === "waiting" ? "Claims waiting for you" : "Decided claims"}>
@@ -684,55 +685,58 @@ function Review({ claim, rec, onDecided }: { claim: any; rec: any; onDecided: ()
   const cfg = useConfig();
   const hid = useId();
   const [fc, setFc] = useState<FullCheck | null>(null);
+  const [unlockSignal, setUnlockSignal] = useState(0);
   const story = useRef<HTMLDivElement>(null);
   const open = claim.status === "INSURER_REVIEW";
-  // the dock's "Unlock incident" presses the story's own unlock button (one action, shown where the decision is)
+  // the decision panel's "Unlock incident" is the only unlock button; the story below opens in place
   const unlockStory = () => {
-    const b = [...(story.current?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((x) => x.textContent?.includes("Unlock incident"));
-    b?.closest(".card, .rs")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    b?.click();
+    setUnlockSignal((n) => n + 1);
+    story.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
   return (
     <section className="ins-review" aria-labelledby={hid}>
-      <div className="ins-sum">
-        <div className="ins-sum-head">
-          <div>
-            <div className="eyebrow">Claim · submitted {ago(claim.createdAt)}</div>
-            <h2 id={hid} className="ins-sum-title">Incident · {incidentTime(claim.episodeId)} <Severity value={claim.severity} incident /></h2>
+      <div className="ins-review-grid">
+        <div className="ins-evidence">
+          <div className="ins-sum">
+            <div className="ins-sum-head">
+              <div>
+                <div className="eyebrow">Claim · submitted {ago(claim.createdAt)}</div>
+                <h2 id={hid} className="ins-sum-title">Incident · {incidentTime(claim.episodeId)} <Severity value={claim.severity} incident /></h2>
+              </div>
+              <div className="ins-sum-side">
+                <InsurerStatus status={claim.status} />
+                <ShareProofButton episodeId={claim.episodeId} small />
+              </div>
+            </div>
+            <div className="ins-sum-checks">
+              <span className="muted small">Checked by World ID before it reached you</span>
+              <span className="ins-check"><DotLabel tone="ok">Agent Pass: it's really the robot's owner</DotLabel><InfoTip text={INS_TIP.agentPass} /></span>
+              <span className="ins-check"><DotLabel tone="ok">Proof of Human: one person, one claim</DotLabel><InfoTip text={INS_TIP.proofOfHuman} /></span>
+            </div>
+            <PublicRecord arkiv={claim.arkiv} />
+            <TechDetails>
+              <Dl rows={[
+                ["Claim", <code className="mono">{claim.claimId}</code>],
+                ["Run", <a href={to.verify(claim.episodeId)}><code className="mono">{claim.episodeId}</code></a>],
+                ["Payout wallet", <span className="row"><code className="mono">{claim.wallet}</code><CopyButton value={claim.wallet} label="Copy payout wallet" /></span>],
+                ["Claimant id", <code className="mono" title="World ID nullifier: one per person per incident, reveals no identity">{claim.nullifier}</code>],
+                ["Checks passed", "World ID Agent Pass (owner) · World IDKit Proof of Human (unique person)"],
+              ]} />
+              {claim.arkiv?.entityKey && <Chip label="Arkiv record" value={claim.arkiv.entityKey} href={`${ARKIV_EXPLORER}/entity/${claim.arkiv.entityKey}`} />}
+              {claim.payout && <Chip label="Payout on 0G Chain" value={claim.payout.txHash} href={cfg.explorer ? `${cfg.explorer}/tx/${claim.payout.txHash}` : null} tone="ok" />}
+            </TechDetails>
           </div>
-          <InsurerStatus status={claim.status} />
+          <IncidentStory claim={claim} rec={rec} onFull={setFc} containerRef={story} unlockSignal={unlockSignal} />
         </div>
-        <div className="ins-sum-grid">
+        <aside className="ins-decide" aria-label="Decision">
           <div className="ins-sum-amt">
             <span className="muted small">{claim.status === "PAID" ? "Paid" : claim.status === "DENIED" || claim.status === "FAILED" ? "Would have paid" : "Pays if approved"}</span>
             <Amount wei={claim.payout?.amountWei ?? claim.amountWei} paid={claim.status === "PAID"} />
-            <span className="muted small">to the owner's payout wallet, fixed by severity</span>
+            <span className="muted small">from the pool on 0G Chain to the owner's payout wallet, fixed by severity</span>
           </div>
-          <div className="ins-sum-checks">
-            <span className="muted small">Identity checks passed</span>
-            <span className="ins-check"><DotLabel tone="ok">It's really the robot's owner</DotLabel><InfoTip text={INS_TIP.agentPass} /></span>
-            <span className="ins-check"><DotLabel tone="ok">One person, one claim</DotLabel><InfoTip text={INS_TIP.proofOfHuman} /></span>
-          </div>
-        </div>
-        <PublicRecord arkiv={claim.arkiv} />
-        <TechDetails>
-          <Dl rows={[
-            ["Claim", <code className="mono">{claim.claimId}</code>],
-            ["Run", <a href={to.verify(claim.episodeId)}><code className="mono">{claim.episodeId}</code></a>],
-            ["Payout wallet", <span className="row"><code className="mono">{claim.wallet}</code><CopyButton value={claim.wallet} label="Copy payout wallet" /></span>],
-            ["Claimant id", <code className="mono" title="World ID nullifier: one per person per incident, reveals no identity">{claim.nullifier}</code>],
-            ["Checks passed", "World ID Agent Pass (owner) · IDKit Proof of Human (unique person)"],
-          ]} />
-          {claim.arkiv?.entityKey && <Chip label="Arkiv record" value={claim.arkiv.entityKey} href={`${ARKIV_EXPLORER}/entity/${claim.arkiv.entityKey}`} />}
-          {claim.payout && <Chip label="Payout on 0G Chain" value={claim.payout.txHash} href={cfg.explorer ? `${cfg.explorer}/tx/${claim.payout.txHash}` : null} tone="ok" />}
-        </TechDetails>
+          {open ? <DecisionPanel key={claim.claimId} claim={claim} fc={fc} canUnlock={!!rec} onUnlock={unlockStory} onDecided={onDecided} /> : <Decided claim={claim} />}
+        </aside>
       </div>
-
-      {!open && <Decided claim={claim} />}
-
-      <IncidentStory claim={claim} rec={rec} onFull={setFc} containerRef={story} />
-
-      {open && <DecisionPanel key={claim.claimId} claim={claim} fc={fc} canUnlock={!!rec} onUnlock={unlockStory} onDecided={onDecided} />}
     </section>
   );
 }
@@ -740,7 +744,7 @@ function Review({ claim, rec, onDecided }: { claim: any; rec: any; onDecided: ()
 /**
  * The claimed incident, unlocked with the receiving key, told as a RunStory (insurer mode).
  */
-function IncidentStory({ claim, rec, onFull, containerRef }: { claim: any; rec: any; onFull: (fc: FullCheck | null) => void; containerRef?: React.RefObject<HTMLDivElement | null> }) {
+function IncidentStory({ claim, rec, onFull, containerRef, unlockSignal }: { claim: any; rec: any; onFull: (fc: FullCheck | null) => void; containerRef?: React.RefObject<HTMLDivElement | null>; unlockSignal: number }) {
   return (
     <div className="ins-story" ref={containerRef}>
       <RunStory
@@ -753,13 +757,16 @@ function IncidentStory({ claim, rec, onFull, containerRef }: { claim: any; rec: 
         startAtIncident
         unlockLabel="Unlock incident"
         onFull={onFull}
+        share={false}
+        hideUnlock
+        unlockSignal={unlockSignal}
       />
     </div>
   );
 }
 
-/** The decision: docked to the bottom of the screen while the incident is reviewed, so it never scrolls away.
- *  Locked: its one action is "Unlock incident". Unlocked: reason + Approve / Decline, each confirmed. */
+/** The decision: fixed in the right column while the evidence scrolls on the left.
+ *  Locked: its one action is "Unlock incident". Unlocked: reason (required, said so) + Approve / Decline, each confirmed. */
 function DecisionPanel({ claim, fc, canUnlock, onUnlock, onDecided }: { claim: any; fc: FullCheck | null; canUnlock: boolean; onUnlock: () => void; onDecided: () => void }) {
   const [reason, setReason] = useState("");
   const [confirm, setConfirm] = useState<"approve" | "deny" | null>(null);
@@ -769,9 +776,9 @@ function DecisionPanel({ claim, fc, canUnlock, onUnlock, onDecided }: { claim: a
   const verified = fc?.result === "VALID";
   useEffect(() => setUnlocking(false), [fc]);
   const status = !fc
-    ? <><Icon name="lock" size={12} /> {canUnlock ? "Unlock the incident to decide" : "Set up your receiving key above first"}</>
-    : !verified ? <span className="bad-text"><Icon name="alert" size={12} /> The contents failed the check: you can decline, not approve</span>
-      : !reason.trim() ? <><Icon name="check" size={12} /> Incident checked · write a reason to decide</> : <><Icon name="check" size={12} /> Incident checked</>;
+    ? <><Icon name="lock" size={13} /> {canUnlock ? "Unlock the incident to see the evidence and decide" : "Set up your receiving key first"}</>
+    : !verified ? <span className="bad-text"><Icon name="alert" size={13} /> The contents failed the check: you can decline, not approve</span>
+      : <span className="ok-text"><Icon name="check" size={13} /> Incident unlocked and every record checked</span>;
   const decide = async (approve: boolean) => {
     setBusy(true);
     setMsg("");
@@ -793,15 +800,15 @@ function DecisionPanel({ claim, fc, canUnlock, onUnlock, onDecided }: { claim: a
       </div>
       {!fc ? (
         <div className="ins-dock-lock">
-          <button type="button" className="btn primary" disabled={!canUnlock || unlocking} onClick={() => { setUnlocking(true); onUnlock(); setTimeout(() => setUnlocking(false), 15000); }}>
+          <button type="button" className="btn primary lg" disabled={!canUnlock || unlocking} onClick={() => { setUnlocking(true); onUnlock(); setTimeout(() => setUnlocking(false), 15000); }}>
             {unlocking ? <><Spinner /> Unlocking…</> : <><Icon name="key" /> Unlock incident</>}
           </button>
-          <span className="muted small">Opens this one incident with your receiving key, on this browser only, and checks every record.</span>
+          <span className="muted small">Opens this one incident with your receiving key, in this browser only, then replays it and checks every record.</span>
         </div>
       ) : !confirm ? (
         <div className="ins-dock-body">
-          <Field label="Reason (the owner sees it)">
-            <textarea rows={2} value={reason} maxLength={500} required onChange={(e) => setReason(e.target.value)} placeholder="e.g. Bump at 14:02 matches severity 2; arm stopped as designed." />
+          <Field label="Your reason (the owner sees it)" hint={<span className={reason.trim() ? "ok-text" : ""} id="ins-reason-hint">{reason.trim() ? <><Icon name="check" size={12} /> Reason added</> : "A reason is required to approve or decline."}</span>}>
+            <textarea rows={3} value={reason} maxLength={500} required aria-describedby="ins-reason-hint" onChange={(e) => setReason(e.target.value)} placeholder="e.g. Bump at 14:02 matches severity 2; arm stopped as designed." />
           </Field>
           <div className="ins-dock-actions">
             <button type="button" className="btn primary" disabled={!verified || !reason.trim()} onClick={() => setConfirm("approve")}>Approve · pay <Amount wei={claim.amountWei} /></button>

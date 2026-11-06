@@ -34,7 +34,7 @@ function RunPage({ live, account, runId }: { live: Live; account: any; runId: st
       <div className="page rb-page">
         <a className="rb-back" href={to.robot()}><Icon name="arrow" size={14} /> <span>Robot and all runs</span></a>
         <RunStory episodeId={EXAMPLE_ID} mode="public" titleAs="h1" example={EXAMPLE}
-          actions={<a className="btn ghost" href={to.verify()}>Check a real run</a>} />
+ />
       </div>
     );
   }
@@ -53,7 +53,6 @@ function RunPage({ live, account, runId }: { live: Live; account: any; runId: st
         lockedReason={account === undefined ? "Checking your sign-in…" : u.reason}
         lockedAction={action}
         lockedPublic={account === null}
-        actions={<a className="btn ghost" href={to.verify(runId)}>Share proof</a>}
       />
     </div>
   );
