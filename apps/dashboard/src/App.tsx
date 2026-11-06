@@ -3,12 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { post, short, useLive } from "./api";
 import { to, useRouteInfo, type Route } from "./router";
-import { Icon, Tabs } from "./components/ui";
+import { Icon } from "./components/ui";
 import { EmptyState, PageHeader, StatusPill } from "./components/blocks";
 import { useAccount, useInsurerSession } from "./lib/account";
 import { PAGE, ROBOT_LINK } from "./lib/words";
 import { Home } from "./pages/Home";
-import { Insurer } from "./pages/Insurer";
+import { Insurance } from "./pages/Insurance";
 import { MyRobot } from "./pages/MyRobot";
 import { Offline } from "./pages/Offline";
 import { Proof } from "./pages/Proof";
@@ -115,7 +115,7 @@ function Page({ route, live }: { route: Route; live: ReturnType<typeof useLive> 
     case "proof":
       return <Proof tick={live.tick} runId={route.runId} />;
     case "insurance":
-      return <InsuranceInterim live={live} side={route.side} claimId={route.claimId} />;
+      return <Insurance live={live} side={route.side} claimId={route.claimId} />;
     case "offline":
       return <Offline section={route.section} />;
     case "account":
@@ -131,21 +131,6 @@ function Page({ route, live }: { route: Route; live: ReturnType<typeof useLive> 
         </div>
       );
   }
-}
-
-function InsuranceInterim({ live, side, claimId }: { live: ReturnType<typeof useLive>; side: "owner" | "insurer"; claimId?: string }) {
-  return (
-    <>
-      <div className="page interim-head">
-        <PageHeader title={PAGE.insurance} description="After an incident the owner claims, proven a real person by World ID. The insurer reviews it and the pool pays." />
-        <Tabs label="Insurance side" active={side} onChange={(s) => (location.hash = to.insurance(s as "owner" | "insurer"))}
-          tabs={[{ id: "owner", label: "I own the robot" }, { id: "insurer", label: "I'm the insurer" }]} />
-      </div>
-      {side === "owner"
-        ? <div className="page"><MyRobot live={live} sub="claims" bare /></div>
-        : <Insurer tick={live.tick} claimId={claimId} />}
-    </>
-  );
 }
 
 /** Account menu: "Sign in" or the signed-in identity; opens Account, Insurance review, Works without internet, Sign out. */

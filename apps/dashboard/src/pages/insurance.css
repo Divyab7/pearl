@@ -1,0 +1,153 @@
+/* Insurance page (pages/Insurance.tsx). Tokens only (see styles.css header). Base rules, then breakpoints. */
+
+/* owner | insurer switch: a segmented control made of links */
+.ins-switch { display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--border); border-radius: var(--r3); background: var(--panel); align-self: flex-start; margin-top: calc(var(--s3) * -1); }
+.ins-switch a { display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; min-height: 40px; border-radius: var(--r2); color: var(--text-2); font-weight: 560; font-size: var(--fs-ui); transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.ins-switch a:hover { text-decoration: none; color: var(--text); background: var(--raise); }
+.ins-switch a.on { background: var(--accent-soft); color: var(--text); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+.ins-switch a.on .icon { color: var(--accent); }
+
+/* pool in the header */
+.ins-pool { display: inline-flex; align-items: center; gap: 8px; padding: 6px 8px 6px 14px; border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--panel); font-size: var(--fs-ui); min-height: 40px; }
+.ins-pool .amount { font-size: 16px; }
+.ins-pool.muted, .ins-pool.warn-text { padding-right: 14px; }
+
+/* how a claim works */
+.ins-how .steps-body { font-size: 14px; }
+
+/* claimable incidents */
+.ins-rows { list-style: none; margin: 0; padding: 0; display: grid; border: 1px solid var(--border); border-radius: var(--r3); background: var(--panel); }
+.ins-inc { display: grid; grid-template-columns: 76px minmax(0, 1fr) auto; gap: var(--s4); align-items: center; padding: var(--s3) var(--s4); min-height: 64px; }
+.ins-inc + .ins-inc { border-top: 1px solid var(--border); }
+.ins-inc-time { color: var(--text-2); font-size: 14px; }
+.ins-inc-main { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; min-width: 0; }
+.ins-inc-main > a { color: var(--text); font-weight: 600; }
+.ins-inc-side { display: flex; align-items: center; gap: var(--s3); justify-content: flex-end; flex-wrap: wrap; }
+.ins-pays { color: var(--text-2); font-size: 14px; display: inline-flex; align-items: baseline; gap: 6px; }
+.ins-inc.can { background: color-mix(in srgb, var(--accent) 4%, transparent); }
+.ins-blockers { margin: 4px 0 var(--s3); padding-left: 18px; color: var(--text); }
+
+/* a claim card */
+.ins-claims { display: grid; gap: var(--s4); }
+.ins-claim { border: 1px solid var(--border); border-radius: var(--r4); background: var(--panel); padding: var(--s5); display: grid; gap: var(--s4); box-shadow: var(--shadow); scroll-margin-top: calc(var(--topbar-h) + 16px); transition: box-shadow var(--t-slow) var(--ease); }
+.ins-claim.flash { box-shadow: 0 0 0 2px var(--accent); }
+.ins-claim.is-agent_pass, .ins-claim.is-idkit { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.ins-claim.is-paid { border-color: var(--ok-line); }
+.ins-claim-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s3); flex-wrap: wrap; }
+.ins-claim-title { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; min-width: 0; }
+.ins-claim-title h3 { font-size: 17px; }
+.ins-claim-title h3 a { color: var(--text); }
+.ins-claim-side { display: flex; align-items: center; gap: var(--s3); }
+.ins-claim-side .amount { font-size: 18px; }
+.ins-now { display: grid; gap: var(--s3); }
+.ins-now:empty { display: none; }
+.ins-claim-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); flex-wrap: wrap; }
+.ins-withdraw { display: inline-flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+.ins-history { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.ins-rec { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--text-2); font-size: 14px; }
+
+/* why a World ID step exists */
+.ins-why { display: flex; gap: var(--s3); align-items: flex-start; }
+.ins-why b { font-size: var(--fs-ui); }
+.ins-why p { color: var(--text-2); font-size: var(--fs-ui); }
+.ins-why-icon { width: 36px; height: 36px; flex: none; border-radius: var(--r2); display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+.ins-idkit { gap: var(--s3); }
+
+/* waiting (insurer review / paying) */
+.ins-wait { display: flex; gap: var(--s3); align-items: flex-start; padding: var(--s4); border-radius: var(--r3); background: var(--info-soft); border: 1px solid var(--info-line); }
+.ins-wait > .spinner { margin-top: 3px; flex: none; }
+.ins-wait p { margin-top: 2px; font-size: var(--fs-ui); }
+
+/* the payout moment */
+.ins-paid { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--s4); align-items: center; padding: var(--s5); border-radius: var(--r3); background: var(--ok-soft); border: 1px solid var(--ok-line); }
+.ins-paid-icon { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; background: var(--ok); color: var(--bg); animation: ins-pop var(--t-slow) var(--ease-out) both; }
+.ins-paid-text { display: grid; gap: 4px; min-width: 0; }
+.ins-paid-amt { display: flex; align-items: baseline; gap: 8px; font-weight: 650; color: var(--ok); }
+.ins-paid-amt .amount { font-size: 30px; font-weight: 750; letter-spacing: -.02em; }
+.ins-paid-amt > span:last-child { font-size: var(--fs-lg); }
+.ins-paid p { color: var(--text); font-size: var(--fs-ui); }
+.ins-paid blockquote { margin: 4px 0 0; color: var(--text-2); font-size: var(--fs-ui); }
+.ins-paid cite { font-style: normal; color: var(--text-3); font-size: var(--fs-small); margin-left: 4px; }
+.ins-paid cite::before { content: "· "; }
+@keyframes ins-pop { from { transform: scale(.6); opacity: 0; } 60% { transform: scale(1.08); opacity: 1; } to { transform: none; } }
+
+/* insurer desk */
+.ins-who { display: flex; align-items: center; gap: var(--s3) var(--s4); flex-wrap: wrap; margin-top: calc(var(--s3) * -1); }
+.ins-who-text { display: inline-flex; align-items: center; gap: 6px; color: var(--ok); font-weight: 560; font-size: var(--fs-ui); }
+.ins-who-key { display: inline-flex; align-items: center; gap: 4px; }
+.ins-who > .btn { margin-left: auto; }
+.ins-signin { max-width: var(--page-narrow); }
+.ins-desk { display: grid; grid-template-columns: minmax(300px, 4fr) minmax(0, 8fr); gap: var(--s5); align-items: start; }
+.ins-desk-side { display: grid; gap: var(--s4); position: sticky; top: calc(var(--topbar-h) + 16px); }
+.ins-desk-main { min-width: 0; outline: none; scroll-margin-top: calc(var(--topbar-h) + 12px); }
+.ins-queue { padding: var(--s4); gap: var(--s3); }
+.ins-q { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.ins-q-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); padding: 10px var(--s3); border-radius: var(--r2); color: var(--text); transition: background var(--t-fast) var(--ease); }
+.ins-q-row:hover { background: var(--raise); text-decoration: none; }
+.ins-q-row.sel { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.ins-q-main { display: grid; gap: 4px; min-width: 0; }
+.ins-q-title { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; font-weight: 600; }
+.ins-q-sub { color: var(--text-2); font-size: var(--fs-small); }
+.ins-poolcard { padding: var(--s4); gap: var(--s3); }
+.ins-poolstats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s3) var(--s4); }
+.ins-poolstats .stat-value .amount { font-size: 18px; }
+
+/* the selected claim */
+.ins-review { display: grid; gap: var(--s4); }
+.ins-sum { background: var(--panel); border: 1px solid var(--border); border-radius: var(--r4); padding: var(--s5); display: grid; gap: var(--s4); box-shadow: var(--shadow); }
+.ins-sum-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s3); flex-wrap: wrap; }
+.ins-sum-title { font-size: 22px; display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+.ins-sum-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s4); }
+.ins-sum-amt, .ins-sum-checks { display: grid; gap: 4px; align-content: start; }
+.ins-sum-amt .amount { font-size: 28px; font-weight: 720; letter-spacing: -.02em; }
+.ins-check { display: inline-flex; align-items: center; gap: 2px; font-size: var(--fs-ui); }
+.ins-story { display: grid; gap: var(--s3); }
+.ins-story-title { font-size: var(--fs-section); font-weight: 650; }
+
+/* decision: docked at the bottom of the screen while the review column is in view */
+.ins-dock { position: sticky; bottom: 12px; z-index: 5; display: grid; gap: var(--s3); padding: var(--s4); border-radius: var(--r4); background: var(--panel); border: 1px solid var(--border-strong); box-shadow: 0 -8px 32px rgba(0, 0, 0, .28), var(--shadow); }
+.ins-dock-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); flex-wrap: wrap; }
+.ins-dock-head b { font-size: 16px; }
+.ins-dock-head .muted, .ins-dock-head .bad-text { display: inline-flex; align-items: center; gap: 6px; }
+.ins-dock-body { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--s3) var(--s4); align-items: end; }
+.ins-dock-body textarea { min-height: 64px; resize: vertical; }
+.ins-dock-actions { display: flex; gap: var(--s2); align-items: center; flex-wrap: wrap; padding-bottom: 2px; }
+.ins-dock-lock { display: flex; align-items: center; gap: var(--s3) var(--s4); flex-wrap: wrap; }
+.ins-dock-lock .muted { flex: 1 1 260px; }
+.ins-dock-actions .btn .amount { font-size: inherit; color: inherit; }
+.ins-dock-actions .btn .amount-unit { color: inherit; opacity: .85; }
+.ins-confirm { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); flex-wrap: wrap; padding: var(--s3) var(--s4); border-radius: var(--r3); }
+.ins-confirm.tone-ok { background: var(--ok-soft); border: 1px solid var(--ok-line); }
+.ins-confirm.tone-bad { background: var(--bad-soft); border: 1px solid var(--bad-line); }
+.ins-confirm b .amount { font-size: inherit; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ins-paid-icon, .ins-paid.appear { animation: none; }
+}
+@media (max-width: 1080px) {
+  .ins-desk { grid-template-columns: minmax(0, 1fr); }
+  .ins-desk-side { position: static; }
+}
+@media (max-width: 760px) {
+  .ins-dock-body { grid-template-columns: minmax(0, 1fr); }
+  .ins-sum-grid { grid-template-columns: minmax(0, 1fr); }
+  .ins-paid { grid-template-columns: auto minmax(0, 1fr); }
+  .ins-paid > .btn { grid-column: 1 / -1; justify-self: start; }
+}
+@media (max-width: 640px) {
+  .ins-switch { display: flex; width: 100%; }
+  .ins-switch a { flex: 1; justify-content: center; padding: 9px 8px; }
+  .ins-how .steps { grid-template-columns: minmax(0, 1fr); gap: var(--s2); }
+  .ins-how .steps > li { padding-top: var(--s2); }
+  .ins-how .steps > li:not(.on) .steps-body { display: none; }
+  .ins-inc { grid-template-columns: 56px minmax(0, 1fr); gap: var(--s2) var(--s3); }
+  .ins-inc-side { grid-column: 1 / -1; justify-content: space-between; }
+  .ins-claim, .ins-sum { padding: var(--s4); }
+  .ins-claim-side { width: 100%; justify-content: space-between; }
+  .ins-dock { bottom: 8px; padding: var(--s3); }
+  .ins-dock textarea { min-height: 48px; }
+  .ins-paid-amt .amount { font-size: 26px; }
+  .ins-paid { grid-template-columns: minmax(0, 1fr); padding: var(--s4); gap: var(--s3); }
+  .ins-paid-icon { width: 40px; height: 40px; }
+  .ins-inc-side:not(:has(.btn.primary)) { justify-content: flex-start; }
+}
