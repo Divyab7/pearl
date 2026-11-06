@@ -25,6 +25,15 @@ struct Eip1559Tx {
 /** 0x02 ‖ rlp([...]) signed, and its hash (keccak256 of the raw bytes). */
 bool signEip1559(const eth::Key& k, const Eip1559Tx& tx, Bytes& raw, Bytes& txHash);
 
+/** A signed type-2 transaction read back: its fields, sender (recovered) and hash. */
+struct DecodedTx {
+  Eip1559Tx tx;
+  uint8_t from[20];
+  Bytes hash;
+};
+/** Parses 0x02 ‖ rlp([...12 fields]) (empty access list only) and recovers the sender; false if malformed. */
+bool decodeEip1559(const Bytes& raw, DecodedTx& out);
+
 // ---- ABI words
 Bytes word(uint64_t v);
 Bytes wordBytes(const Bytes& b);  // left-padded big-endian number or right-aligned value ≤ 32 bytes

@@ -27,6 +27,11 @@ void personalHash(const std::string& msg, uint8_t out[32]);
 /** 0x + r + s + v (27/28), 65 bytes in hex: the format ethers.verifyMessage expects. */
 std::string personalSign(const Key& k, const std::string& msg);
 
+/** The signer's address of a 32-byte digest (r, s low-s, recid 0/1); false if the signature is invalid. */
+bool recoverAddress(const uint8_t digest[32], const uint8_t r[32], const uint8_t s[32], int recid, uint8_t addr[20]);
+/** ethers.verifyMessage: the EIP-55 address that personal-signed `msg`, or "" if the signature is malformed. */
+std::string recoverPersonal(const std::string& msg, const std::string& sig0x);
+
 // ---- RLP
 Bytes rlpBytes(const Bytes& b);
 Bytes rlpList(const std::vector<Bytes>& items);

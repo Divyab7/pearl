@@ -74,8 +74,8 @@ bool newKey(Key& out) {
   return false;
 }
 
-/** Q = r⁻¹(s·R − z·G) for the R with x = r and y parity `parity`; true when Q equals `pub`. */
-static bool recovers(Curve& c, const mbedtls_mpi* r, const mbedtls_mpi* s, const uint8_t digest[32], int parity, const uint8_t pub[64]) {
+/** Q = r⁻¹(s·R − z·G) for the R with x = r and y parity `parity`, written to q (X||Y). */
+static bool recoverPub(Curve& c, const mbedtls_mpi* r, const mbedtls_mpi* s, const uint8_t digest[32], int parity, uint8_t q[64]) {
   const mbedtls_mpi* p = &c.grp.P;
   const mbedtls_mpi* n = &c.grp.N;
   Mpi x3, rhs, e, y, rinv, u1, u2, t, ex;
@@ -96,10 +96,40 @@ static bool recovers(Curve& c, const mbedtls_mpi* r, const mbedtls_mpi* s, const
   else if (mbedtls_mpi_sub_mpi(&u1, n, &t)) return false;
   if (mbedtls_mpi_mul_mpi(&u2, s, &rinv) || mbedtls_mpi_mod_mpi(&u2, &u2, n)) return false;
   if (mbedtls_ecp_muladd(&c.grp, &Q, &u1, &c.grp.G, &u2, &R)) return false;
-  uint8_t q[64];
+  if (mbedtls_ecp_is_zero(&Q)) return false;
   mbedtls_mpi_write_binary(&Q.v.private_X, q, 32);
   mbedtls_mpi_write_binary(&Q.v.private_Y, q + 32, 32);
-  return memcmp(q, pub, 64) == 0;
+  return true;
+}
+
+static bool recovers(Curve& c, const mbedtls_mpi* r, const mbedtls_mpi* s, const uint8_t digest[32], int parity, const uint8_t pub[64]) {
+  uint8_t q[64];
+  return recoverPub(c, r, s, digest, parity, q) && memcmp(q, pub, 64) == 0;
+}
+
+bool recoverAddress(const uint8_t digest[32], const uint8_t r[32], const uint8_t s[32], int recid, uint8_t addr[20]) {
+  if (recid != 0 && recid != 1) return false;
+  Curve c;
+  Mpi rm, sm, half;
+  if (mbedtls_mpi_read_binary(&rm, r, 32) || mbedtls_mpi_read_binary(&sm, s, 32)) return false;
+  // 0 < r, s < n; low-s only (EIP-2), as ethers and every node require
+  if (mbedtls_mpi_cmp_int(&rm, 0) <= 0 || mbedtls_mpi_cmp_int(&sm, 0) <= 0 || mbedtls_mpi_cmp_mpi(&rm, &c.grp.N) >= 0) return false;
+  if (mbedtls_mpi_copy(&half, &c.grp.N) || mbedtls_mpi_shift_r(&half, 1) || mbedtls_mpi_cmp_mpi(&sm, &half) > 0) return false;
+  uint8_t q[64], h[32];
+  if (!recoverPub(c, &rm, &sm, digest, recid, q)) return false;
+  keccak256(q, 64, h);
+  memcpy(addr, h + 12, 20);
+  return true;
+}
+
+std::string recoverPersonal(const std::string& msg, const std::string& sig0x) {
+  Bytes sig;
+  if (!fromHex(sig0x, sig) || sig.size() != 65) return "";
+  int v = sig[64] >= 27 ? sig[64] - 27 : sig[64];
+  uint8_t h[32], addr[20];
+  personalHash(msg, h);
+  if (!recoverAddress(h, sig.data(), sig.data() + 32, v, addr)) return "";
+  return checksumAddress(addr);
 }
 
 bool signDigest(const Key& k, const uint8_t digest[32], uint8_t rOut[32], uint8_t sOut[32], int& recid) {

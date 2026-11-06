@@ -34,17 +34,56 @@ struct TxResult {
   std::string txHash;
   JsonDocument receipt;
 };
+/** Online: the transaction sendTx signs (pending nonce, fees as ethers/viem pick them, estimate × 1.25). */
+bool prepareTx(orch::Platform& p, const std::string& url, uint64_t chainId, const eth::Key& k, const Bytes& to, const Bytes& value,
+               const Bytes& data, chain::Eip1559Tx& tx, std::string& err, bool arkivFees = false);
+/** eth_sendRawTransaction of an already signed tx. OK also when the node already knows it or already mined it;
+ *  STALE when its nonce was taken by a DIFFERENT transaction (the robot must re-sign). */
+enum class Sent { OK, STALE, ERROR };
+Sent sendRaw(orch::Platform& p, const std::string& url, const std::string& raw0x, const std::string& hash0x, std::string& err);
+/** Waits for the receipt (status 1 required). */
+bool waitReceipt(orch::Platform& p, const std::string& url, const std::string& hash0x, uint32_t timeoutMs, JsonDocument& receipt, std::string& err);
 /** Builds, signs and sends a type-2 transaction, then waits for its receipt (status 1 required). */
 bool sendTx(orch::Platform& p, const std::string& url, uint64_t chainId, const eth::Key& k, const Bytes& to, const Bytes& value,
             const Bytes& data, uint32_t timeoutMs, TxResult& out, std::string& err, bool arkivFees = false);
+
+/** v × num / den on big-endian numbers (fees, headroom), no overflow. */
+Bytes mulDiv(const Bytes& v, uint64_t num, uint64_t den);
+uint64_t hexU64(JsonVariantConst v);
+/** A JSON-RPC quantity ("0x1a") → minimal big-endian bytes. */
+Bytes hexBytes(JsonVariantConst v);
 
 struct Upload {
   std::string rootHash, txHash;
   uint64_t txSeq = 0;
   uint32_t ms = 0;
 };
+/** The storage nodes that answer (with their shard), and the Flow contract they report. */
+struct StorageNet {
+  struct Node {
+    std::string url;
+    uint64_t shardId = 0, numShard = 1;
+  };
+  std::vector<Node> nodes;
+  std::string flow;
+};
+bool discoverStorage(orch::Platform& p, const Config& c, StorageNet& net, std::string& err);
+/** market().pricePerSector() of the Flow contract, big-endian. */
+bool storagePrice(orch::Platform& p, const Config& c, const std::string& flow, Bytes& pricePerSector, std::string& err);
+/** After the Flow submit is mined: waits until the nodes know the file, sends its one segment to the node of its
+ *  shard (no key needed) and waits until finalized. `out.rootHash` must be set. */
+bool pushSegment(orch::Platform& p, const Config& c, const StorageNet& net, const Bytes& file, uint32_t started, Upload& out, std::string& err);
 /** 0G Storage upload of one file ≤ 256 KiB (one segment), following the SDK (test/host/gen/storage-spec.md). */
 bool uploadFile(orch::Platform& p, const Config& c, const eth::Key& k, const Bytes& file, Upload& out, std::string& err);
+
+// ---- what both paths (direct publish and pre-signed bundle) put on-chain, from one place
+uint8_t outcomeCode(const std::string& outcome);
+/** EpisodeAnchor.anchor(...) calldata for a run; `root0x` empty when the log is not on 0G Storage. */
+Bytes anchorData(const orch::Result& r, const std::string& root0x);
+/** Arkiv execute(Create) calldata: public labels only. Empty strings are left out. */
+Bytes arkivData(const Config& c, const orch::Result& r, const std::string& root0x, const std::string& storageTx, const std::string& anchorTx, const Bytes& salt16);
+/** The Arkiv entity key from an execute receipt's EntityCreated log ("" if none). */
+std::string arkivEntityKey(JsonVariantConst receipt);
 
 /**
  * Publishes a closed run. `frameFiles` maps a decision idx to its locked frame bytes. `onMeta` is called after every
