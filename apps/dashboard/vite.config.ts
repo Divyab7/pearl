@@ -12,4 +12,9 @@ export default defineConfig({
     port: Number(process.env.PEARL_UI_PORT ?? 5173),
     proxy: { "/api": target, "/demo-api": target },
   },
+  // `vite preview` (production build) talks to the same backend
+  preview: {
+    port: Number(process.env.PEARL_PREVIEW_PORT ?? 4317),
+    proxy: { "/api": target, "/demo-api": target },
+  },
 });

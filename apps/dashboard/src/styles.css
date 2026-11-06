@@ -35,22 +35,6 @@
   --canvas: radial-gradient(1100px 520px at 0% -8%, #fffefb 0%, rgba(255, 254, 251, 0) 70%), radial-gradient(900px 480px at 100% 0%, rgba(58, 76, 196, .045) 0%, rgba(58, 76, 196, 0) 70%), var(--bg);
   color-scheme: light;
 }
-[data-theme="dark"] {
-  --bg: #0b0d10; --panel: #121519; --card: #171b21; --raise: #1f242c; --border: #262c35; --border-strong: #363d49;
-  --line-input: #5b6574;
-  --text: #eceef2; --text-2: #b0b8c4; --text-3: #8f98a7;
-  --accent: #93abff; --accent-ink: #0b1020; --accent-soft: rgba(147, 171, 255, .13);
-  --ok: #45d892; --ok-soft: rgba(69, 216, 146, .12); --ok-line: rgba(69, 216, 146, .35);
-  --warn: #f2b544; --warn-soft: rgba(242, 181, 68, .12); --warn-line: rgba(242, 181, 68, .35);
-  --bad: #ff7a7a; --bad-soft: rgba(255, 122, 122, .12); --bad-line: rgba(255, 122, 122, .38);
-  --info: #6ccfff; --info-soft: rgba(108, 207, 255, .12); --info-line: rgba(108, 207, 255, .35);
-  --red-cube: #ff6b6b; --blue-cube: #6f8dff; --input-bg: var(--bg);
-  --shadow: 0 1px 0 rgba(255, 255, 255, .025) inset, 0 6px 20px rgba(0, 0, 0, .22);
-  --shadow-pop: 0 12px 40px rgba(0, 0, 0, .5), 0 0 0 1px var(--border-strong);
-  --skeleton: linear-gradient(90deg, #181c22 0%, #222831 50%, #181c22 100%);
-  --canvas: var(--bg);
-  color-scheme: dark;
-}
 
 :root {
   --r1: 4px; --r2: 8px; --r3: 12px; --r4: 16px; --r-pill: 999px;
