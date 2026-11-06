@@ -113,3 +113,21 @@ export const PAGE = {
   offline: "Works without internet",
   account: "Account",
 } as const;
+
+// ---------------------------------------------------------------- Insurance page (additive, pages/Insurance.tsx)
+/** The owner's claim, in five plain steps (StepStrip input on #/insurance/owner). */
+export const CLAIM_STEPS = [
+  { title: "Pick an incident", body: "Any incident of severity 2 or more. The amount is fixed by severity." },
+  { title: "Prove it's you", body: "A fresh World ID check, so someone with your laptop can't claim for you." },
+  { title: "Prove you're one person", body: "One person, one claim: no fake accounts. Nobody learns who you are." },
+  { title: "Insurer reviews", body: "A person at the insurer opens this one incident and decides." },
+  { title: "Paid", body: "From the insurance pool on 0G Chain, straight to your payout wallet." },
+] as const;
+
+export const INS_TIP = {
+  agentPass: "World ID asks you to approve in World App right now, so only the account's real owner can start a claim.",
+  proofOfHuman: "World ID proves you are a unique human without revealing who you are. Each person can claim an incident once.",
+  publicRecord: "Each claim has a public record on Arkiv, updated as it moves: status and amount only, never who claimed.",
+  receivingKey: "Owners lock the incident they claim for this key. It stays in this browser; the server only has the public half.",
+  shareOne: "Claiming shares this one incident with the insurer. Your other runs stay locked.",
+} as const;
