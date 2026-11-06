@@ -363,14 +363,7 @@ void publishRun(orch::Platform& p, const Config& c, const eth::Key& k, const orc
           chain::attrStr("armId", c.armId, true), chain::attrStr("episodeId", r.episodeId, true), chain::attrStr("outcome", r.outcome, true),
           chain::attrI32("severity", r.severity, true), chain::attrStr("headHash", r.headHash, false),
       };
-      // ts = run end in ms since epoch, parsed from the ISO time
-      struct tm tmv = {};
-      int ms = 0;
-      sscanf(r.endedAt.c_str(), "%d-%d-%dT%d:%d:%d.%dZ", &tmv.tm_year, &tmv.tm_mon, &tmv.tm_mday, &tmv.tm_hour, &tmv.tm_min, &tmv.tm_sec, &ms);
-      tmv.tm_year -= 1900;
-      tmv.tm_mon -= 1;
-      uint64_t ts = static_cast<uint64_t>(timegm(&tmv)) * 1000 + ms;
-      at.push_back(chain::attrU64("ts", ts, true));
+      at.push_back(chain::attrU64("ts", isoToEpochMs(r.endedAt), true));  // run end, ms since epoch
       if (!root.empty()) at.push_back(chain::attrStr("rootHash", root, false));
       if (meta["storage"]["txHash"].is<const char*>()) at.push_back(chain::attrStr("storageTx", meta["storage"]["txHash"].as<const char*>(), false));
       if (meta["anchor"]["txHash"].is<const char*>()) at.push_back(chain::attrStr("anchorTx", meta["anchor"]["txHash"].as<const char*>(), false));

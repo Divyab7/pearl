@@ -1,6 +1,11 @@
 #include "link.h"
 #include <Arduino.h>
 #include "config.h"
+#include "state.h"
+
+#ifdef PEARL_DEVICE
+#include "board/locallink.h"
+#endif
 
 #ifdef LINK_WS
 #include <WiFi.h>
@@ -45,6 +50,12 @@ void poll() {
 #ifdef LINK_WS
   ws.loop();
 #endif
+#ifdef PEARL_DEVICE
+  // the run task is on this chip: its commands arrive through a queue, and the heartbeat is local (the watchdog
+  // still trips on a sensor or loop stall, which is what it guards against on-board)
+  dev.lastHbMs = millis();
+  locallink::drainCommands(dispatch);
+#endif
   // non-blocking: only bytes already received
   while (Serial.available() > 0) {
     char c = static_cast<char>(Serial.read());
@@ -66,6 +77,9 @@ void send(const JsonDocument& doc) {
   out[n] = '\0';
 #ifdef LINK_WS
   ws.sendTXT(out, n);
+#endif
+#ifdef PEARL_DEVICE
+  locallink::fromArm(out, n);
 #endif
   out[n] = '\n';
   Serial.write(reinterpret_cast<const uint8_t*>(out), n + 1);

@@ -55,3 +55,4 @@ __pycache__/
 
 # firmware host-test output
 firmware/esp32-arm/test/host/out/
+firmware/esp32-arm/src/board/assets.h

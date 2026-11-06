@@ -8,6 +8,9 @@
 #include "safety.h"
 #include "state.h"
 #include "status.h"
+#ifdef PEARL_DEVICE
+#include "board/device.h"
+#endif
 
 Device dev;
 
@@ -46,6 +49,9 @@ void setup() {
   if (!ok) failed = "pca";
   if (ok) ok = safety::begin(&failed);
   status::beepShort(millis());
+#ifdef PEARL_DEVICE
+  device::begin();  // Wi-Fi, keys, run task, API (the safety loop below keeps running regardless)
+#endif
   hello();
   dev.lastHbMs = millis();
   if (ok) dev.state = DevState::IDLE;

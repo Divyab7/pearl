@@ -23,6 +23,9 @@ inline void jsString(std::string& out, const std::string& s) { jsString(out, s.d
 bool parseExact(const char* text, JsonDocument& doc);
 bool parseExact(const std::string& text, JsonDocument& doc);
 
+/** "2026-11-06T05:22:09.120Z" → milliseconds since the Unix epoch (UTC; no libc timegm on the ESP32). 0 if malformed. */
+uint64_t isoToEpochMs(const std::string& iso);
+
 /** Canonical JSON of an ArduinoJson value. Returns false (and leaves `out` partial) for non-finite numbers. */
 bool canonical(JsonVariantConst v, std::string& out);
 std::string canonical(JsonVariantConst v);

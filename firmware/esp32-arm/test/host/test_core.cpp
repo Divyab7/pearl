@@ -57,3 +57,10 @@ TEST(hex_and_base64_round_trip) {
   CHECK_EQ(base64(utf8("abc")), std::string("YWJj"));
   CHECK_EQ(base64url(utf8("\xfb\xff").data(), 2), std::string("-_8"));
 }
+
+TEST(iso_time_to_epoch_ms) {
+  CHECK_EQ(isoToEpochMs("2026-11-06T05:22:00.000Z"), 1793942520000ULL);  // Date.parse in Node
+  CHECK_EQ(isoToEpochMs("1970-01-01T00:00:00.001Z"), 1ULL);
+  CHECK_EQ(isoToEpochMs("2024-02-29T23:59:59.999Z"), 1709251199999ULL);
+  CHECK_EQ(isoToEpochMs("nonsense"), 0ULL);
+}

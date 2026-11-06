@@ -141,6 +141,19 @@ static bool enc(JsonVariantConst v, std::string& out) {
 
 bool canonical(JsonVariantConst v, std::string& out) { return enc(v, out); }
 
+uint64_t isoToEpochMs(const std::string& iso) {
+  int y, mo, d, h, mi, s, ms = 0;
+  if (sscanf(iso.c_str(), "%d-%d-%dT%d:%d:%d.%dZ", &y, &mo, &d, &h, &mi, &s, &ms) < 6) return 0;
+  // days from civil (H. Hinnant's algorithm)
+  y -= mo <= 2;
+  long era = (y >= 0 ? y : y - 399) / 400;
+  long yoe = y - era * 400;
+  long doy = (153 * (mo + (mo > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+  long doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+  long long days = era * 146097LL + doe - 719468;
+  return static_cast<uint64_t>(((days * 24 + h) * 60 + mi) * 60 + s) * 1000ULL + static_cast<uint64_t>(ms);
+}
+
 // ---------------------------------------------------------------- exact parser
 namespace {
 struct Parser {
