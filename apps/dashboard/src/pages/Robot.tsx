@@ -34,7 +34,7 @@ function RunPage({ live, account, runId }: { live: Live; account: any; runId: st
       <div className="page rb-page">
         <a className="rb-back" href={to.robot()}><Icon name="arrow" size={14} /> <span>Robot and all runs</span></a>
         <RunStory episodeId={EXAMPLE_ID} mode="public" titleAs="h1" example={EXAMPLE}
-          actions={<a className="btn ghost" href={to.verify()}>Check a real run</a>} />
+ />
       </div>
     );
   }
@@ -53,7 +53,6 @@ function RunPage({ live, account, runId }: { live: Live; account: any; runId: st
         lockedReason={account === undefined ? "Checking your sign-in…" : u.reason}
         lockedAction={action}
         lockedPublic={account === null}
-        actions={<a className="btn ghost" href={to.verify(runId)}>Share proof</a>}
       />
     </div>
   );
@@ -109,7 +108,7 @@ function RobotHome({ live }: { live: Live }) {
         <section className="rb-offline" aria-label="Live view">
           {live.connected === null && !state ? <Skeleton height={280} label="Connecting to the robot" /> : (
             <EmptyState icon="offline" title="The robot is offline">
-              Its runs are still listed below from their public labels, and you can still unlock them with your key.
+              Its runs are still listed below from a live Arkiv query, and you can still unlock them with your key.
             </EmptyState>
           )}
         </section>
@@ -495,8 +494,8 @@ function RunsSection({ live }: { live: Live }) {
   const items: any[] = list?.items ?? [];
   const visible = items.slice(0, shown);
   const verdict = useVerdicts(visible.map((e) => e.episodeId), list?.device);
-  const source = list?.source === "arkiv" ? "Read from Arkiv, the public search labels the robot writes for each run."
-    : list?.source === "device" ? "Read from the robot itself (the public search labels aren't available right now)." : null;
+  const source = list?.source === "arkiv" ? "A live Arkiv query of the entries the robot writes for each run (outcome, incident, severity, time). It works even when the robot is offline."
+    : list?.source === "device" ? "Read from the robot itself (Arkiv isn't reachable right now)." : null;
   return (
     <Section
       title="Runs"

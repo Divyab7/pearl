@@ -1,15 +1,16 @@
 // The shells, loaded on demand (App.tsx lazy-loads this module, so the landing page ships without it).
-// PUBLIC (#/verify): a light top bar (Pearl · Verify a record · Open the app) and a footer.
+// PUBLIC (#/verify): a light top bar (Pearl · Sign in) and a footer. Verify is never in a menu: it's reached from a
+// "Share proof link" (every run and claim) or the landing's "Try altering a record".
 // APP (#/app/...): a left sidebar per workspace (Owner / Insurer), collapsible on tablets, a top bar + drawer on
 // phones; the demo banner when a demo workspace is on. Routes and redirects: router.ts. Demo plumbing: lib/demo.ts.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { post, short, useLive } from "./api";
 import { to, type Route, type Workspace } from "./router";
 import { Icon, Spinner } from "./components/ui";
-import { EmptyState, StatusPill } from "./components/blocks";
+import { EmptyState, InfoTip } from "./components/blocks";
 import { accountChanged, useAccount, useInsurerSession } from "./lib/account";
 import { DemoUnavailable, enterDemo, exitDemo, type DemoRole } from "./lib/demo";
-import { ROBOT_LINK, robotName } from "./lib/words";
+import { ROBOT_LINK, SPONSOR_LINE, robotName } from "./lib/words";
 import { Overview } from "./pages/Overview";
 import { InsurerClaimsPage, InsurerPoolPage, InsurerSettingsPage, OwnerClaimsPage } from "./pages/Insurance";
 import { Robot } from "./pages/Robot";
@@ -36,10 +37,12 @@ function useMedia(q: string) {
 }
 
 const TITLE: Record<string, string> = {
-  "public/verify": "Verify a record", "public/kit": "Kit", "app/chooser": "Choose a workspace",
+  "public/verify": "Shared proof", "public/kit": "Kit", "app/chooser": "Sign in",
   "owner/overview": "Overview", "owner/robot": "Robot", "owner/run": "Run", "owner/claims": "Claims", "owner/offline": "Works without internet",
   "owner/settings": "Settings", "insurer/claims": "Claims", "insurer/pool": "Pool", "insurer/settings": "Settings",
 };
+/** The workspace's full name, everywhere it's shown. */
+const WS_NAME: Record<Workspace, string> = { owner: "Robot owner", insurer: "Insurer" };
 const routeKey = (r: Route) => ("ws" in r ? `${r.ws}/${r.page}` : `${r.shell}/${r.page}`);
 
 export default function Shells({ route, demoRole }: { route: Route; demoRole: DemoRole | null }) {
@@ -49,7 +52,7 @@ export default function Shells({ route, demoRole }: { route: Route; demoRole: De
 
   useEffect(() => {
     const name = TITLE[key] ?? "Page not found";
-    const ws = "ws" in route ? (route.ws === "owner" ? "Owner" : "Insurer") : "";
+    const ws = "ws" in route ? WS_NAME[route.ws] : "";
     document.title = [name, ws, demoRole ? "Demo" : "", "Pearl"].filter(Boolean).join(" · ");
   }, [key, demoRole]);
   // new page → start at the top and move focus to the page's heading (screen readers hear where they are). Sections
@@ -89,7 +92,7 @@ function DemoBanner({ role }: { role: DemoRole }) {
     <div className="demobar" role="region" aria-label="Demo workspace">
       <span className="demobar-text">
         <span className="demobar-tag">Demo</span>
-        <span><b>Demo workspace</b> — sample data, not the live robot<span className="demobar-role"> · {role === "owner" ? "owner" : "insurer"} view</span></span>
+        <span><b>Demo workspace</b> — sample data, not the live robot<span className="demobar-role"> · {role === "owner" ? "robot owner" : "insurer"} view</span></span>
       </span>
       <button type="button" className="demobar-exit" disabled={busy} onClick={() => { setBusy(true); void exitDemo(); }}>
         {busy ? <Spinner label="Leaving the demo" /> : <Icon name="logout" size={14} />} Exit demo
@@ -117,15 +120,12 @@ function ServiceStrips({ live, route }: { live: Live; route: Route }) {
 }
 
 // ================================================================ public shell
-function PublicTopBar({ current }: { current?: "verify" }) {
+function PublicTopBar() {
   return (
     <header className="topbar pub-top">
       <Brand />
-      <nav className="pub-nav" aria-label="Main">
-        <a href={to.verify()} className={current === "verify" ? "on" : ""} aria-current={current === "verify" ? "page" : undefined}>Verify a record</a>
-      </nav>
       <div className="topbar-side">
-        <a className="btn primary" href={to.app()}>Open the app</a>
+        <a className="btn primary" href={to.app()}>Sign in</a>
       </div>
     </header>
   );
@@ -135,7 +135,7 @@ function PublicShell({ route, live, demoRole }: { route: Route; live: Live; demo
   return (
     <div className="shell pub">
       <SkipLink />
-      <PublicTopBar current={route.page === "verify" ? "verify" : undefined} />
+      <PublicTopBar />
       {demoRole && <DemoBanner role={demoRole} />}
       <main id="main" tabIndex={-1}>
         {route.page === "verify" ? <Proof tick={live.tick} runId={route.runId} tamper={route.tamper} />
@@ -143,10 +143,10 @@ function PublicShell({ route, live, demoRole }: { route: Route; live: Live; demo
             : <NotFound home={to.landing()} />}
       </main>
       <footer className="foot pub-foot small">
-        <span><b>Pearl</b> · locked on the robot, checkable by anyone</span>
+        <span><b>Pearl</b> · sealed on 0G, searchable on Arkiv, claimed with World ID</span>
         <nav aria-label="Footer" className="pub-foot-nav">
-          <a href={to.verify()}>Verify a record</a>
-          <a href={to.app()}>Open the app</a>
+          <a href={to.landing()}>Home</a>
+          <a href={to.app()}>Sign in</a>
           <a href={to.demo("insurer")}>Insurer demo</a>
           <a href={to.demo("owner")}>Owner demo</a>
         </nav>
@@ -165,36 +165,67 @@ function NotFound({ home }: { home: string }) {
   );
 }
 
-// ================================================================ workspace chooser (#/app)
+// ================================================================ sign-in / workspace page (#/app)
+// Split layout (owner's design A): LEFT the brand panel (photo, the promise, what each sponsor does; the logo goes Home),
+// RIGHT "I am… Insurer | Robot owner", then for that role one big "Explore the demo" and, under "or use your account",
+// the real sign-in. Phones: the brand panel folds into a compact header above the form.
+const SIGNIN_WHY: Record<Workspace, string> = {
+  owner: "World ID proves you are a real, unique person and lets you link your robot, without sharing who you are. Claims ask for a fresh World ID check too, so nobody with your laptop can claim for you.",
+  insurer: "The insurer desk is opened by the insurance company's wallet. You sign a one-time message: it proves you hold the wallet and moves no money.",
+};
+const ROLE_LINE: Record<Workspace, string> = {
+  insurer: "Review claimed incidents against their sealed proof, approve or decline, and pay from the pool on 0G Chain.",
+  owner: "Watch your robot, see every sealed run, share a proof link and claim an incident's insurance payout.",
+};
+const DEMO_LINE: Record<Workspace, string> = {
+  insurer: "Opens the insurer desk on sample claims. No wallet needed.",
+  owner: "Opens a sample robot with sealed runs and a claimable incident.",
+};
+
 function ChooserShell({ route, live, demoRole }: { route: Extract<Route, { page: "chooser" }>; live: Live; demoRole: DemoRole | null }) {
   return (
-    <div className="shell pub">
+    <div className="shell signin-shell">
       <SkipLink />
-      <header className="topbar pub-top">
-        <Brand />
-        <nav className="pub-nav" aria-label="Main"><a href={to.verify()}>Verify a record</a></nav>
-      </header>
       {demoRole && <DemoBanner role={demoRole} />}
-      <main id="main" tabIndex={-1}>
-        <Chooser tick={live.tick} demo={route.demo} demoRole={demoRole} />
-      </main>
+      <Chooser tick={live.tick} demo={route.demo} demoRole={demoRole} />
     </div>
+  );
+}
+
+function BrandPanel() {
+  return (
+    <aside className="signin-brand" aria-label="About Pearl">
+      <Brand />
+      <figure className="signin-photo">
+        <img src="/img/factory-800.webp" srcSet="/img/factory-640.webp 640w, /img/factory-800.webp 800w" sizes="(max-width: 900px) 0px, 520px" width={800} height={533} alt="Orange industrial robot arms working along an assembly line" decoding="async" />
+      </figure>
+      <p className="signin-promise">Insure robots with evidence nobody can fake.</p>
+      <div className="signin-built">
+        <span className="signin-built-k">Built on 0G · Arkiv · World ID</span>
+        <ul>
+          <li><b>0G</b><span>{SPONSOR_LINE.og}</span></li>
+          <li><b>Arkiv</b><span>{SPONSOR_LINE.arkiv}</span></li>
+          <li><b>World ID</b><span>{SPONSOR_LINE.world}</span></li>
+        </ul>
+      </div>
+    </aside>
   );
 }
 
 function Chooser({ tick, demo, demoRole }: { tick: number; demo?: Workspace; demoRole: DemoRole | null }) {
   const { account } = useAccount(tick);
   const insurer = useInsurerSession(tick);
+  const [role, setRole] = useState<Workspace>(demoRole ?? "insurer");
   const [busy, setBusy] = useState<DemoRole | null>(null);
   const [err, setErr] = useState("");
-  const start = async (role: DemoRole) => {
-    setBusy(role);
+  const start = async (r: DemoRole) => {
+    setBusy(r);
     setErr("");
     try {
-      await enterDemo(role);
-      location.replace(role === "owner" ? to.overview() : to.insurer());
+      await enterDemo(r);
+      location.replace(r === "owner" ? to.overview() : to.insurer());
     } catch (e) {
-      setErr(e instanceof DemoUnavailable ? "Demo isn't available on this server. You can still sign in, or verify any record." : "The demo didn't start. Try again.");
+      setErr(e instanceof DemoUnavailable ? "The demo isn't available on this server. You can still sign in below." : "The demo didn't start. Try again.");
       setBusy(null);
       history.replaceState(null, "", to.app());
     }
@@ -209,64 +240,70 @@ function Chooser({ tick, demo, demoRole }: { tick: number; demo?: Workspace; dem
   }, [demo]);
 
   if (demo && busy) {
-    return <div className="page narrow chooser-wait" role="status"><Spinner label="Opening" /> Opening the {demo} demo workspace…</div>;
+    return <main id="main" tabIndex={-1} className="page narrow chooser-wait" role="status"><Spinner label="Opening" /> Opening the {demo === "owner" ? "robot owner" : "insurer"} demo…</main>;
   }
-  const ownerIn = !!account;
-  const insurerIn = !!insurer?.signedIn;
+  const signedIn = role === "owner" ? !!account : !!insurer?.signedIn;
+  const who = role === "owner" ? (account ? `verified human · ${short(account.accountId, 4)}` : "") : insurer?.signedIn ? `insurer wallet ${short(insurer.address)}` : "";
+  const home = role === "owner" ? to.overview() : to.insurer();
   return (
-    <div className="page chooser">
-      <header className="chooser-head">
-        <h1>Choose a workspace</h1>
-        <p className="lead">Try either side on sample data, or sign in to the real one.</p>
-      </header>
-      {err && <div className="chooser-err" role="alert"><Icon name="alert" size={16} /> {err}</div>}
-      {demoRole && (
-        <div className="chooser-cont">
-          <span>You're in the <b>{demoRole} demo</b>.</span>
-          <a className="btn primary" href={demoRole === "owner" ? to.overview() : to.insurer()}>Continue the demo <Icon name="arrow" size={14} /></a>
+    <div className="signin">
+      <BrandPanel />
+      <main id="main" tabIndex={-1} className="signin-main">
+        <div className="signin-card">
+          <header className="signin-head">
+            <h1>Sign in to Pearl</h1>
+            <p className="muted">Explore on sample data, or use your account.</p>
+          </header>
+          <fieldset className="seg" aria-describedby="signin-role-line">
+            <legend>I am…</legend>
+            <div className="seg-track">
+            {(["insurer", "owner"] as const).map((r) => (
+              <label key={r} className={`seg-opt ${role === r ? "on" : ""}`}>
+                <input type="radio" name="signin-role" value={r} checked={role === r} onChange={() => setRole(r)} />
+                <Icon name={r === "owner" ? "robot" : "shield"} size={16} />
+                {r === "owner" ? "Robot owner" : "Insurer"}
+              </label>
+            ))}
+            </div>
+          </fieldset>
+          <p className="signin-role-line" id="signin-role-line">{ROLE_LINE[role]}</p>
+          {err && <div className="chooser-err" role="alert"><Icon name="alert" size={16} /> {err}</div>}
+
+          {demoRole ? (
+            <div className="signin-demo">
+              <a className="btn primary lg signin-cta" href={demoRole === "owner" ? to.overview() : to.insurer()}>
+                Continue the {demoRole === "owner" ? "robot owner" : "insurer"} demo <Icon name="arrow" size={16} />
+              </a>
+              <p className="muted small">Exit the demo (top of the page) to use a real account.</p>
+            </div>
+          ) : (
+            <div className="signin-demo">
+              <button type="button" className="btn primary lg signin-cta" disabled={!!busy} onClick={() => start(role)}>
+                {busy === role ? <><Spinner label="Starting" /> Opening the demo…</> : <>Explore the demo <span className="signin-cta-sub">sample data, no sign-in</span> <Icon name="arrow" size={16} /></>}
+              </button>
+              <p className="muted small">{DEMO_LINE[role]}</p>
+            </div>
+          )}
+
+          <div className="signin-or" role="separator" aria-label="or use your account"><span>or use your account</span></div>
+
+          <div className="signin-real">
+            {signedIn ? (
+              <a className={`btn lg signin-real-btn ${demoRole ? "is-off" : ""}`} href={demoRole ? undefined : home} aria-disabled={demoRole ? true : undefined}>
+                <Icon name="check" size={16} /> Continue as {who}
+              </a>
+            ) : (
+              <a className={`btn lg signin-real-btn ${demoRole ? "is-off" : ""}`} href={demoRole ? undefined : role === "owner" ? to.settings() : to.insurerSettings()} aria-disabled={demoRole ? true : undefined}>
+                <Icon name={role === "owner" ? "user" : "wallet"} size={16} /> {role === "owner" ? "Sign in with World ID" : "Connect insurer wallet"}
+              </a>
+            )}
+            <span className="signin-why">Why {role === "owner" ? "World ID" : "a wallet"}?<InfoTip text={SIGNIN_WHY[role]} label={role === "owner" ? "Why World ID?" : "Why a wallet?"} /></span>
+          </div>
+          <p className="signin-foot muted small"><a href={to.landing()}>← Back to the home page</a></p>
         </div>
-      )}
-      <section aria-labelledby="ch-demo" className="chooser-group">
-        <h2 id="ch-demo" className="chooser-label">Try it on sample data</h2>
-        <div className="chooser-grid">
-          <WsCard icon="wallet" title="Try the insurer demo" tag="Sample data" busy={busy === "insurer"} disabled={!!busy} onClick={() => start("insurer")}
-            body="Review a claimed incident, check its sealed proof, approve it and watch the pool pay." />
-          <WsCard icon="robot" title="Try the owner demo" tag="Sample data" busy={busy === "owner"} disabled={!!busy} onClick={() => start("owner")}
-            body="See a robot's sealed runs, open an incident and claim the insurance payout." />
-        </div>
-      </section>
-      <section aria-labelledby="ch-real" className="chooser-group">
-        <h2 id="ch-real" className="chooser-label">The real workspace</h2>
-        <div className="chooser-grid">
-          <WsCard icon="user" title={ownerIn ? "Continue as owner" : "Sign in as owner"} tag={ownerIn ? "Signed in" : "World ID"} tone={ownerIn ? "ok" : undefined}
-            href={ownerIn ? to.overview() : to.settings()} disabled={!!demoRole}
-            body={ownerIn ? `Verified human · ${short(account.accountId, 4)}` : "Watch your robot live, unlock its runs, claim incidents."} />
-          <WsCard icon="shield" title={insurerIn ? "Continue as insurer" : "Sign in as insurer"} tag={insurerIn ? "Signed in" : "Wallet"} tone={insurerIn ? "ok" : undefined}
-            href={insurerIn ? to.insurer() : to.insurerSettings()} disabled={!!demoRole}
-            body={insurerIn ? `Insurer wallet ${short(insurer.address)}` : "Review claims with your insurer wallet and pay from the pool."} />
-        </div>
-        {demoRole && <p className="muted small">Exit the demo to use the real workspace.</p>}
-      </section>
-      <p className="chooser-foot muted small">Just checking a record? <a href={to.verify()}>Verify it without signing in</a>.</p>
+      </main>
     </div>
   );
-}
-
-function WsCard({ icon, title, body, tag, tone, href, onClick, busy, disabled }: {
-  icon: string; title: string; body: string; tag: string; tone?: "ok"; href?: string; onClick?: () => void; busy?: boolean; disabled?: boolean;
-}) {
-  const inner = (
-    <>
-      <span className="ws-icon" aria-hidden><Icon name={icon} size={20} /></span>
-      <span className="ws-main">
-        <span className="ws-title">{title}{busy && <Spinner label="Starting" />}</span>
-        <span className="ws-body">{body}</span>
-      </span>
-      <span className={`ws-tag ${tone ? `tone-${tone}` : ""}`}>{tag}</span>
-    </>
-  );
-  if (href && !disabled) return <a className="wscard" href={href}>{inner}</a>;
-  return <button type="button" className="wscard" onClick={onClick} disabled={disabled}>{inner}</button>;
 }
 
 // ================================================================ app shell (sidebar)
@@ -347,7 +384,7 @@ function AppShell({ route, live, demoRole }: { route: Exclude<Route, { page: "ch
             <MenuIcon />
           </button>
           <Brand href={to.app()} />
-          <span className="app-top-ws">{ws === "owner" ? "Owner" : "Insurer"}{demoRole && <span className="ws-demo">Demo data</span>}</span>
+          <span className="app-top-ws">{WS_NAME[ws]}{demoRole && <span className="ws-demo">Demo</span>}</span>
         </header>
       )}
       {mobile && drawer && <div className="side-scrim" aria-hidden onClick={() => setDrawer(false)} />}
@@ -356,7 +393,7 @@ function AppShell({ route, live, demoRole }: { route: Exclude<Route, { page: "ch
         id="app-side"
         ref={sideRef}
         className={`side ${drawer ? "open" : ""}`}
-        aria-label={`${ws === "owner" ? "Owner" : "Insurer"} workspace`}
+        aria-label={`${WS_NAME[ws]} workspace`}
         {...(mobile && drawer ? { role: "dialog", "aria-modal": true } : { role: "complementary" })}
         {...(hidden ? { inert: true, "aria-hidden": true } : {})}
       >
@@ -374,11 +411,11 @@ function AppShell({ route, live, demoRole }: { route: Exclude<Route, { page: "ch
           <span className="side-ws-icon" aria-hidden><Icon name={ws === "owner" ? "robot" : "wallet"} size={16} /></span>
           <span className="side-ws-text">
             <span className="side-ws-eyebrow">Workspace</span>
-            <span className="side-ws-name">{ws === "owner" ? "Owner" : "Insurer"}</span>
+            <span className="side-ws-name">{WS_NAME[ws]}</span>
+            {demoRole && <span className="ws-demo">Demo · sample data</span>}
           </span>
-          {demoRole && <span className="ws-demo">Demo data</span>}
           <span className="sr-only">. Switch workspace</span>
-          <span className="side-ws-caret"><Icon name="down" size={14} /></span>
+          <span className="side-ws-caret" aria-hidden><Icon name="chevron" size={14} /></span>
         </a>
         <nav className="side-nav" aria-label="Pages">
           {NAV[ws].map((g) => (
@@ -398,12 +435,6 @@ function AppShell({ route, live, demoRole }: { route: Exclude<Route, { page: "ch
               </ul>
             </div>
           ))}
-          <div className="side-group" role="group" aria-labelledby="sg-public">
-            <div className="side-group-label" id="sg-public">Public</div>
-            <ul>
-              <li><a href={to.verify()} title={collapsed ? "Verify a record" : undefined}><Icon name="shield" size={17} /><span className="side-label">Verify a record</span></a></li>
-            </ul>
-          </div>
         </nav>
         <div className="side-foot">
           {ws === "owner" && <RobotStatus live={live} collapsed={collapsed} />}
@@ -442,7 +473,7 @@ function Identity({ ws, tick, demoRole, collapsed }: { ws: Workspace; tick: numb
   const { account, refresh } = useAccount(tick, ws === "owner");
   const insurer = useInsurerSession(tick);
   const signedIn = ws === "owner" ? !!account : !!insurer?.signedIn;
-  const name = demoRole ? (ws === "owner" ? "Demo owner" : "Demo insurer") : signedIn ? (ws === "owner" ? "Verified human" : "Insurer wallet") : "Not signed in";
+  const name = demoRole ? (ws === "owner" ? "Demo robot owner" : "Demo insurer") : signedIn ? (ws === "owner" ? "Verified human" : "Insurer wallet") : "Not signed in";
   const detail = ws === "owner" ? (account ? short(account.accountId, 4) : "World ID") : insurer?.signedIn ? short(insurer.address) : "Wallet";
   const signOut = () => (ws === "owner" ? post("/api/auth/logout").then(refresh) : post("/api/insurer/logout").then(accountChanged)).catch(() => {});
   return (

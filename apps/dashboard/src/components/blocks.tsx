@@ -252,3 +252,33 @@ export function Stat({ value, label, hint, tone, info, size }: { value: ReactNod
     </div>
   );
 }
+
+/**
+ * ShareProofButton: copies the public proof link of a run (#/verify/<id>, as a full URL) and says "Proof link copied"
+ * in a toast. With the landing's "Try altering a record", the only way into Verify: every run story and every claim.
+ */
+export function ShareProofButton({ episodeId, small = false }: { episodeId: string; small?: boolean }) {
+  const [toast, setToast] = useState<"" | "ok" | "manual">("");
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const url = `${location.origin}${location.pathname}#/verify/${encodeURIComponent(episodeId)}`;
+  const share = () => {
+    const done = (k: "ok" | "manual") => {
+      setToast(k);
+      clearTimeout(timer.current);
+      timer.current = setTimeout(() => setToast(""), k === "ok" ? 2400 : 8000);
+    };
+    if (navigator.clipboard) navigator.clipboard.writeText(url).then(() => done("ok"), () => done("manual"));
+    else done("manual");
+  };
+  return (
+    <>
+      <button type="button" className={`btn ${small ? "small-btn" : ""}`} onClick={share} title="Copies a public link anyone can open to check this run. No account needed.">
+        <Icon name="copy" size={small ? 14 : 15} /> Share proof link
+      </button>
+      <span className={`toast ${toast ? "on" : ""}`} role="status" aria-live="polite">
+        {toast === "ok" ? <><Icon name="check" size={15} /> Proof link copied</> : toast === "manual" ? <>Copy this proof link: <code className="mono">{url}</code></> : null}
+      </span>
+    </>
+  );
+}

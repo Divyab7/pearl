@@ -1,12 +1,15 @@
-// Proof (public): anyone checks a run was not altered, and can watch a one-byte edit get caught. No sign-in; the run's
-// contents stay locked. Plain words up front; fingerprints, contracts and the five technical checks live in
-// <TechDetails>.
+// Verify (public, #/verify/<id>): the page a shared proof link opens. "A sealed robot record shared with you", the
+// verdict, what it proves (0G Chain · 0G Storage · the robot's signature · Arkiv), the one-byte tamper demo and the
+// claims on this run from Arkiv. No account needed; the contents stay locked. Reached only from "Share proof link"
+// (every run and claim) and the landing's "Try altering a record"; with no id it opens the newest verified run.
+// Plain words up front; fingerprints, contracts and the five technical checks live in <TechDetails>.
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { get, useConfig } from "../api";
 import { go, to } from "../router";
 import { tamperPublic, useRuns, fullWhen, shortWhen, dayOf } from "../components/run";
 import { EmptyState, ErrorState, PlainError, RunRow, Section, Skeleton, StatusPill, TechDetails, InfoTip } from "../components/blocks";
 import { Amount, Chip, Icon, Spinner, Verdict, verdictOf, type Tone, type VerdictKind } from "../components/ui";
+import { ShareProofButton } from "../components/blocks";
 import { ARKIV_EXPLORER } from "../components/claims";
 import { CLAIM_STATE, OUTCOME_TONE, TIP, isTechy, outcomeWord } from "../lib/words";
 import "./proof.css";
@@ -53,10 +56,10 @@ const PLAIN: Record<number, { title: string; pass: string; missing: string; fail
   5: { title: "Remote command receipt", pass: "", missing: "", fail: "The remote start command doesn't match its receipt." },
 };
 
-function PlainChecks({ checks }: { checks: Check[] }) {
+function PlainChecks({ checks, arkiv }: { checks: Check[]; arkiv: boolean | null }) {
   const shown = checks.filter((c) => c.id === 1 || c.id === 2 || c.id === 4 || (c.status === "FAIL" && !c.missing));
   return (
-    <ul className="pf-checks" aria-label="What we checked">
+    <ul className="pf-checks" aria-label="What this proves">
       {shown.map((c) => {
         const p = PLAIN[c.id]!;
         const st = c.status === "PASS" ? "ok" : c.status === "SKIPPED" ? "skip" : c.missing ? "warn" : "bad";
@@ -73,6 +76,16 @@ function PlainChecks({ checks }: { checks: Check[] }) {
           </li>
         );
       })}
+      {arkiv !== null && (
+        <li className={`pf-check st-${arkiv ? "ok" : "skip"}`}>
+          <span className="pf-check-mark" aria-hidden><Icon name={arkiv ? "check" : "minus"} size={14} /></span>
+          <span className="pf-check-text">
+            <b>Listed on Arkiv<InfoTip text={TIP.arkiv} /></b>
+            <span>{arkiv ? "The robot wrote its own public, searchable entry for this run. Anyone can query it." : "Not in the Arkiv list right now (entries expire after 30 days). The proof on 0G is permanent."}</span>
+          </span>
+          <span className="sr-only">: {arkiv ? "Yes" : "Not listed"}</span>
+        </li>
+      )}
     </ul>
   );
 }
@@ -97,10 +110,10 @@ function TechChecks({ checks }: { checks: Check[] }) {
 }
 
 /** One plain sentence under the big word. */
-function verdictLine(kind: VerdictKind, notFound: boolean, checks: Check[], v: any) {
-  if (notFound) return "We found no record of this run. Check the id is right; a run that just finished can take a minute to appear.";
+function verdictLine(kind: VerdictKind, notFound: boolean, checks: Check[], v: any, arkiv: boolean | null) {
+  if (notFound) return "We found no record of this run. Check the link is complete; a run that just finished can take a minute to appear.";
   const robot = v.source === "robot" ? " (The stored copy was read from the robot itself.)" : "";
-  if (kind === "ok") return `Matches exactly what the robot signed and recorded on 0G. Nobody has altered it.${robot}`;
+  if (kind === "ok") return `Recorded on 0G Chain, stored on 0G Storage, signed by the robot${arkiv ? " and listed on Arkiv" : ""}. Nobody has altered it.${robot}`;
   if (kind === "incomplete") {
     const gone = checks.filter((c) => c.status === "FAIL").map((c) => PLAIN[c.id]?.title.toLowerCase() ?? c.name);
     return `Part of the proof is missing (${gone.join(", ")}), so we can't confirm it yet. Nothing shows it was changed.`;
@@ -168,9 +181,9 @@ function TryIt({ runId, v, kind, autoStart = false }: { runId: string; v: any; k
   return (
     <section className={`pf-try ${edited ? "done" : ""}`} aria-labelledby={hid}>
       <div className="pf-try-head">
-        <span className="eyebrow">Try it</span>
-        <h2 id={hid} className="sect-title">What if someone edits it?</h2>
-        <p className="sect-desc">We copy this run's locked file, change a single byte, then check the copy the same way.</p>
+        <span className="eyebrow">Try it yourself</span>
+        <h2 id={hid} className="sect-title">What if someone changes it?</h2>
+        <p className="sect-desc">We copy this run's locked file, change a single byte, then check the copy against 0G Chain the same way.</p>
       </div>
       <div className="pf-try-pair">
         <Verdict kind={kind} compact title="Original" label={kind === "ok" ? "Matches 0G Chain." : "Same as the result."} />
@@ -190,10 +203,10 @@ function TryIt({ runId, v, kind, autoStart = false }: { runId: string; v: any; k
       {err && <PlainError raw={err} fallback="Couldn't make the edited copy right now. Try again." onRetry={run} />}
       <div className="row">
         {!edited
-          ? <button type="button" className="btn primary lg" onClick={run} disabled={!can || busy}>{busy ? <><Spinner label="Editing and checking" /> Checking the copy…</> : <><Icon name="spark" /> Edit 1 byte</>}</button>
+          ? <button type="button" className="btn primary lg" onClick={run} disabled={!can || busy}>{busy ? <><Spinner label="Changing and checking" /> Checking the copy…</> : <>Change one byte <Icon name="arrow" /></>}</button>
           : <button type="button" className="btn" onClick={() => setEdited(null)}>Reset the demo</button>}
         {!can && <span className="muted small">Needs a run whose locked file can be read.</span>}
-        {can && !edited && <span className="muted small">Only a copy changes. The real record stays as it is.</span>}
+        {can && !edited && <span className="muted small">Only a copy changes. The real record stays exactly as it is.</span>}
       </div>
     </section>
   );
@@ -215,10 +228,10 @@ function ClaimsHere({ runId, tick }: { runId: string; tick: number }) {
   }, [runId, tick]);
   if (r && !r.configured) return null;
   return (
-    <Section title="Insurance claims on this run" info="Read from Arkiv, where the insurer publishes each claim's status and amount. Never who claimed." className="pf-claims">
+    <Section title="Claims on this run" description="A live Arkiv query of the insurer desk's claim records." info={TIP.arkivClaims} className="pf-claims">
       {err && <p className="muted small"><Icon name="alert" size={12} /> Couldn't read the claims right now.</p>}
       {!r && !err && <Skeleton lines={1} label="Reading claims" />}
-      {r && !r.items.length && <p className="muted">No claims on this run.</p>}
+      {r && !r.items.length && <p className="muted">No insurance claims on this run.</p>}
       {r?.items.length > 0 && (
         <ul className="pf-claimlist">
           {r.items.map((c: any) => {
@@ -380,25 +393,61 @@ export function Proof({ tick, runId, tamper = false }: { tick: number; runId?: s
   const recorded = v?.anchor ? new Date(v.anchor.anchoredAt * 1000) : null;
   const addr = (a?: string | null) => (a && cfg.explorer ? `${cfg.explorer}/address/${a}` : null);
 
+  // no id: open the newest VERIFIED run, so the first view shows what success looks like
+  const [auto, setAuto] = useState<"finding" | "none" | null>(null);
+  useEffect(() => {
+    if (runId) return setAuto(null);
+    if (!runs.items.length) {
+      if (runs.source || runs.err) setAuto("none");
+      return;
+    }
+    let live = true;
+    setAuto("finding");
+    (async () => {
+      for (const e of runs.items.slice(0, 8)) {
+        try {
+          const x = await get(`/api/verify/${encodeURIComponent(e.episodeId)}`);
+          if (verdictOf(x) === "ok") {
+            if (live) location.replace(to.verify(e.episodeId));
+            return;
+          }
+        } catch { /* try the next one */ }
+      }
+      if (live) setAuto("none");
+    })();
+    return () => {
+      live = false;
+    };
+  }, [runId, runs.items.length, !!runs.source]);
+  // shown only when this run is in the Arkiv list we read (the list is the recent runs, so absence proves nothing)
+  const arkiv: boolean | null = runs.source === "arkiv" && listed ? true : null;
+
   return (
     <div className="page proof">
       <header className="pagehead pf-head">
         <div className="pagehead-text">
-          <h1 className="pagehead-title">Has this record been altered?</h1>
-          <p className="pagehead-desc">Check any robot run against what the robot signed and recorded on 0G. No sign-in needed, and the run's contents stay locked.</p>
+          <div className="eyebrow">Shared proof · no account needed</div>
+          <h1 className="pagehead-title">{runId ? "A sealed robot record shared with you" : "Check a sealed robot record"}</h1>
+          <p className="pagehead-desc">An AI on 0G ran the robot and this run was sealed on it, then recorded on 0G and listed on Arkiv. Here anyone can check it hasn't been altered. Its contents stay locked.</p>
         </div>
+        {runId && v?.sealed && <div className="pagehead-actions"><ShareProofButton episodeId={runId} /></div>}
       </header>
-      <SearchBar runId={runId} runs={runs} />
 
-      {!runId && (
+      {!runId && auto !== "none" && (
+        <div className="pf-grid" role="status" aria-label="Finding the newest verified run">
+          <div className="pf-card"><Verdict kind={null} pending /><Skeleton lines={3} /></div>
+          <div className="pf-card"><Skeleton lines={4} /></div>
+        </div>
+      )}
+
+      {!runId && auto === "none" && (
         <div className="pf-grid">
-          <Section title="Pick a recent run" description="Or paste a run id above." actions={runs.source === "arkiv" ? <span className="muted small">Listed on Arkiv<InfoTip text={TIP.arkiv} /></span> : undefined} boxed>
+          <Section title="Pick a recent run" description="Or paste a run id below." actions={runs.source === "arkiv" ? <span className="muted small">Listed on Arkiv<InfoTip text={TIP.arkiv} /></span> : undefined} boxed>
             <RecentRuns runs={runs} limit={6} />
           </Section>
           <div className="pf-side">
-            <EmptyState title="The answer shows here" icon="shield"
-              action={runs.items[0] ? <a className="btn primary" href={to.verify(runs.items[0].episodeId)}>Check the latest run</a> : undefined}>
-              One clear word: <b>Verified</b>, <b>Not verified</b> or <b>Altered</b>. Then try changing a single byte and watch the check catch it.
+            <EmptyState title="The answer shows here" icon="shield">
+              One clear word: <b>Verified</b>, <b>Not verified</b> or <b>Altered</b>. Then change a single byte and watch the check catch it.
             </EmptyState>
           </div>
         </div>
@@ -421,7 +470,7 @@ export function Proof({ tick, runId, tamper = false }: { tick: number; runId?: s
       {runId && v && n && (
         <div className="pf-grid">
           <section className="pf-card pf-result" aria-label="Result">
-            <Verdict kind={n.kind} label={verdictLine(n.kind, n.notFound, n.checks, v)} />
+            <Verdict kind={n.kind} word={n.kind === "ok" ? "Verified ✓ · not altered" : undefined} label={verdictLine(n.kind, n.notFound, n.checks, v, arkiv)} />
             {v.sealed && (
               <p className="pf-runline">
                 <span>Run finished <time dateTime={v.sealed.endedAt}>{fullWhen(v.sealed.endedAt)}</time></span>
@@ -430,9 +479,10 @@ export function Proof({ tick, runId, tamper = false }: { tick: number; runId?: s
                 {loading && <Spinner label="Re-checking" />}
               </p>
             )}
-            {!n.notFound && <PlainChecks checks={n.checks} />}
+            {!n.notFound && <PlainChecks checks={n.checks} arkiv={arkiv} />}
             <div className="pf-result-foot">
               <span className="muted small"><Icon name="lock" size={12} /> Contents stay locked: this check reads fingerprints only.</span>
+              <span className="muted small"><Icon name="spark" size={12} /> The AI that ran it: a TEE-verified model on 0G Compute<InfoTip text={TIP.ogCompute} /></span>
               {v.sealed && <a className="pf-story" href={to.run(runId)}>Your robot? Open the full run story <Icon name="arrow" size={14} /></a>}
             </div>
             <TechDetails>
@@ -458,12 +508,19 @@ export function Proof({ tick, runId, tamper = false }: { tick: number; runId?: s
             {v.sealed ? <TryIt runId={runId} v={v} kind={n.kind} autoStart={tamper} /> : (
               <section className="pf-try">
                 <span className="eyebrow">Try it</span>
-                <p className="muted">The one-byte demo needs a run whose locked file can be read. Pick a recent run to try it.</p>
+                <p className="muted">The one-byte demo needs a run whose locked file can be read. Pick another run below to try it.</p>
               </section>
             )}
             {!n.notFound && <ClaimsHere runId={runId} tick={tick} />}
           </div>
         </div>
+      )}
+
+      {(runId || auto === "none") && (
+        <section className="pf-another" aria-labelledby="pf-another-h">
+          <h2 id="pf-another-h" className="sect-title">Check another run</h2>
+          <SearchBar runId={runId} runs={runs} />
+        </section>
       )}
     </div>
   );

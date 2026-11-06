@@ -405,11 +405,11 @@ const NOTE_COPY: Record<string, string> = {
   "device address unknown": "The robot's address is unknown, so the search index can't be read. Showing runs from the robot.",
 };
 /** Turns backend notes into plain copy (never shows raw env names). */
-export const noteCopy = (n?: string) => (!n ? "" : NOTE_COPY[n] ?? (n.startsWith("Arkiv read failed") ? "Search index unreachable. Showing runs read directly from the robot." : n.includes("unreachable") ? "The robot is unreachable and no search index is available." : n));
+export const noteCopy = (n?: string) => (!n ? "" : NOTE_COPY[n] ?? (n.startsWith("Arkiv read failed") ? "Arkiv isn't reachable right now. Showing runs read directly from the robot." : n.includes("unreachable") ? "The robot is unreachable and no search index is available." : n));
 
 /** Where the run list came from, as a quiet badge: healthy Arkiv says so; a fallback is neutral, never an alarm. */
 export function IndexBadge({ runs }: { runs: any }) {
-  if (runs.source === "arkiv") return <DotLabel tone="ok" title="Public labels written by the robot's own key">Indexed on Arkiv · {runs.items.length} runs</DotLabel>;
+  if (runs.source === "arkiv") return <DotLabel tone="ok" title="Entries the robot writes on Arkiv with its own key">Listed on Arkiv · {runs.items.length} {runs.items.length === 1 ? "run" : "runs"}</DotLabel>;
   if (runs.source === "device") return <span className="source-note" title={noteCopy(runs.note)}>Read from the robot</span>;
   return null;
 }

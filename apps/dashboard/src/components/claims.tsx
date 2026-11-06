@@ -22,7 +22,7 @@ export function ArkivRecord({ arkiv }: { arkiv?: { entityKey: string | null; sta
     <div className="stack-tight">
       {arkiv.entityKey && (
         <div className="row">
-          <span className="muted small nowrap"><Icon name="db" size={12} /> Public record on Arkiv · {arkiv.writes.length} update{arkiv.writes.length === 1 ? "" : "s"}</span>
+          <span className="muted small nowrap"><Icon name="db" size={12} /> Live record on Arkiv · {arkiv.writes.length} update{arkiv.writes.length === 1 ? "" : "s"}</span>
           <Chip label="Arkiv record" value={arkiv.entityKey} href={`${ARKIV_EXPLORER}/entity/${arkiv.entityKey}`} />
         </div>
       )}
@@ -47,7 +47,7 @@ export function RunClaimsOnArkiv({ episodeId, tick }: { episodeId: string; tick?
   }, [episodeId, tick]);
   if (r && !r.configured) return null;
   return (
-    <Card title="Claims on this run" sub={<>Read from Arkiv: the insurer desk's public records. Status, amount and payout only, never who claimed.</>}>
+    <Card title="Claims on this run" sub={<>A live Arkiv query of the insurer desk's claim records. Status, amount and payout only, never who claimed.</>}>
       {err && <p className="small warn-text"><Icon name="alert" size={12} /> {err}</p>}
       {!r && !err && <p className="muted"><Spinner /> Reading Arkiv…</p>}
       {r && !r.items.length && <p className="muted">No claims on this run.</p>}

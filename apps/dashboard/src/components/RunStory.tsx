@@ -9,7 +9,10 @@
 //             titleAs?       "h1" when the story is the page (Robot), "h2" when embedded (default)
 //             startAtIncident? replay opens at the incident
 //             autoUnlock?    unlock as soon as the public check is in (e.g. the insurer opening a claim)
-//             tick?          bump to re-check · onPublic?(v) · onFull?(fc|null) · actions? extra header actions />
+//             tick?          bump to re-check · onPublic?(v) · onFull?(fc|null) · actions? extra header actions
+//             share?         "Share proof link" in the header (default: on for owner/insurer, off on the public page)
+//             hideUnlock?    no unlock button in the header (the insurer's decision panel has the one Unlock)
+//             unlockSignal?  bump to unlock from outside (that decision panel's button) />
 //
 // What anyone sees: the verdict, outcome, incident and severity, timing, and steps 5–6 (locked and signed by the robot,
 // recorded on 0G Chain · 0G Storage · Arkiv). The task, the AI's decisions and the camera photos are encrypted: they
@@ -21,7 +24,7 @@ import { fullCheck, type FullCheck } from "../lib/fullcheck";
 import { to } from "../router";
 import { isTechy, outcomeWord, OUTCOME_TONE, plainError, TIP, VERDICT_BADGE, VERDICT_WORDS } from "../lib/words";
 import { ArmView3D } from "./ArmView3D";
-import { ErrorState, InfoTip, Skeleton, StatusPill, TechDetails } from "./blocks";
+import { ErrorState, InfoTip, ShareProofButton, Skeleton, StatusPill, TechDetails } from "./blocks";
 import { ARKIV_EXPLORER } from "./claims";
 import { CheckList, Chip, CopyButton, Icon, Spinner, verdictOf, type Tone, type VerdictKind } from "./ui";
 import "./runstory.css";
@@ -47,6 +50,9 @@ export interface RunStoryProps {
   lockedPublic?: boolean;
   /** render bundled SAMPLE data (src/example) as an unlocked run, labelled "Example" everywhere, no verify claims */
   example?: { pub: any; meta: any; fc: FullCheck };
+  share?: boolean;
+  hideUnlock?: boolean;
+  unlockSignal?: number;
 }
 
 export const SEVERITY_WORD = ["none", "low", "minor", "serious"] as const;
@@ -207,10 +213,10 @@ function useReplay(kf: ReturnType<typeof keyframes>) {
 // ---------------------------------------------------------------- component
 export function RunStory({
   episodeId, mode, device, unlock, lockedReason, lockedAction, unlockLabel = "Unlock details", titleAs = "h2",
-  startAtIncident = false, autoUnlock = false, tick, actions, onPublic, onFull, lockedPublic = false, example,
+  startAtIncident = false, autoUnlock = false, tick, actions, onPublic, onFull, lockedPublic = false, example, share, hideUnlock, unlockSignal,
 }: RunStoryProps) {
   if (example) return <ExampleStory example={example} titleAs={titleAs} actions={actions} />;
-  return <LiveRunStory {...{ episodeId, mode, device, unlock, lockedReason, lockedAction, unlockLabel, titleAs, startAtIncident, autoUnlock, tick, actions, onPublic, onFull, lockedPublic }} />;
+  return <LiveRunStory {...{ episodeId, mode, device, unlock, lockedReason, lockedAction, unlockLabel, titleAs, startAtIncident, autoUnlock, tick, actions, onPublic, onFull, lockedPublic, share, hideUnlock, unlockSignal }} />;
 }
 
 /** The built-in example: sample data shown as an unlocked run. Labelled everywhere; it claims nothing about proof. */
@@ -253,7 +259,7 @@ function ExampleStory({ example, titleAs = "h2", actions }: { example: NonNullab
 
 function LiveRunStory({
   episodeId, mode, device, unlock, lockedReason, lockedAction, unlockLabel = "Unlock details", titleAs = "h2",
-  startAtIncident = false, autoUnlock = false, tick, actions, onPublic, onFull, lockedPublic = false,
+  startAtIncident = false, autoUnlock = false, tick, actions, onPublic, onFull, lockedPublic = false, share, hideUnlock = false, unlockSignal = 0,
 }: Omit<RunStoryProps, "example">) {
   const cfg = useConfig();
   const [pub, setPub] = useState<any>(null);
@@ -306,6 +312,10 @@ function LiveRunStory({
       setBusy(false);
     }
   };
+  // the decision panel's Unlock (insurer): one button, outside the story
+  useEffect(() => {
+    if (unlockSignal > 0 && unlock && pub?.sealed && !fc && !busy) void doUnlock();
+  }, [unlockSignal]);
   useEffect(() => {
     if (autoUnlock && unlock && pub?.sealed && !fc && !autoDone.current) {
       autoDone.current = true;
@@ -384,7 +394,8 @@ function LiveRunStory({
         </div>
         <div className="rs-head-actions">
           {actions}
-          {canUnlock && (
+          {(share ?? mode !== "public") && s && <ShareProofButton episodeId={episodeId} />}
+          {canUnlock && !hideUnlock && (
             <button type="button" className="btn primary" onClick={doUnlock} disabled={busy}>
               {busy ? <><Spinner label="Unlocking" /> Unlocking…</> : <><Icon name="lock" /> {unlockLabel}</>}
             </button>
@@ -555,11 +566,11 @@ function RecordedItem({ pub, meta, cfg, n }: { pub: any; meta: any; cfg: any; n?
     <li className={`rs-step tone-${tone}`}>
       <span className="rs-n" aria-hidden>{n ?? <Icon name="db" size={14} />}</span>
       <div className="rs-step-main">
-        <div className="rs-step-title">{n ? <Icon name="db" size={15} /> : null} Recorded{pub.anchor?.anchoredAt ? <span className="rs-time">{clock(pub.anchor.anchoredAt * 1000)}</span> : null}</div>
+        <div className="rs-step-title">{n ? <Icon name="db" size={15} /> : null} Recorded on 0G, listed on Arkiv{pub.anchor?.anchoredAt ? <span className="rs-time">{clock(pub.anchor.anchoredAt * 1000)}</span> : null}</div>
         <div className="rs-places">
           {place("0G Chain", okChain, chainHref, TIP.ogChain)}
           {place("0G Storage", okStorage, storageHref, TIP.ogStorage)}
-          {place("Arkiv", meta ? arkivOk : null, arkivHref, TIP.arkiv)}
+          {place("Arkiv · listed by the robot", meta ? arkivOk : null, arkivHref, TIP.arkiv)}
         </div>
         {relay?.via === "laptop" && <p className="rs-step-body rs-relay"><Icon name="offline" size={14} /> Delivered without internet (carried by the laptop)<InfoTip text={TIP.carried} /></p>}
         {relay?.via === "self" && <p className="rs-step-body rs-relay"><Icon name="offline" size={14} /> Kept on the robot while offline, sent once it was back online</p>}

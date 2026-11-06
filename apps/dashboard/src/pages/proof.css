@@ -102,3 +102,7 @@
   .pf-try-vs { transform: rotate(90deg); }
   .pf-try .btn.lg { width: 100%; }
 }
+
+/* check another run (bottom of the page) */
+.pf-another { display: grid; gap: var(--s3); padding-top: var(--s5); border-top: 1px solid var(--border); }
+.pf-result .verdict-word { font-size: 28px; }

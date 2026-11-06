@@ -8,7 +8,7 @@ import { ago, get } from "../api";
 import { Icon } from "../components/ui";
 // the 3D arm (three.js) loads only when its section comes near, so the landing page ships light
 const ArmView3D = lazy(() => import("../components/ArmView3D").then((m) => ({ default: m.ArmView3D })));
-import { BUILT_ON } from "../lib/words";
+import { BUILT_ON, PRODUCT_HOW, SPONSOR_LINE } from "../lib/words";
 import arm from "../../../../config/arm.json";
 // the sample run's camera frames, as small webp variants (public/img) for the story panels
 const planImg = "/img/plan-640.webp";
@@ -21,6 +21,7 @@ export const LANDING_LINKS = {
   insurerDemo: "#/app?demo=insurer",
   ownerDemo: "#/app?demo=owner",
   app: "#/app",
+  /** the Verify page, reached from the landing only through the "Try altering a record" demo */
   verify: (id?: string | null, tamper = false) => (id ? `#/verify/${encodeURIComponent(id)}${tamper ? "/tamper" : ""}` : "#/verify"),
   offline: "#/app/owner/offline",
   github: "https://github.com/Divyab7/pearl",
@@ -106,10 +107,10 @@ export function Landing() {
             <button type="button" onClick={() => scrollToId("lp-story")}>How it works</button>
             <button type="button" onClick={() => scrollToId("lp-insurers")}>Insurers</button>
             <button type="button" onClick={() => scrollToId("lp-owners")}>Robot owners</button>
+            <button type="button" onClick={() => scrollToId("lp-built")}>Built on</button>
           </nav>
           <div className="lp-bar-side">
-            <a className="lp-link lp-hide-sm" href={LANDING_LINKS.verify()}>Verify a record</a>
-            <a className="btn primary lp-btn-sm" href={LANDING_LINKS.app}>Open the app</a>
+            <a className="btn primary lp-btn-sm" href={LANDING_LINKS.app}>Sign in</a>
           </div>
         </div>
       </header>
@@ -128,11 +129,12 @@ export function Landing() {
         <div className="lp-wrap lp-foot-in">
           <div className="lp-foot-brand">
             <a className="brand" href="#/" aria-label="Pearl home"><span className="brand-mark" aria-hidden />Pearl</a>
-            <p>A tamper-proof black box for robots.</p>
+            <p>A tamper-proof black box for robots, built on 0G, Arkiv and World ID.</p>
           </div>
           <nav className="lp-foot-links" aria-label="Footer">
-            <a href={LANDING_LINKS.app}>Open the app</a>
-            <a href={LANDING_LINKS.verify()}>Verify a record</a>
+            <a href={LANDING_LINKS.app}>Sign in</a>
+            <a href={LANDING_LINKS.insurerDemo}>Insurer demo</a>
+            <a href={LANDING_LINKS.ownerDemo}>Owner demo</a>
             <a href={LANDING_LINKS.offline}>Works without internet</a>
             <a href={LANDING_LINKS.github} target="_blank" rel="noreferrer">GitHub <Icon name="ext" size={13} /></a>
           </nav>
@@ -152,19 +154,17 @@ function Hero() {
         <div className="lp-hero-copy">
           <p className="lp-eyebrow rv">Evidence for robot insurance</p>
           <h1 id="lp-hero-h" className="lp-display rv" style={{ "--d": 1 } as React.CSSProperties}>Insure robots with evidence nobody can fake.</h1>
-          <p className="lp-lead rv" style={{ "--d": 2 } as React.CSSProperties}>
-            Pearl is a black box for robots. Every AI decision and camera frame is sealed and signed on the robot, then
-            recorded on 0G. When something goes wrong, claims settle on facts, not on whoever tells the better story.
-          </p>
+          <p className="lp-lead rv" style={{ "--d": 2 } as React.CSSProperties}>{PRODUCT_HOW}</p>
           <div className="lp-ctas rv" style={{ "--d": 3 } as React.CSSProperties}>
             <a className="btn primary lg" href={LANDING_LINKS.insurerDemo}>Try the insurer demo <Icon name="arrow" size={16} /></a>
             <a className="btn lg lp-btn-quiet" href={LANDING_LINKS.ownerDemo}>See the owner demo</a>
           </div>
-          <p className="lp-hero-sub rv" style={{ "--d": 4 } as React.CSSProperties}>
-            <a className="lp-link" href={LANDING_LINKS.verify()}><Icon name="shield" size={15} /> Verify a record</a>
-            <span aria-hidden className="lp-hide-sm">·</span>
-            <span>No sign-up. Demos use labelled sample data.</span>
-          </p>
+          <ul className="lp-sponsors rv" style={{ "--d": 4 } as React.CSSProperties} aria-label="Built on">
+            <li><b>0G</b><span>{SPONSOR_LINE.og}</span></li>
+            <li><b>Arkiv</b><span>{SPONSOR_LINE.arkiv}</span></li>
+            <li><b>World ID</b><span>{SPONSOR_LINE.world}</span></li>
+          </ul>
+          <p className="lp-hero-sub rv" style={{ "--d": 5 } as React.CSSProperties}>No sign-up. The demos use clearly labelled sample data.</p>
         </div>
         <div className="lp-hero-visual rv" style={{ "--d": 2 } as React.CSSProperties}>
           <figure className="lp-photo">
@@ -187,27 +187,30 @@ function Hero() {
   );
 }
 
-/** The hero's "proof sealing" overlay: a record being fingerprinted, locked and recorded, on a calm loop. */
+/** The hero's proof card: one sealed decision, verified, with where its proof lives. Full-strength text (readable in
+ *  light); only the lock and the fingerprint animate, calmly. */
 function SealCard() {
   return (
-    <div className="lp-seal" role="img" aria-label="A robot decision being sealed: fingerprinted, signed by the robot and recorded on 0G Chain">
+    <div className="lp-seal" role="img" aria-label="A sealed robot decision, verified at 10:42: signed on the robot, stored on 0G Storage, recorded on 0G Chain and listed on Arkiv">
       <div className="lp-seal-head">
         <span className="lp-seal-lock" aria-hidden>
           <svg viewBox="0 0 24 24" width="18" height="18"><path className="lp-shackle" d="M8 11V8a4 4 0 0 1 8 0v3" /><rect x="5.5" y="11" width="13" height="9" rx="2" /></svg>
         </span>
-        <div>
+        <div className="lp-seal-title">
           <b>Decision 14 · place cube in bin</b>
           <span>Camera frame + AI reasoning</span>
         </div>
       </div>
+      <div className="lp-seal-ok" aria-hidden>Verified ✓ · not altered<span>10:42</span></div>
       <div className="lp-seal-fp" aria-hidden>
-        {"7cd2f3cf6e1d1828413c".split("").map((c, i) => <i key={i} style={{ "--i": i } as React.CSSProperties}>{c}</i>)}
-        <i className="lp-ell">…</i>
+        <span className="lp-seal-fp-k">Fingerprint</span>
+        <span className="lp-seal-fp-v">{"7cd2f3cf6e1d".split("").map((c, i) => <i key={i} style={{ "--i": i } as React.CSSProperties}>{c}</i>)}<i className="lp-ell">…</i></span>
       </div>
       <ul className="lp-seal-steps" aria-hidden>
-        <li style={{ "--i": 0 } as React.CSSProperties}><Icon name="check" size={13} /> Sealed on the robot</li>
-        <li style={{ "--i": 1 } as React.CSSProperties}><Icon name="check" size={13} /> Signed by its own key</li>
-        <li style={{ "--i": 2 } as React.CSSProperties}><Icon name="check" size={13} /> Recorded on 0G Chain</li>
+        <li><Icon name="check" size={13} /> Signed on the robot</li>
+        <li><Icon name="check" size={13} /> Stored on 0G Storage</li>
+        <li><Icon name="check" size={13} /> Recorded on 0G Chain</li>
+        <li><Icon name="check" size={13} /> Listed on Arkiv</li>
       </ul>
     </div>
   );
@@ -217,13 +220,13 @@ function SealCard() {
 
 const STEPS: { k: string; title: string; body: string }[] = [
   { k: "Act", title: "The robot gets to work", body: "A camera watches the table. At each checkpoint the robot stops and asks what to do next." },
-  { k: "Decide", title: "An AI on 0G decides the move", body: "The camera frame goes to an AI model on 0G Compute. It answers with the next move and the reason for it." },
+  { k: "Decide", title: "An AI on 0G decides the move", body: "The camera frame goes to an AI model on 0G Compute, running in a verified secure enclave. It answers with the next move and the reason for it." },
   { k: "Seal", title: "The moment is sealed and signed", body: "Frame and decision are encrypted on the robot and signed with its own key, before anything leaves it." },
-  { k: "Record", title: "Recorded where nobody can rewrite it", body: "The sealed record goes to 0G Storage, its fingerprint to 0G Chain, and public search labels to Arkiv. Change one byte later and the fingerprint no longer matches." },
+  { k: "Record", title: "Stored on 0G, listed on Arkiv", body: "The sealed run goes to 0G Storage and its fingerprint to 0G Chain. The robot writes its own Arkiv entry (outcome, incident, severity, time), so anyone can find the run, even when the robot is offline." },
   { k: "Incident", title: "Something goes wrong", body: "A hand enters the work area. The robot stops safely, and that moment is sealed like every other one." },
-  { k: "Claim", title: "The owner proves they are human", body: "World ID shows the claim comes from one real, unique person. One person, one claim, and nobody learns who they are." },
-  { k: "Review", title: "The insurer reviews locked evidence", body: "Only the insurer of this claim, and the owner, can open the incident. The insurer checks it against the chain and approves." },
-  { k: "Pay", title: "The pool pays out", body: "The insurance pool on 0G Chain pays the owner's wallet directly. Every step leaves a public, checkable trace." },
+  { k: "Claim", title: "World ID: the real owner, once", body: "World ID Agent Pass checks it's really the owner, right now. Proof of Human makes it one person, one claim, anonymously. The claim becomes a live record on Arkiv." },
+  { k: "Review", title: "The insurer reviews locked evidence", body: "Only the insurer of this claim, and the owner, can open the incident. The insurer checks it against 0G Chain and approves; the claim's Arkiv record updates." },
+  { k: "Pay", title: "The pool on 0G Chain pays out", body: "The insurance pool on 0G Chain pays the owner's wallet directly, and Arkiv marks the claim paid. Every step leaves a public, checkable trace." },
 ];
 
 function Story() {
@@ -319,7 +322,7 @@ function Stage({ active }: { active: number }) {
           <div className="lp-net-rows">
             <div className="lp-net-row" style={{ "--i": 0 } as React.CSSProperties}><i className="lp-wire" /><div><b>0G Storage</b><span>the locked record itself</span></div></div>
             <div className="lp-net-row" style={{ "--i": 1 } as React.CSSProperties}><i className="lp-wire" /><div><b>0G Chain</b><span>its fingerprint, on a public ledger</span></div></div>
-            <div className="lp-net-row" style={{ "--i": 2 } as React.CSSProperties}><i className="lp-wire" /><div><b>Arkiv</b><span>labels: time · outcome · incident</span></div></div>
+            <div className="lp-net-row" style={{ "--i": 2 } as React.CSSProperties}><i className="lp-wire" /><div><b>Arkiv</b><span>the robot's own searchable entry</span></div></div>
           </div>
         </div>
       </div>
@@ -335,8 +338,9 @@ function Stage({ active }: { active: number }) {
         <div className="lp-human">
           <div className="lp-orb" aria-hidden><span /><span /><span /></div>
           <b>Verified with World ID</b>
-          <span>Real, unique person · identity not shared</span>
+          <span>The real owner · one person · identity not shared</span>
           <span className="lp-chip ok"><Icon name="check" size={14} /> One person, one claim</span>
+          <span className="lp-chip"><Icon name="db" size={14} /> Claim filed on Arkiv</span>
         </div>
       </div>
 
@@ -345,7 +349,7 @@ function Stage({ active }: { active: number }) {
         <div className="lp-review">
           <div className="lp-review-head"><b>Claim · incident on arm-1</b><span className="lp-chip">With the insurer</span></div>
           <ul>
-            {["Signed by the robot's key", "Fingerprint matches 0G Chain", "Frames decrypt for this insurer only", "Claimant is a unique human"].map((t, i) => (
+            {["Signed by the robot's key", "Fingerprint matches 0G Chain", "Frames open for this insurer only", "World ID: the owner, one person", "Arkiv claim record updated"].map((t, i) => (
               <li key={t} style={{ "--i": i } as React.CSSProperties}><Icon name="check" size={14} /> {t}</li>
             ))}
           </ul>
@@ -357,8 +361,11 @@ function Stage({ active }: { active: number }) {
       <div className={p(7)} aria-hidden={active !== 7}>
         <div className="lp-pay">
           <span className="lp-pay-k">Paid from the insurance pool · 0G Chain</span>
-          <b className="lp-pay-amt">{paid.toFixed(3)} <small>0G</small></b>
-          <span className="lp-chip ok"><Icon name="check" size={14} /> In the owner's wallet</span>
+          <b className="lp-pay-amt">{paid.toFixed(3)} <small>test 0G</small></b>
+          <span className="lp-pay-chips">
+            <span className="lp-chip ok"><Icon name="check" size={14} /> In the owner's wallet</span>
+            <span className="lp-chip"><Icon name="db" size={14} /> Arkiv: claim paid</span>
+          </span>
         </div>
       </div>
     </div>
@@ -379,9 +386,9 @@ function Frame({ src, tag, dim, alert }: { src: string; tag: string; dim?: boole
 
 const INSURER_POINTS: { icon: string; title: string; body: string }[] = [
   { icon: "shield", title: "Evidence that can't be faked", body: "Every frame and decision is signed on the robot and fingerprinted on 0G Chain. Alter one byte and the check fails, in public." },
-  { icon: "user", title: "One person, one claim", body: "World ID proves each claimant is a real, unique human. Duplicate accounts and claim farming stop at the door." },
+  { icon: "user", title: "One person, one claim", body: "World ID proves each claimant is the robot's real owner and one unique human. Duplicate accounts and claim farming stop at the door." },
+  { icon: "db", title: "Every claim on a public record", body: "Each claim is a live Arkiv record, updated at every step from filed to paid. Anyone can query it; nobody learns who claimed." },
   { icon: "spark", title: "Settle in minutes, not months", body: "Review verified facts, not competing statements. Approve, and the pool on 0G Chain pays automatically." },
-  { icon: "lock", title: "Private by default", body: "Records stay locked. Only the owner, and the insurer of a claimed incident, can open that one incident." },
 ];
 
 function Insurers() {
@@ -428,7 +435,7 @@ function useScriptedJoints(on: boolean) {
 }
 
 const OWNER_POINTS: { icon: string; title: string; body: ReactNode }[] = [
-  { icon: "doc", title: "Prove what happened", body: "Every run is a sealed, signed story of what the robot saw and decided. Share one incident, keep the rest private." },
+  { icon: "doc", title: "Prove what happened", body: "Every run is a sealed, signed story of what the robot saw and decided, listed on Arkiv. Share a proof link or claim one incident; the rest stays private." },
   { icon: "wallet", title: "Get insured, get paid", body: "Claim an incident in a few taps. The insurer reviews evidence it can trust, and the pool pays your wallet." },
   { icon: "offline", title: "Works without internet", body: <>No signal on the floor? Nearby phones and robots carry the sealed proof out. They can't read it or change it. <a href={LANDING_LINKS.offline}>See it work</a></> },
 ];
@@ -500,7 +507,7 @@ function LiveProof({ latestId }: { latestId: string | null }) {
   if (s?.runs != null) tiles.push({ v: s.runs, label: "runs recorded", suffix: s.runsCapped ? "+" : "" });
   if (s?.incidents != null) tiles.push({ v: s.incidents, label: "incidents sealed" });
   if (s?.claimsPaid != null) tiles.push({ v: s.claimsPaid, label: "claims paid" });
-  if (paidOg != null) tiles.push({ v: paidOg, label: "paid out", fmt: (n) => `${n.toFixed(3)} 0G` });
+  if (paidOg != null) tiles.push({ v: paidOg, label: "paid out", fmt: (n) => `${n.toFixed(3)} test 0G` });
 
   return (
     <section className="lp-sec lp-live" aria-labelledby="lp-live-h" ref={ref}>
@@ -510,16 +517,15 @@ function LiveProof({ latestId }: { latestId: string | null }) {
             <p className="lp-eyebrow"><span className="lp-dot ok pulse" /> Live from the Pearl arm</p>
             <h2 id="lp-live-h" className="lp-h2">Don't trust us. Check a record.</h2>
             <p className="lp-sub">
-              These numbers come from public labels on Arkiv and the pool on 0G Chain
-              {s?.lastRunAt ? <>, last run {ago(s.lastRunAt)}</> : null}. Anyone can verify any run, no sign-in needed.
+              Live queries: runs and incidents from Arkiv, payouts from the pool on 0G Chain
+              {s?.lastRunAt ? <>, last run {ago(s.lastRunAt)}</> : null}. Change one byte of the latest run and watch the check catch it. No sign-in needed.
             </p>
             <div className="lp-ctas">
-              <a className="btn primary lg" href={LANDING_LINKS.verify(latestId)}><Icon name="shield" size={16} /> Verify the latest run</a>
-              <a className="btn lg lp-btn-quiet" href={LANDING_LINKS.verify(latestId, !!latestId)} title="Changes one byte of a copy of the record so you can watch the check catch it"><Icon name="alert" size={16} /> Try altering a record</a>
+              <a className="btn primary lg" href={LANDING_LINKS.verify(latestId, !!latestId)} title="Changes one byte of a copy of the latest record so you can watch the check catch it">Try altering a record <Icon name="arrow" size={16} /></a>
             </div>
           </div>
           {s === undefined ? (
-            <div className="lp-stats" aria-hidden>{[0, 1, 2].map((i) => <div key={i} className="lp-stat lp-stat-ph" />)}</div>
+            <div className="lp-stats" aria-hidden>{[0, 1, 2].map((i) => <div key={i} className="stat lp-stat lp-stat-ph" />)}</div>
           ) : tiles.length > 0 ? (
             <dl className="lp-stats">
               {tiles.map((t) => <StatTile key={t.label} {...t} run={near} />)}
@@ -535,9 +541,9 @@ function StatTile({ v, label, fmt, suffix = "", run }: { v: number; label: strin
   const n = useCountUp(v, run || revealAll());
   const shown = fmt ? fmt(n) : Math.round(n).toLocaleString();
   return (
-    <div className="lp-stat">
-      <dt>{label}</dt>
-      <dd><span className="sr-only">{fmt ? fmt(v) : v.toLocaleString()}{suffix}</span><span aria-hidden>{shown}{suffix}</span></dd>
+    <div className="stat lp-stat">
+      <dt className="stat-label">{label}</dt>
+      <dd className="stat-value"><span className="sr-only">{fmt ? fmt(v) : v.toLocaleString()}{suffix}</span><span aria-hidden>{shown}{suffix}</span></dd>
     </div>
   );
 }
@@ -548,18 +554,23 @@ const SPONSOR_MARK: Record<string, string> = { "0G": "0G", Arkiv: "Ar", "World I
 
 function BuiltOn() {
   return (
-    <section className="lp-sec" aria-labelledby="lp-built-h">
+    <section className="lp-sec" id="lp-built" aria-labelledby="lp-built-h">
       <div className="lp-wrap">
         <header className="lp-sec-head rv">
           <p className="lp-eyebrow">Under the hood</p>
           <h2 id="lp-built-h" className="lp-h2">Built on 0G · Arkiv · World ID</h2>
+          <p className="lp-sub">Each one does a real job in every run and every claim.</p>
         </header>
         <ul className="lp-built">
           {BUILT_ON.map((b, i) => (
             <li key={b.name} className="rv" style={{ "--d": i } as React.CSSProperties}>
               <span className="lp-built-mark" aria-hidden>{SPONSOR_MARK[b.name] ?? b.name.slice(0, 2)}</span>
               <h3>{b.name}</h3>
+              <span className="lp-built-tag">{b.tag}</span>
               <p>{b.role}</p>
+              <ul className="lp-built-points">
+                {b.points.map((t) => <li key={t}><Icon name="check" size={14} /><span>{t}</span></li>)}
+              </ul>
             </li>
           ))}
         </ul>

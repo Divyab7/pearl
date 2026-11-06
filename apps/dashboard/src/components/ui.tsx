@@ -57,7 +57,7 @@ export function Amount({ wei, paid = false }: { wei?: string | number | bigint |
   return (
     <span className={`amount ${paid ? "paid" : ""}`}>
       <span className="amount-num">{v.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 4 })}</span>
-      <span className="amount-unit">0G</span>
+      <span className="amount-unit" title="0G testnet tokens">test 0G</span>
     </span>
   );
 }
@@ -172,7 +172,7 @@ export function verdictOf(v: { result: "VALID" | "REJECTED"; checks: { status: s
  * Props: kind (null renders nothing; pass `pending` to show a "Checking…" placeholder instead), label (replaces the
  * default explanation), title (small caption above the word, e.g. "Edited copy"), compact (smaller, for side-by-side).
  */
-export function Verdict({ kind, label, title, compact = false, pending = false }: { kind: VerdictKind | null; label?: ReactNode; title?: string; compact?: boolean; pending?: boolean }) {
+export function Verdict({ kind, label, title, word, compact = false, pending = false }: { kind: VerdictKind | null; label?: ReactNode; title?: string; word?: ReactNode; compact?: boolean; pending?: boolean }) {
   if (!kind) {
     if (!pending) return null;
     return (
@@ -192,7 +192,7 @@ export function Verdict({ kind, label, title, compact = false, pending = false }
       <span className="verdict-icon" aria-hidden><Icon name={d.icon} size={compact ? 18 : 28} /></span>
       <div>
         {title && <div className="verdict-title">{title}</div>}
-        <div className="verdict-word">{d.word}</div>
+        <div className="verdict-word">{word ?? d.word}</div>
         <div className="verdict-sub">{label ?? d.explain}</div>
       </div>
     </div>
