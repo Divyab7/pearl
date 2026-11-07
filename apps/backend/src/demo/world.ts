@@ -97,6 +97,7 @@ export async function buildDemoWorld(): Promise<DemoWorld> {
   const runs = new Map<string, Built>();
   const storage = new Map<string, Uint8Array>();
   const frameStore = new Map<string, Uint8Array>();
+  const plainRecords = new Map<string, Rec[]>(); // each run's records before sealing (the live replay streams run A's)
   const stamp = (ms: number) => new Date(ms).toISOString().replace(/[-:T]/g, "").slice(0, 14);
   const build = async (suffix: string, startMs: number, steps: (rec: Rec, t: () => number, runKey: Uint8Array) => Promise<string>, opts: { storageFails?: boolean } = {}) => {
     const id = `ep_${stamp(startMs)}_${suffix}`;
@@ -122,6 +123,7 @@ export async function buildDemoWorld(): Promise<DemoWorld> {
       outcome: OUTCOME_CODE[outcome as keyof typeof OUTCOME_CODE], severity: inc.severity, incident: inc.incident,
     } as OnChainAnchor;
     runs.set(id, { id, runKey, sealed, root, anchor });
+    plainRecords.set(id, log.records);
     return id;
   };
   const addDecision = (rec: Rec, d: Rec, p: { policy: string; override: string | null; steps: Rec[] }) =>
@@ -136,7 +138,7 @@ export async function buildDemoWorld(): Promise<DemoWorld> {
   const P = (x: unknown) => x as never;
 
   // A: normal run, DONE, with camera photos
-  await build("a1c4", T0 + 52 * 60_000, async (rec, t, k) => {
+  const runA = await build("a1c4", T0 + 52 * 60_000, async (rec, t, k) => {
     const plan = await withFrame(decision("PLAN", { action: "PICK", slot: "A2", reason: "Red cube clearly visible at slot A2; path to the bin is clear.", confidence: 0.94 }, t()), rec, k, planJpeg);
     addDecision(rec, plan, policyPlan(P(plan), task, poses));
     const g = await withFrame(decision("VERIFY_GRASP", { action: "CONTINUE", grasped: true, reason: "Gripper closed on the red cube; cube lifted off A2.", confidence: 0.91 }, t()), rec, k, graspJpeg);
@@ -262,14 +264,70 @@ export async function buildDemoWorld(): Promise<DemoWorld> {
   let block = 281075;
 
   // ---------------------------------------------------------------- the simulated robot's HTTP surface
-  const scene = { slots: { A1: "blue", A2: "red", A3: null }, bin: [] as string[], holding: null };
-  const tel = (ms: number) => {
-    const s = Math.sin(ms / 2400);
-    return {
-      t: "tel", ms, state: "IDLE", joints: [90 + Math.round(s * 2), 92 + Math.round(Math.cos(ms / 3100) * 2), 88, 10], tofMm: 610 + Math.round(s * 4),
-      accG: 1.01, hbAgeMs: 140, status: { ring: "dim green", buzzer: "off" }, scene,
-    };
+  // The simulated robot replays sample run A (pick the cube at task.from → bin) on a loop, on the wall clock, so every
+  // viewer sees the same moment: the 3D arm moves, the stepper lights up, the AI's answers arrive as records.
+  const scene0 = { slots: { A1: "blue", A2: "red", A3: null } as Record<"A1" | "A2" | "A3", string | null>, bin: [] as string[], table: [] as string[] };
+  const cube = scene0.slots[task.from]!;
+  const g4 = (p: readonly number[], grip: number) => [p[0]!, p[1]!, p[2]!, grip];
+  const [O, C] = [arm.gripOpen, arm.gripClosed];
+  const above = arm.slots[task.from].above, down = arm.slots[task.from].down, binAbove = arm.slots.BIN.above;
+  // [ends at second, orchestrator phase, device state, joints at the end of the segment (eased from the previous end)]
+  const TIMELINE: [number, string, string, number[]][] = [
+    [4, "IDLE", "IDLE", g4(arm.home, O)],
+    [7, "PLANNING", "WAITING", g4(arm.home, O)],
+    [9, "MOVING_TO_PICK", "MOVING", g4(above, O)],
+    [11, "MOVING_TO_PICK", "MOVING", g4(down, O)],
+    [12, "MOVING_TO_PICK", "MOVING", g4(down, C)],
+    [14, "MOVING_TO_PICK", "MOVING", g4(above, C)],
+    [16, "VERIFYING_GRASP", "WAITING", g4(above, C)],
+    [19, "MOVING_TO_PLACE", "MOVING", g4(binAbove, C)],
+    [20, "MOVING_TO_PLACE", "MOVING", g4(binAbove, O)],
+    [22, "VERIFYING_PLACE", "WAITING", g4(binAbove, O)],
+    [25, "DONE", "MOVING", g4(arm.home, O)],
+    [32, "DONE", "IDLE", g4(arm.home, O)],
+  ];
+  const LOOP_S = TIMELINE.at(-1)![0];
+  const GRIPPED_AT = 11.5, RELEASED_AT = 19.5;
+  // when each of run A's records "happens" in the loop: a decision when its checkpoint ends, events with the one before
+  const DECIDED_AT: Record<string, number> = { PLAN: 7, VERIFY_GRASP: 16, VERIFY_PLACE: 22 };
+  const replayRecords = plainRecords.get(runA)!;
+  let lastAt = 4;
+  const recordAt = replayRecords.map((r: Rec) => {
+    if (r.kind === "decision") lastAt = DECIDED_AT[r.checkpoint] ?? lastAt;
+    else if (r.ev === "episode_end") lastAt = 22.5;
+    return lastAt;
+  });
+  const STATUS: Record<string, { ring: string; buzzer: string }> = {
+    IDLE: { ring: "dim green", buzzer: "off" }, MOVING: { ring: "blue spin", buzzer: "off" }, WAITING: { ring: "cyan pulse", buzzer: "off" },
   };
+  const ease = (x: number) => x * x * (3 - 2 * x);
+  /** The replay at wall-clock ms: loop number, second in the loop, phase, telemetry, released records, status. */
+  const live = (ms: number) => {
+    const loop = Math.floor(ms / 1000 / LOOP_S);
+    const s = (ms / 1000) % LOOP_S;
+    const i = TIMELINE.findIndex(([end]) => s < end);
+    const [end, phase, state, to] = TIMELINE[i]!;
+    const start = i === 0 ? 0 : TIMELINE[i - 1]![0];
+    const from = i === 0 ? TIMELINE.at(-1)![3] : TIMELINE[i - 1]![3];
+    const k = ease(Math.min(1, (s - start) / (end - start)));
+    const joints = to.map((j, n) => Math.round(from[n]! + (j - from[n]!) * k));
+    const held = s >= GRIPPED_AT && s < RELEASED_AT;
+    const scene = {
+      slots: { ...scene0.slots, [task.from]: s < GRIPPED_AT ? cube : null },
+      bin: s >= RELEASED_AT ? [cube] : [], table: [], claw: joints[3]! > (O + C) / 2 ? "closed" : "open", holding: held ? cube : null,
+    };
+    const released = phase === "IDLE" ? [] : replayRecords.filter((_: Rec, n: number) => recordAt[n]! <= s);
+    const lastD = [...released].reverse().find((r: Rec) => r.kind === "decision");
+    const status = {
+      phase, episodeId: phase === "IDLE" ? null : runA, task: phase === "IDLE" ? null : task, outcome: phase === "DONE" ? "DONE" : null,
+      records: released.length, lastDecision: lastD ? { checkpoint: lastD.checkpoint, source: lastD.source, requestId: lastD.requestId, error: lastD.error } : null,
+    };
+    const tel = {
+      t: "tel", ms, state, joints, tofMm: 610 + Math.round(Math.sin(ms / 2400) * 4), accG: 1.01, hbAgeMs: 140, status: STATUS[state] ?? STATUS.IDLE!, scene,
+    };
+    return { loop, phase, tel, released, status };
+  };
+  const tel = (ms: number) => live(ms).tel;
   const list = () => [...runs.values()].reverse().map((r) => ({
     episodeId: r.id, locked: true, armId: "arm-1", kind: r.sealed.incident ? "incident" : "episode", outcome: r.sealed.outcome,
     severity: r.sealed.severity, ts: Date.parse(r.sealed.endedAt), headHash: r.sealed.headHash, device: device.address,
@@ -285,13 +343,22 @@ export async function buildDemoWorld(): Promise<DemoWorld> {
       const body = new ReadableStream({
         start(c) {
           c.enqueue(enc.encode(": demo robot\n\n"));
+          const send = (ev: string, data: unknown) => c.enqueue(enc.encode(`event: ${ev}\ndata: ${JSON.stringify(data)}\n\n`));
+          let seen = { loop: -1, phase: "", sent: 0 };
           timer = setInterval(() => {
             try {
-              c.enqueue(enc.encode(`event: tel\ndata: ${JSON.stringify(tel(Date.now()))}\n\n`));
+              const now = live(Date.now());
+              if (now.loop !== seen.loop) seen = { loop: now.loop, phase: "", sent: 0 };
+              if (now.phase !== seen.phase) {
+                seen.phase = now.phase;
+                send("status", now.status);
+              }
+              for (; seen.sent < now.released.length; seen.sent++) send("record", now.released[seen.sent]);
+              send("tel", now.tel);
             } catch {
               stop();
             }
-          }, 1000);
+          }, 150);
           init?.signal?.addEventListener("abort", () => {
             stop();
             try {
@@ -313,10 +380,11 @@ export async function buildDemoWorld(): Promise<DemoWorld> {
     }
     if (method !== "GET") return Response.json({ error: DEMO_ACTIONS_OFF }, { status: 409 });
     if (path === "/api/state") {
+      const now = live(Date.now());
       return Response.json({
-        deviceId: "sim-arm-01", deviceAddress: device.address, device: tel(Date.now()), deviceKind: "sim", status: { ring: "dim green", buzzer: "off" },
-        handClear: true, hardTrip: false, orchestrator: { phase: "IDLE", episodeId: null, task: null, outcome: null, records: 0, lastDecision: null },
-        scene, cameraKind: "none", cut0g: false, heartbeatPaused: false, demo: true,
+        deviceId: "sim-arm-01", deviceAddress: device.address, device: now.tel, deviceKind: "sim", status: now.tel.status,
+        handClear: true, hardTrip: false, orchestrator: now.status,
+        scene: now.tel.scene, cameraKind: "none", cut0g: false, heartbeatPaused: false, demo: true,
         modules: { ogChainAnchor: "on", indexArkiv: "on", robotZerobot: "off" },
       });
     }
